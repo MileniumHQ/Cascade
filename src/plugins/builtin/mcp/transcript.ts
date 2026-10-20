@@ -4,7 +4,7 @@
  */
 import type { AnalysisPart, SourceAnalysis, ToneLabel } from '@shared/analysis'
 import { clipEnd, type Clip, type Id, type Project, type Track } from '@shared/project'
-import { FLICKS, formatTimecode, frameDuration, snapToFrame, type Flicks, type FrameRate } from '@shared/time'
+import { FLICKS, formatTimecode, type Flicks, type FrameRate } from '@shared/time'
 
 /** Cached analyses per source file path. */
 export type Analyses = Map<string, SourceAnalysis[]>
@@ -131,7 +131,7 @@ export interface FormatOptions {
   trackLabel: (t: Track) => string
 }
 
-export const TRANSCRIPT_LEGEND = 'Timeline time. s#/w# ids work in cut_words. {um}=filler, *word*=louder (+6 dB), _word_=quieter (-10 dB), word?=low confidence, [tone .conf] only when non-neutral, (part)=sentence partly outside the clip. ⏸ pause, ✂ shot cut, [CUE] sound event.'
+export const TRANSCRIPT_LEGEND = 'Timeline time. w#/s# ids are anchors for any time in timeline_apply_edits/frame_get (w12, w12.end, s3.start, w12.end+80ms). {um}=filler, *word*=louder (+6 dB), _word_=quieter (-10 dB), word?=low confidence, [tone .conf] only when non-neutral, (part)=sentence partly outside the clip. ⏸ pause, ✂ shot cut, [CUE] sound event.'
 
 export function formatTranscript(index: TIndex, o: FormatOptions): string {
   const tc = (t: Flicks) => formatTimecode(t, o.fps)
@@ -202,54 +202,4 @@ export function searchTranscript(index: TIndex, query: string, regex: boolean): 
     }
   }
   return hits
-}
-
-export interface CutRange { start: Flicks; end: Flicks }
-
-/**
- * Timeline range that removes words[first..last] cleanly: from just before the first word to just
- * before the next word, so the natural pause before the cut is kept and the next word's attack
- * isn't clipped. Snapped to frames.
- */
-export function wordsCut(words: TWord[], first: number, last: number, fps: FrameRate, bounds: (w: TWord) => CutRange): CutRange {
-  const a = words[first], b = words[last]
-  const prev = words[first - 1], next = words[last + 1]
-  const clipA = bounds(a), clipB = bounds(b)
-  const prevEnd = prev && prev.clipId === a.clipId ? prev.end : clipA.start
-  const nextStart = next && next.clipId === b.clipId ? next.start : null
-  const lead = Math.min(0.04 * FLICKS, (a.start - prevEnd) / 2)
-  const start = a.start - Math.max(0, lead)
-  const end = nextStart !== null ? nextStart - Math.max(0, Math.min(0.08 * FLICKS, (nextStart - b.end) / 2)) : Math.min(clipB.end, b.end + 0.15 * FLICKS)
-  const s = snapToFrame(start, fps)
-  let e = snapToFrame(end, fps)
-  if (e <= s) e = s + frameDuration(fps)
-  return { start: Math.max(0, s), end: e }
-}
-
-/** Gaps between consecutive words longer than `maxPause`, shortened to `keep` (centred). */
-export function pauseCuts(index: TIndex, maxPause: Flicks, keep: Flicks, fps: FrameRate, range: CutRange, keepEvents: boolean): CutRange[] {
-  const cuts: CutRange[] = []
-  const w = index.words
-  for (let i = 1; i < w.length; i++) {
-    const a = w[i - 1], b = w[i]
-    if (a.clipId !== b.clipId || a.end < range.start || b.start > range.end) continue
-    const gap = b.start - a.end
-    if (gap <= maxPause) continue
-    if (keepEvents && index.events.some((e) => !e.underSpeech && Math.min(e.end, b.start) - Math.max(e.start, a.end) > gap / 2)) continue
-    const start = snapToFrame(a.end + keep / 2, fps), end = snapToFrame(b.start - keep / 2, fps)
-    if (end > start) cuts.push({ start, end })
-  }
-  return cuts
-}
-
-/** Merge overlapping ranges and order them last-first, so ripple deletes don't shift pending ones. */
-export function mergeCuts(cuts: CutRange[]): CutRange[] {
-  const sorted = [...cuts].sort((a, b) => a.start - b.start)
-  const merged: CutRange[] = []
-  for (const c of sorted) {
-    const last = merged.at(-1)
-    if (last && c.start <= last.end) last.end = Math.max(last.end, c.end)
-    else merged.push({ ...c })
-  }
-  return merged.reverse()
 }

@@ -15,7 +15,7 @@ DOM-powered video editor. Electron 44 + TypeScript (TS 7 / tsgo) + SolidJS + pla
 - Test footage: `~/wwdc.webm` (1h48m AV1 1080p 29.97 + Opus). The first ~5s are black; seek to e.g. 600s for content.
 
 ## Agent editing
-- MCP tools are documented in `docs/mcp.md`. Content-aware editing (`media_analyze` → `transcript_get` → `cut_words`/`remove_fillers`/`tighten_pauses`) lives in `src/plugins/builtin/mcp/transcript.ts`, built on the `SourceAnalysis` contract in `src/shared/analysis.ts`.
+- MCP tools are documented in `docs/mcp.md`. Content-aware editing (`media_analyze` → `transcript_get`, then ordinary ops with word anchors like `w12.end+80ms`) lives in `src/plugins/builtin/mcp/transcript.ts`, built on the `SourceAnalysis` contract in `src/shared/analysis.ts`. Keep agent tools as information + primitives; don't add hard-coded editing macros.
 - Resource limits: run one GPU-heavy job at a time (whisper Vulkan, export, Electron test instance); the machine has crashed under load.
 
 ## User plugins

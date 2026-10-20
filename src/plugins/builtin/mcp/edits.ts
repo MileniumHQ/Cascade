@@ -1,10 +1,10 @@
 import { CascadeApp, type CascadeAPI } from '@core/app'
 import { clipEnd, findClip, type Project, type Clip } from '@shared/project'
 import { MIN_CLIP } from '@core/timeline-ops'
-import { editSchema } from '../../../main/mcp/catalog'
+import { ANCHOR, editSchema, type Edit } from '../../../main/mcp/catalog'
 import type { ParamDef } from '@core/plugin-api'
 import { FLICKS } from '@shared/time'
-import { buildIndex, mergeCuts, pauseCuts, wordsCut, type Analyses, type CutRange, type TWord } from './transcript'
+import { buildIndex, type Analyses } from './transcript'
 
 /** Stable aliases for this editor lifetime; full document ids also work. */
 export class Ids {
@@ -20,6 +20,22 @@ export class Ids {
   }
   resolve(value: string): string { return this.full.get(value) ?? value }
 }
+/** An edit with every anchor resolved to integer flicks. */
+type Resolved = Edit extends infer E ? E extends unknown ? { [K in keyof E]: K extends 'start' | 'end' | 'time' ? Extract<E[K], number | undefined> : E[K] } : never : never
+
+/** Timeline flicks for a transcript anchor (w12, w12.end, s3.start, w12.end+80ms) in `project`. */
+export function resolveAnchor(project: Project, analyses: Analyses | undefined, ids: Ids, value: string): number {
+  const match = ANCHOR.exec(value)
+  if (!match) throw new Error(`Invalid anchor ${value}`)
+  const [, id, edge, sign, amount, unit] = match
+  const key = ids.resolve(id)
+  const index = buildIndex(project, analyses ?? new Map())
+  const item = index.sentences.find(x => x.key === key) ?? index.words.find(x => x.key === key)
+  if (!item) throw new Error(`${id} is not on the timeline (cut already, or not an id from transcript_get/transcript_search)`)
+  const offset = amount ? Math.round(Number(amount) * (unit === 'ms' ? FLICKS / 1000 : FLICKS)) * (sign === '-' ? -1 : 1) : 0
+  return Math.max(0, (edge === 'end' ? item.end : item.start) + offset)
+}
+
 export function staging(app: CascadeAPI): CascadeApp {
   const copy = new CascadeApp('editor', null, structuredClone(app.project()))
   Object.assign(copy.registries, app.registries)
@@ -69,11 +85,21 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
     copy.edit.moveClips(copy.timeline().tracks.filter(t => !t.locked).flatMap(t => t.clips.filter(c => c.start >= end).map(c => ({ clipId: c.id, trackId: t.id, start: c.start - (end - start) }))))
     copy.doc.transact('Ripple markers', d => { const tl = d.timelines[d.activeTimeline]; tl.markers = tl.markers.filter(m => m.t < start || m.t >= end); for (const m of tl.markers) if (m.t >= end) m.t -= end - start })
   }
+  // Transcript anchors (w12.end+80ms) resolve against the staged timeline as edited so far.
+  const anchor = (value: string) => resolveAnchor(copy.project(), analyses, ids, value)
+  const resolveTimes = (raw: Edit): Resolved => {
+    const op = { ...raw } as Record<string, unknown>
+    for (const key of ['start', 'end', 'time'] as const) if (typeof op[key] === 'string') op[key] = anchor(op[key] as string)
+    // Keyframe/parameter times are clip-local; anchors are timeline times.
+    if ((raw.op === 'add_keyframe' || raw.op === 'set_param') && typeof raw.time === 'string') op.time = (op.time as number) - editable(raw.clipId).clip.start
+    if (typeof op.time === 'number' && op.time < 0) throw new Error(`${raw.op} time resolves before the clip start`)
+    return op as Resolved
+  }
   const results: string[] = []
-  for (const [index, op] of ops.entries()) {
+  for (const [index, raw] of ops.entries()) {
     try {
+      const op = resolveTimes(raw)
       let created: string | null | undefined
-      let summary: string | undefined
       if ('ref' in op && op.ref && (refs.has(op.ref) || ids.resolve(op.ref) !== op.ref)) throw new Error(`Duplicate/reserved ref ${op.ref}`)
       if (op.op === 'add_clip' || op.op === 'add_text') {
         let clip: Clip | null
@@ -112,40 +138,6 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
       else if (op.op === 'ripple_delete') {
         if (op.end <= op.start) throw new Error('end must be after start')
         ripple(op.start, op.end)
-      } else if (op.op === 'cut_words' || op.op === 'remove_fillers' || op.op === 'tighten_pauses') {
-        if (!analyses) throw new Error('Transcript edits need analysis; run media_analyze first')
-        const index = buildIndex(copy.project(), analyses)
-        const fps = copy.project().settings.fps
-        const bounds = (w: TWord) => { const c = findClip(copy.timeline(), w.clipId)!.clip; return { start: c.start, end: clipEnd(c) } }
-        let cuts: CutRange[]
-        if (op.op === 'cut_words') {
-          const locate = (value: string, edge: 'first' | 'last') => {
-            const key = ids.resolve(value)
-            const s = index.sentences.find(x => x.key === key)
-            const w = s ? (edge === 'first' ? s.words[0] : s.words.at(-1)!) : index.words.find(x => x.key === key)
-            if (!w) throw new Error(`${value} is not in the current transcript (already cut, or not an id from transcript_get)`)
-            return index.words.indexOf(w)
-          }
-          const a = locate(op.from, 'first'), b = locate(op.to ?? op.from, 'last')
-          if (b < a) throw new Error('to comes before from')
-          cuts = [wordsCut(index.words, a, b, fps, bounds)]
-        } else {
-          const clip = op.clipId ? editable(op.clipId).clip : undefined
-          const range = { start: Math.max(op.start ?? 0, clip?.start ?? 0), end: Math.min(op.end ?? Number.MAX_SAFE_INTEGER, clip ? clipEnd(clip) : Number.MAX_SAFE_INTEGER) }
-          if (op.op === 'remove_fillers') {
-            cuts = []
-            const w = index.words
-            for (let i = 0; i < w.length; i++) {
-              if (!w[i].filler || w[i].start < range.start || w[i].end > range.end) continue
-              let j = i
-              while (j + 1 < w.length && w[j + 1].filler && w[j + 1].clipId === w[i].clipId) j++
-              cuts.push(wordsCut(w, i, j, fps, bounds)); i = j
-            }
-          } else cuts = pauseCuts(index, op.maxPause, op.keep ?? op.maxPause, fps, range, op.keepEvents)
-        }
-        const merged = mergeCuts(cuts)
-        for (const c of merged) ripple(c.start, c.end)
-        summary = merged.length ? `removed ${merged.length} range${merged.length === 1 ? '' : 's'}, ${(merged.reduce((n, c) => n + c.end - c.start, 0) / FLICKS).toFixed(2)}s total` : 'nothing to remove'
       } else {
         const { clip, track: currentTrack } = editable(op.clipId)
         if (op.op === 'move') {
@@ -184,8 +176,8 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
         }
       }
       if ('ref' in op && op.ref && created) refs.set(op.ref, created)
-      results.push(`${index + 1}. ${op.op}: ok${summary ? ` (${summary})` : ''}${created ? ` ${ids.show(created, op.op === 'add_property' ? 'p' : 'c')}${'ref' in op && op.ref ? ` (${op.ref})` : ''}` : ''}`)
-    } catch (e) { throw new Error(`Operation ${index + 1} (${op.op}): ${e instanceof Error ? e.message : e}. No edits applied.`) }
+      results.push(`${index + 1}. ${op.op}: ok${created ? ` ${ids.show(created, op.op === 'add_property' ? 'p' : 'c')}${'ref' in op && op.ref ? ` (${op.ref})` : ''}` : ''}`)
+    } catch (e) { throw new Error(`Operation ${index + 1} (${raw.op}): ${e instanceof Error ? e.message : e}. No edits applied.`) }
   }
   for (const tr of copy.timeline().tracks) for (const clip of tr.clips) {
     if (clip.duration < MIN_CLIP || !Number.isSafeInteger(clip.start + clip.duration) || clip.sourceIn < 0) throw new Error('Result contains an invalid clip duration/range. No edits applied.')

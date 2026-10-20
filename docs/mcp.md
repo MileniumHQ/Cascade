@@ -127,13 +127,17 @@ s2 00:00:04.06–00:00:05.03 w6–w7 [happy .80] *Really* great!
    - A tone tag appears only when the tone is non-neutral with confidence ≥ 0.5.
    - `(part)` means the sentence is partly trimmed out of the clip.
    - `view: "words"` lists every word with its id and timecode.
-3. Edit by id with `timeline_apply_edits`:
-   - `{"op":"cut_words","from":"w12","to":"w19"}` ripple-removes words or sentences, with a boundary just before the first word and just before the next word. The natural pause is kept, attacks aren't clipped, and boundaries snap to frames. It cuts every unlocked track, so video, audio and captions stay in sync.
-   - `{"op":"remove_fillers"}` cuts every um/uh, optionally limited by `clipId` or `start`/`end`.
-   - `{"op":"tighten_pauses","maxPause":352800000}` shortens pauses longer than 0.5 s to 0.5 s. Pauses filled by applause or a music sting are skipped unless `keepEvents` is false.
+3. Edit with the ordinary ops. Any time field can be an **anchor**, including `start`, `end`, `time`, keyframe times and `frame_get`:
+   - **Forms:** `w12`, `w12.end`, `s3.start`, and offsets such as `w12.end+80ms` or `s3-0.5s`.
+   - **Resolution:** anchors resolve to exact word times, not frame-rounded timecodes. They resolve against the timeline as edited so far in the batch, so several word cuts in one batch stay correct.
+   - **Keyframe times:** an anchor in a keyframe/parameter time is converted to clip-local time.
+   - **Cut ids:** an anchor whose word has already been cut is rejected, and nothing in the batch is applied.
 
-   Ids re-resolve against the edited timeline after every op, so several `cut_words` in one batch are safe. An id that has already been cut is rejected, and the whole batch is not applied.
-4. `transcript_search("phrase")` finds spoken phrases (case- and punctuation-insensitive), and `regex:true` matches sentence text. Results are word-id ranges ready for `cut_words`.
+   There are deliberately no special "remove fillers" or "tighten pauses" operations. You decide what to cut, how much padding to keep, and whether to punch in or cover a jump cut with b-roll. Then you compose it from `ripple_delete`, `split`, `trim`, `move`, properties and keyframes. Examples:
+   - Remove a filler: `{"op":"ripple_delete","start":"w2.start-30ms","end":"w3.start-60ms"}`. This keeps the pause before it and doesn't clip the next word's attack.
+   - Mark a reaction: `{"op":"add_marker","time":"s14.start","name":"applause"}`.
+   - Punch in on a word: `add_keyframe` scale 1 at `w40.start-200ms` and 1.1 at `w40.start`, on the clip under it.
+4. `transcript_search("phrase")` finds spoken phrases (case- and punctuation-insensitive), and `regex:true` matches sentence text. Results are word-id ranges usable as anchors.
 
 `timeline_get` ends with a hint showing whether a transcript is available, or which sources to analyze.
 

@@ -73,41 +73,48 @@ test('search finds phrases across punctuation and returns word ranges', () => {
   expect(hits[0].sentence.words.slice(hits[0].from, hits[0].to + 1).map(w => w.text)).toEqual(['Really', 'great!'])
 })
 
-test('cut_words removes words cleanly from video and audio, and ids re-resolve after earlier cuts', () => {
-  const { app, analyses } = editor()
+const transcriptIds = (app: CascadeApp, analyses: Analyses) => {
   const ids = new Ids()
   formatTranscript(buildIndex(app.project(), analyses), { fps: app.fps(), view: 'words', maxLines: 100, ...labels(ids) })
+  return ids
+}
+
+test('ripple_delete by anchors composes word cuts; anchors re-resolve after earlier ops in the batch', () => {
+  const { app, analyses } = editor()
+  const ids = transcriptIds(app, analyses)
   const before = app.duration()
-  // Cut the filler (w2), then the whole first sentence's tail "this is" (w3–w4) in the same batch.
-  const result = applyEdits(app, { ops: [{ op: 'cut_words', from: 'w2' }, { op: 'cut_words', from: 'w3', to: 'w4' }] }, ids, analyses)
+  // Remove the filler (w2), then "this is" (w3–w4); the second op's anchors see the first cut.
+  const result = applyEdits(app, { ops: [
+    { op: 'ripple_delete', start: 'w2.start-30ms', end: 'w3.start-60ms' },
+    { op: 'ripple_delete', start: 'w3.start-30ms', end: 'w5.start-30ms' }
+  ] }, ids, analyses)
   expect(result).toContain('One undo step committed.')
   expect(words(app, analyses)).toEqual(['So,', 'great.', 'Really', 'great!'])
   expect(app.duration()).toBeLessThan(before)
   // Video and audio stay in sync: both tracks have identical clip layouts.
   const [v, a] = ['visual', 'audio'].map(k => app.timeline().tracks.find(t => t.kind === k && t.clips.length)!.clips.map(c => [c.start, c.duration, c.sourceIn]))
   expect(v).toEqual(a)
-  // The first word's attack is untouched, and the kept pause before "um" is preserved.
+  // The first word is untouched; the anchors' padding kept a small natural gap.
   const idx = buildIndex(app.project(), analyses)
   expect(idx.words[0].start).toBe(S(1))
   expect(idx.words[1].start - idx.words[0].end).toBeGreaterThan(S(0.05))
 })
 
-test('remove_fillers and tighten_pauses batch into one undo step', () => {
+test('anchors work for any time field: markers and splits land on words', () => {
   const { app, analyses } = editor()
-  const out = applyEdits(app, { ops: [{ op: 'remove_fillers' }, { op: 'tighten_pauses', maxPause: S(0.5), keepEvents: true }] }, new Ids(), analyses)
-  expect(out).toMatch(/remove_fillers: ok \(removed 1 range/)
-  expect(out).toMatch(/tighten_pauses: ok \(removed 1 range/)
-  const idx = buildIndex(app.project(), analyses)
-  expect(idx.words.map(w => w.text)).not.toContain('um,')
-  const gap = idx.words[5 - 1].start - idx.words[3].end // "great." → "Really"
-  expect(gap).toBeLessThanOrEqual(S(0.55))
-  app.doc.undo()
-  expect(buildIndex(app.project(), analyses).words).toHaveLength(7)
+  const ids = transcriptIds(app, analyses)
+  applyEdits(app, { ops: [{ op: 'add_marker', time: 's2.start', name: 'Reaction' }, { op: 'split', clipId: 'ca', time: 'w5.end+100ms' }] }, ids, analyses)
+  expect(app.timeline().markers[0].t).toBe(S(4.2))
+  expect(app.timeline().tracks.find(t => t.kind === 'audio')!.clips.map(c => c.start)).toContain(S(2.8))
 })
 
-test('cut_words rejects ids that were already cut', () => {
+test('anchors that were cut are rejected and nothing is applied', () => {
   const { app, analyses } = editor()
-  const ids = new Ids()
-  formatTranscript(buildIndex(app.project(), analyses), { fps: app.fps(), view: 'words', maxLines: 100, ...labels(ids) })
-  expect(() => applyEdits(app, { ops: [{ op: 'cut_words', from: 'w2' }, { op: 'cut_words', from: 'w2' }] }, ids, analyses)).toThrow(/not in the current transcript/)
+  const ids = transcriptIds(app, analyses)
+  const before = app.project()
+  expect(() => applyEdits(app, { ops: [
+    { op: 'ripple_delete', start: 'w2.start', end: 'w2.end' },
+    { op: 'ripple_delete', start: 'w2.start', end: 'w3.end' }
+  ] }, ids, analyses)).toThrow(/not on the timeline/)
+  expect(app.project()).toBe(before)
 })

@@ -7,7 +7,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import type { ExportProgress, McpCall } from '@shared/ipc'
 import { formatTimecode, FLICKS } from '@shared/time'
 import { tools } from '../../../main/mcp/catalog'
-import { Ids, applyEdits, staging, commit } from './edits'
+import { Ids, applyEdits, resolveAnchor, staging, commit } from './edits'
 import { frame, imageResult, sheet } from './images'
 import { pluginDocs } from './plugin-docs'
 import type { CaptionsService } from '../captions'
@@ -114,7 +114,10 @@ export class AgentTools {
           const r = app.registries
           return text({ mediaTypes: r.mediaTypes.all().map(({ id, name, track, extensions, defaultProperties }) => ({ id, name, track, extensions, defaultProperties })), properties: r.properties.all().map(({ id, name, description, params, appliesTo, stackable }) => ({ id, name, description, params, appliesTo: Array.isArray(appliesTo) ? appliesTo : 'predicate/default; validated when adding', stackable })), easings: r.easings.all().map(({ id, name, params }) => ({ id, name, params })), generators: r.generators.all().map(({ id, name, mediaType }) => ({ id, name, mediaType })), exporters: r.exporters.all().map(({ id, name, extension, options }) => ({ id, name, extension, options })) })
         }
-        case 'frame_get': return imageResult(await frame(app, a.time, a.width), formatTimecode(a.time, app.fps()))
+        case 'frame_get': {
+          const t = typeof a.time === 'string' ? resolveAnchor(app.project(), await this.loadAnalyses(), ids, a.time) : a.time
+          return imageResult(await frame(app, t, a.width), `${typeof a.time === 'string' ? `${a.time} = ` : ''}${formatTimecode(t, app.fps())}`)
+        }
         case 'contact_sheet': return await sheet(app, a)
         case 'timeline_preview_sheet': return await sheet(app, { ...a, start: 0, end: app.duration() })
         case 'media_contact_sheet': { const m = app.project().media[ids.resolve(a.mediaId)]; if (!m?.path) throw new Error('Select file-backed media from media_list'); if (!m.meta.hasVideo && m.type !== 'image') throw new Error('Source has no visual frames'); return await sheet(app, a, { path: m.path, duration: m.meta.duration ?? FLICKS, width: m.meta.width, height: m.meta.height }) }
