@@ -8,6 +8,8 @@ import { createMediaService } from './media'
 import { UserPlugins } from './plugins'
 import { serveMedia, servePlugin } from './protocols'
 import { getHostPaths, registerStoreIpc } from './store'
+import { startMcp } from './mcp'
+import { runStdio } from './mcp/stdio'
 
 protocol.registerSchemesAsPrivileged(['media', 'cascade-plugin'].map((scheme) => ({
   scheme, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true, bypassCSP: true }
@@ -156,9 +158,12 @@ async function initialize(): Promise<void> {
   protocol.handle('media', serveMedia)
   protocol.handle('cascade-plugin', (request) => servePlugin(request, (name) => userPlugins.code(name)))
   createWindows()
+  await startMcp(() => mainWindow)
 }
 
-if (!app.requestSingleInstanceLock()) {
+if (process.argv.includes('--mcp-stdio')) {
+  void runStdio(app.getPath('userData')).catch(error => { console.error('[mcp proxy]', error); process.exit(1) })
+} else if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   app.on('second-instance', () => {

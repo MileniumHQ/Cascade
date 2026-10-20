@@ -14,6 +14,7 @@ import { textPropertiesPlugin } from './properties/text'
 import { audioPropertiesPlugin } from './properties/audio'
 import { placeholderPanel } from './panels/placeholder'
 import { timelinePlugin } from './panels/timeline'
+import { mcpPlugin } from './mcp'
 import { previewPlugin } from './panels/preview'
 import { inspectorPlugin } from './panels/inspector'
 import { sourcesPlugin } from './panels/sources'
@@ -50,7 +51,8 @@ export const builtinPlugins: PluginDefinition[] = [
   timelinePlugin,
   inspectorPlugin,
   sourcesPlugin,
-  statusBarPlugin
+  statusBarPlugin,
+  mcpPlugin
 ]
 
 /** Plugins that are safe to load in headless export workers (no UI). */
