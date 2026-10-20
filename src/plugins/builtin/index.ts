@@ -1,5 +1,6 @@
 import type { PluginDefinition } from '@core/plugin-api'
 import { definePlugin } from '@core/plugin-api'
+import { exportersPlugin } from './exporters'
 import { paramsPlugin } from './params'
 import { easingsPlugin } from './easings'
 import { settingsPlugin } from './settings'
@@ -34,6 +35,7 @@ const panelsPlugin = definePlugin({
  * and are hidden from the plugin list; their settings live in global Settings.
  */
 export const builtinPlugins: PluginDefinition[] = [
+  exportersPlugin,
   paramsPlugin,
   easingsPlugin,
   settingsPlugin,
@@ -57,4 +59,4 @@ export const builtinPlugins: PluginDefinition[] = [
 ]
 
 /** Plugins that are safe to load in headless export workers (no UI). */
-export const renderPlugins: PluginDefinition[] = [paramsPlugin, easingsPlugin, videoPlugin, imagePlugin, elementPlugin, audioPlugin, visualPropertiesPlugin, effectsPlugin, textPropertiesPlugin, audioPropertiesPlugin]
+export const renderPlugins: PluginDefinition[] = [exportersPlugin, paramsPlugin, easingsPlugin, videoPlugin, imagePlugin, elementPlugin, audioPlugin, visualPropertiesPlugin, effectsPlugin, textPropertiesPlugin, audioPropertiesPlugin]

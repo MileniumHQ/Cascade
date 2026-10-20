@@ -426,6 +426,59 @@ export class Stage {
     await this.opts.document.fonts?.ready
   }
 
+  /**
+   * Offline audio pass: mount every overlapping clip, including clips starting mid-chunk.
+   * A fresh stage/context per chunk bounds memory. The caller starts OfflineAudioContext rendering.
+   */
+  async renderAudioChunk(project: Project, timelineId: Id, start: Flicks, duration: Flicks) {
+    const audio = this.opts.audio
+    const timeline = project.timelines[timelineId]
+    if (!audio?.chunk || !timeline) throw new Error('Audio chunk requires a timeline and StageAudio.chunk')
+    const end = start + duration
+    const prepare: Promise<void>[] = []
+    for (const track of timeline.tracks) {
+      if (track.muted) continue
+      for (const clip of track.clips) {
+        if (clip.start >= end || clipEnd(clip) <= start) continue
+        const mounted = this.mount(clip, track, project)
+        if (!mounted) throw new Error(`Cannot mount audio clip ${clip.id} (${clip.type})`)
+        this.mounted.set(clip.id, mounted)
+        // Media plugins expose audio capability through their mounted instance, never a core type list.
+        if (!mounted.inst.audioOut) {
+          this.unmount(mounted)
+          this.mounted.delete(clip.id)
+          continue
+        }
+        const from = Math.max(start, clip.start)
+        const to = Math.min(end, clipEnd(clip))
+        const props = clip.properties.filter(p => p.enabled && this.opts.registries.properties.get(p.type)?.audio)
+        const step = FLICKS / 100
+        for (let t = from; ; t = Math.min(to, t + step)) {
+          const values = new Map<Id, Record<string, unknown>>()
+          for (const p of props) {
+            const contribution = this.opts.registries.properties.get(p.type)!
+            values.set(p.id, evaluateProperty(this.opts.registries, contribution, p, Math.round(t - clip.start)))
+          }
+          this.syncAudio(mounted, clip, track, (t - start) / FLICKS, values)
+          if (t >= to) break
+        }
+        // Gate decoded buffers at clip boundaries, even when resampling rounds up a sample.
+        mounted.audio!.gain.gain.setValueAtTime(0, 0)
+        mounted.audio!.gain.gain.setValueAtTime(1, (from - start) / FLICKS)
+        mounted.audio!.gain.gain.setValueAtTime(0, (to - start) / FLICKS)
+        const local = from - clip.start
+        const state: ClipFrameState = {
+          time: from, local, sourceTime: (clip.sourceIn + local * (clip.speed ?? 1)) / FLICKS,
+          playing: false, rate: clip.speed ?? 1, clip, media: clip.mediaId ? project.media[clip.mediaId] : undefined,
+          project, mode: 'render', extra: {}, u: this.units
+        }
+        mounted.inst.update(state)
+        if (mounted.inst.prepare) prepare.push(mounted.inst.prepare(state))
+      }
+    }
+    await Promise.all(prepare)
+  }
+
   /** All currently mounted clip ids (for overlays/tests). */
   mountedClips() {
     return [...this.mounted.keys()]

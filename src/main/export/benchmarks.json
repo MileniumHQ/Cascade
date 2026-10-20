@@ -1,0 +1,345 @@
+[
+  {
+    "name": "1080-sw-1",
+    "seconds": 60,
+    "width": 1920,
+    "height": 1080,
+    "workers": 1,
+    "hardware": false,
+    "elapsed": 23.867,
+    "fps": 75.376042234047,
+    "realtime": 2.5139313696736076,
+    "progress": {
+      "jobId": "26755ae9-5f5e-494c-aae7-93b319717cf6",
+      "state": "done",
+      "framesDone": 1799,
+      "framesTotal": 1799,
+      "fps": 75.376042234047,
+      "etaSeconds": 0,
+      "output": "/tmp/cascade-export-bench/1080-sw-1.mp4",
+      "stalePaints": 3019,
+      "workers": 1
+    },
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "index": 0,
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "r_frame_rate": "30000/1001",
+          "start_time": "0.000000",
+          "duration": "60.026633",
+          "nb_read_frames": "1799"
+        },
+        {
+          "index": 1,
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "start_time": "0.000000",
+          "duration": "60.026625",
+          "nb_read_frames": "2814"
+        }
+      ],
+      "format": {
+        "duration": "60.026633"
+      }
+    }
+  },
+  {
+    "name": "1080-sw-6",
+    "seconds": 60,
+    "width": 1920,
+    "height": 1080,
+    "workers": 6,
+    "hardware": false,
+    "elapsed": 18.712,
+    "fps": 96.14151346729372,
+    "realtime": 3.2064985036340317,
+    "progress": {
+      "jobId": "f26f9f41-ea37-47be-b30a-912f6749c3b5",
+      "state": "done",
+      "framesDone": 1799,
+      "framesTotal": 1799,
+      "fps": 96.14151346729372,
+      "etaSeconds": 0,
+      "output": "/tmp/cascade-export-bench/1080-sw-6.mp4",
+      "stalePaints": 2752,
+      "workers": 6
+    },
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "index": 0,
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "r_frame_rate": "30000/1001",
+          "start_time": "0.000000",
+          "duration": "60.026633",
+          "nb_read_frames": "1799"
+        },
+        {
+          "index": 1,
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "start_time": "0.000000",
+          "duration": "60.026625",
+          "nb_read_frames": "2814"
+        }
+      ],
+      "format": {
+        "duration": "60.026633"
+      }
+    }
+  },
+  {
+    "name": "1080-vaapi-1",
+    "seconds": 60,
+    "width": 1920,
+    "height": 1080,
+    "workers": 1,
+    "hardware": true,
+    "elapsed": 22.267,
+    "fps": 80.79220370952531,
+    "realtime": 2.6945704405622672,
+    "progress": {
+      "jobId": "49210c3d-55ff-46cb-9191-b51589981910",
+      "state": "done",
+      "framesDone": 1799,
+      "framesTotal": 1799,
+      "fps": 80.79220370952531,
+      "etaSeconds": 0,
+      "output": "/tmp/cascade-export-bench/1080-vaapi-1.mp4",
+      "stalePaints": 3076,
+      "workers": 1
+    },
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "index": 0,
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "r_frame_rate": "30000/1001",
+          "start_time": "0.000000",
+          "duration": "60.026633",
+          "nb_read_frames": "1799"
+        },
+        {
+          "index": 1,
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "start_time": "0.000000",
+          "duration": "60.026625",
+          "nb_read_frames": "2814"
+        }
+      ],
+      "format": {
+        "duration": "60.026633"
+      }
+    }
+  },
+  {
+    "name": "1080-vaapi-6",
+    "seconds": 60,
+    "width": 1920,
+    "height": 1080,
+    "workers": 6,
+    "hardware": true,
+    "elapsed": 14.579,
+    "fps": 123.3966664380273,
+    "realtime": 4.115508608272172,
+    "progress": {
+      "jobId": "cf843f65-ae2d-4d99-a0ce-11a116563d10",
+      "state": "done",
+      "framesDone": 1799,
+      "framesTotal": 1799,
+      "fps": 123.3966664380273,
+      "etaSeconds": 0,
+      "output": "/tmp/cascade-export-bench/1080-vaapi-6.mp4",
+      "stalePaints": 2686,
+      "workers": 6
+    },
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "index": 0,
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "r_frame_rate": "30000/1001",
+          "start_time": "0.000000",
+          "duration": "60.026633",
+          "nb_read_frames": "1799"
+        },
+        {
+          "index": 1,
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "start_time": "0.000000",
+          "duration": "60.026625",
+          "nb_read_frames": "2814"
+        }
+      ],
+      "format": {
+        "duration": "60.026633"
+      }
+    }
+  },
+  {
+    "name": "4k-sw-1",
+    "seconds": 60,
+    "width": 3840,
+    "height": 2160,
+    "workers": 1,
+    "hardware": false,
+    "elapsed": 57.229,
+    "fps": 31.435111569309267,
+    "realtime": 1.0484195075923046,
+    "progress": {
+      "jobId": "2787b1c8-15af-4fda-9733-00a0ae6d1341",
+      "state": "done",
+      "framesDone": 1799,
+      "framesTotal": 1799,
+      "fps": 31.435111569309267,
+      "etaSeconds": 0,
+      "output": "/tmp/cascade-export-bench/4k-sw-1.mp4",
+      "stalePaints": 3677,
+      "workers": 1
+    },
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "index": 0,
+          "codec_name": "h264",
+          "width": 3840,
+          "height": 2160,
+          "r_frame_rate": "30000/1001",
+          "start_time": "0.000000",
+          "duration": "60.026633",
+          "nb_read_frames": "1799"
+        },
+        {
+          "index": 1,
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "start_time": "0.000000",
+          "duration": "60.026625",
+          "nb_read_frames": "2814"
+        }
+      ],
+      "format": {
+        "duration": "60.026633"
+      }
+    }
+  },
+  {
+    "name": "4k-vaapi-1",
+    "seconds": 60,
+    "width": 3840,
+    "height": 2160,
+    "workers": 1,
+    "hardware": true,
+    "elapsed": 37.606,
+    "fps": 47.83811093974366,
+    "realtime": 1.5954900813699942,
+    "progress": {
+      "jobId": "5d0b7a3f-89cd-4dea-90fe-1964dffe41c1",
+      "state": "done",
+      "framesDone": 1799,
+      "framesTotal": 1799,
+      "fps": 47.83811093974366,
+      "etaSeconds": 0,
+      "output": "/tmp/cascade-export-bench/4k-vaapi-1.mp4",
+      "stalePaints": 3590,
+      "workers": 1
+    },
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "index": 0,
+          "codec_name": "h264",
+          "width": 3840,
+          "height": 2160,
+          "r_frame_rate": "30000/1001",
+          "start_time": "0.000000",
+          "duration": "60.026633",
+          "nb_read_frames": "1799"
+        },
+        {
+          "index": 1,
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "start_time": "0.000000",
+          "duration": "60.026625",
+          "nb_read_frames": "2814"
+        }
+      ],
+      "format": {
+        "duration": "60.026633"
+      }
+    }
+  },
+  {
+    "name": "10min-vaapi-6",
+    "seconds": 600,
+    "width": 1920,
+    "height": 1080,
+    "workers": 6,
+    "hardware": true,
+    "elapsed": 128.095,
+    "fps": 140.38799328623287,
+    "realtime": 4.684023576252001,
+    "progress": {
+      "jobId": "3af26dc6-236d-45ba-a20f-7f68725a5205",
+      "state": "done",
+      "framesDone": 17983,
+      "framesTotal": 17983,
+      "fps": 140.38799328623287,
+      "etaSeconds": 0,
+      "output": "/tmp/cascade-export-bench/10min-vaapi-6.mp4",
+      "stalePaints": 27437,
+      "workers": 6
+    },
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "index": 0,
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "r_frame_rate": "30000/1001",
+          "start_time": "0.000000",
+          "duration": "600.032767",
+          "nb_read_frames": "17983"
+        },
+        {
+          "index": 1,
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "start_time": "0.000000",
+          "duration": "600.032771",
+          "nb_read_frames": "28127"
+        }
+      ],
+      "format": {
+        "duration": "600.032771"
+      }
+    }
+  }
+]

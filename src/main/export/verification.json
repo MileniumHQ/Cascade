@@ -1,0 +1,70 @@
+{
+  "cancel": {
+    "id": "d97e3991-fc9e-4254-ac5c-d7cccbc7dab4",
+    "ms": 88.10000002384186,
+    "terminal": {
+      "jobId": "d97e3991-fc9e-4254-ac5c-d7cccbc7dab4",
+      "state": "cancelled",
+      "framesDone": 20,
+      "framesTotal": 17983,
+      "fps": 35.02626970227671,
+      "etaSeconds": 512.84365,
+      "output": "/tmp/cascade-export-formats/cancel.mp4",
+      "message": "ffmpeg exited null: ",
+      "stalePaints": 37,
+      "workers": 6
+    }
+  },
+  "immediateCancel": {
+    "jobId": "7f36b25d-d5a1-4722-92c0-6cb1c6be3773",
+    "state": "cancelled",
+    "framesDone": 0,
+    "framesTotal": 1799,
+    "fps": 0,
+    "output": "/tmp/cascade-export-formats/cancel-immediate.mp4",
+    "message": "Export cancelled",
+    "stalePaints": 0,
+    "workers": 6
+  },
+  "fallback": {
+    "terminal": {
+      "jobId": "16bbb566-d2dd-46bd-ba54-d997798aa490",
+      "state": "done",
+      "framesDone": 30,
+      "framesTotal": 30,
+      "fps": 57.36137667304015,
+      "etaSeconds": 0,
+      "output": "/tmp/cascade-export-formats/fallback.mp4",
+      "stalePaints": 45,
+      "workers": 3
+    },
+    "fallback": "Hardware encoder failed; retrying in software. Error: ffmpeg exited 234: [VAAPI @ 0x555be8c20b00] No VA display found for device /dev/dri/cascade-does-not-exist.\nDevice creation failed: -22.\nFailed to set value '/dev/dri/cascade-does-not-exist' for option 'vaapi_device': Invalid argument\nError parsing global options: Invalid argument\n"
+  },
+  "changedProject": {
+    "changed": true,
+    "tinyPNG": true
+  },
+  "audioMix": {
+    "jobId": "13c1a519-f71e-4cc0-8942-7f25f2d370c4",
+    "state": "done",
+    "framesDone": 600,
+    "framesTotal": 600,
+    "fps": 2352.9411764705883,
+    "etaSeconds": 0,
+    "output": "/tmp/cascade-export-formats/mix.wav",
+    "stalePaints": 0,
+    "workers": 1
+  },
+  "windows": [
+    {
+      "url": "file:///home/pxlkt/Documents/Projects/Cascade-wt/export/out/renderer/render.html",
+      "id": 42
+    },
+    {
+      "url": "file:///home/pxlkt/Documents/Projects/Cascade-wt/export/out/renderer/index.html",
+      "id": 2
+    }
+  ],
+  "tempDirectories": [],
+  "cancelOutputExists": false
+}

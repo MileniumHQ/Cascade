@@ -1,0 +1,10 @@
+{
+  "source": "/home/pxlkt/wwdc.webm",
+  "output": "/tmp/cascade-export-bench/10min-vaapi-6.mp4",
+  "startSeconds": 590.0,
+  "samplesCompared": 80000,
+  "sampleRate": 8000,
+  "lagSamples": 0,
+  "lagSeconds": 0.0,
+  "correlation": 0.9998039707930603
+}

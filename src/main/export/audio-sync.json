@@ -1,0 +1,9 @@
+{
+  "source": "/home/pxlkt/wwdc.webm",
+  "output": "/tmp/cascade-export-bench/1080-sw-1.mp4",
+  "samplesCompared": 480000,
+  "sampleRate": 8000,
+  "lagSamples": 0,
+  "lagSeconds": 0.0,
+  "correlation": 0.9995762979812239
+}

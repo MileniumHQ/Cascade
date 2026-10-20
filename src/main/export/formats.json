@@ -1,0 +1,390 @@
+[
+  {
+    "name": "hevc",
+    "exporter": "mp4-hevc",
+    "seconds": 0.5,
+    "width": 320,
+    "height": 180,
+    "workers": 3,
+    "hardware": false,
+    "elapsed": 0.324,
+    "fps": 46.2962962962963,
+    "realtime": 1.5432098765432098,
+    "progress": {
+      "jobId": "8e8a487c-e56c-44dd-bce6-53ed536d119b",
+      "state": "done",
+      "framesDone": 15,
+      "framesTotal": 15,
+      "fps": 46.2962962962963,
+      "etaSeconds": 0,
+      "output": "/tmp/cascade-export-formats/hevc.mp4",
+      "stalePaints": 26,
+      "workers": 3
+    },
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "index": 0,
+          "codec_name": "hevc",
+          "width": 320,
+          "height": 180,
+          "r_frame_rate": "30000/1001",
+          "start_time": "0.000000",
+          "duration": "0.500500",
+          "nb_read_frames": "15"
+        },
+        {
+          "index": 1,
+          "codec_name": "aac",
+          "r_frame_rate": "0/0",
+          "start_time": "0.000000",
+          "duration": "0.500500",
+          "nb_read_frames": "24"
+        }
+      ],
+      "format": {
+        "duration": "0.500500"
+      }
+    }
+  },
+  {
+    "name": "vp9",
+    "exporter": "webm-vp9",
+    "seconds": 0.5,
+    "width": 320,
+    "height": 180,
+    "workers": 3,
+    "hardware": false,
+    "elapsed": 0.295,
+    "fps": 50.847457627118644,
+    "realtime": 1.6949152542372883,
+    "progress": {
+      "jobId": "0d611ddf-b2c1-43ce-a954-ad43b7c21bd0",
+      "state": "done",
+      "framesDone": 15,
+      "framesTotal": 15,
+      "fps": 50.847457627118644,
+      "etaSeconds": 0,
+      "output": "/tmp/cascade-export-formats/vp9.webm",
+      "stalePaints": 21,
+      "workers": 3
+    },
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "index": 0,
+          "codec_name": "vp9",
+          "width": 320,
+          "height": 180,
+          "r_frame_rate": "30000/1001",
+          "start_time": "0.000000",
+          "nb_read_frames": "15"
+        },
+        {
+          "index": 1,
+          "codec_name": "opus",
+          "r_frame_rate": "0/0",
+          "start_time": "0.000000",
+          "nb_read_frames": "26"
+        }
+      ],
+      "format": {
+        "duration": "0.508000"
+      }
+    }
+  },
+  {
+    "name": "av1",
+    "exporter": "webm-av1",
+    "seconds": 0.5,
+    "width": 320,
+    "height": 180,
+    "workers": 3,
+    "hardware": false,
+    "elapsed": 0.601,
+    "fps": 24.958402662229616,
+    "realtime": 0.831946755407654,
+    "progress": {
+      "jobId": "c2ed8a28-6a28-41ca-a11e-6823910dc94c",
+      "state": "done",
+      "framesDone": 15,
+      "framesTotal": 15,
+      "fps": 24.958402662229616,
+      "etaSeconds": 0,
+      "output": "/tmp/cascade-export-formats/av1.webm",
+      "stalePaints": 21,
+      "workers": 3
+    },
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "index": 0,
+          "codec_name": "av1",
+          "width": 320,
+          "height": 180,
+          "r_frame_rate": "30000/1001",
+          "start_time": "0.000000",
+          "nb_read_frames": "15"
+        },
+        {
+          "index": 1,
+          "codec_name": "opus",
+          "r_frame_rate": "0/0",
+          "start_time": "0.000000",
+          "nb_read_frames": "26"
+        }
+      ],
+      "format": {
+        "duration": "0.508000"
+      }
+    }
+  },
+  {
+    "name": "av1-vaapi",
+    "exporter": "mkv-av1",
+    "seconds": 0.5,
+    "width": 320,
+    "height": 180,
+    "workers": 3,
+    "hardware": true,
+    "elapsed": 0.28,
+    "fps": 53.57142857142857,
+    "realtime": 1.7857142857142856,
+    "progress": {
+      "jobId": "1e84373e-c4c1-4afa-ab9c-35f300217913",
+      "state": "done",
+      "framesDone": 15,
+      "framesTotal": 15,
+      "fps": 53.57142857142857,
+      "etaSeconds": 0,
+      "output": "/tmp/cascade-export-formats/av1-vaapi.mkv",
+      "stalePaints": 22,
+      "workers": 3
+    },
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "index": 0,
+          "codec_name": "av1",
+          "width": 320,
+          "height": 180,
+          "r_frame_rate": "30000/1001",
+          "start_time": "0.000000",
+          "nb_read_frames": "15"
+        },
+        {
+          "index": 1,
+          "codec_name": "opus",
+          "r_frame_rate": "0/0",
+          "start_time": "0.000000",
+          "nb_read_frames": "26"
+        }
+      ],
+      "format": {
+        "duration": "0.508000"
+      }
+    }
+  },
+  {
+    "name": "prores",
+    "exporter": "mov-prores",
+    "seconds": 0.5,
+    "width": 320,
+    "height": 180,
+    "workers": 3,
+    "hardware": false,
+    "elapsed": 0.287,
+    "fps": 52.264808362369344,
+    "realtime": 1.7421602787456447,
+    "progress": {
+      "jobId": "f75c6cf4-79c4-4f92-b6e5-659ba3c887a1",
+      "state": "done",
+      "framesDone": 15,
+      "framesTotal": 15,
+      "fps": 52.264808362369344,
+      "etaSeconds": 0,
+      "output": "/tmp/cascade-export-formats/prores.mov",
+      "stalePaints": 24,
+      "workers": 3
+    },
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "index": 0,
+          "codec_name": "prores",
+          "width": 320,
+          "height": 180,
+          "r_frame_rate": "30000/1001",
+          "start_time": "0.000000",
+          "duration": "0.500500",
+          "nb_read_frames": "15"
+        },
+        {
+          "index": 1,
+          "codec_name": "pcm_s24le",
+          "r_frame_rate": "0/0",
+          "start_time": "0.000000",
+          "duration": "0.500500",
+          "nb_read_frames": "24"
+        }
+      ],
+      "format": {
+        "duration": "0.500500"
+      }
+    }
+  },
+  {
+    "name": "gif",
+    "exporter": "gif",
+    "seconds": 0.5,
+    "width": 320,
+    "height": 180,
+    "workers": 3,
+    "hardware": false,
+    "elapsed": 0.298,
+    "fps": 50.33557046979866,
+    "realtime": 1.6778523489932886,
+    "progress": {
+      "jobId": "8a4f6685-779b-4d5f-abd6-38483d711ec9",
+      "state": "done",
+      "framesDone": 15,
+      "framesTotal": 15,
+      "fps": 50.33557046979866,
+      "etaSeconds": 0,
+      "output": "/tmp/cascade-export-formats/gif.gif",
+      "stalePaints": 18,
+      "workers": 1
+    },
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "index": 0,
+          "codec_name": "gif",
+          "width": 320,
+          "height": 180,
+          "r_frame_rate": "359/12",
+          "start_time": "0.000000",
+          "duration": "0.500000",
+          "nb_read_frames": "15"
+        }
+      ],
+      "format": {
+        "duration": "0.500000"
+      }
+    }
+  },
+  {
+    "name": "png",
+    "exporter": "png-sequence",
+    "seconds": 0.5,
+    "width": 320,
+    "height": 180,
+    "workers": 3,
+    "hardware": false,
+    "elapsed": 0.21300000000000002,
+    "fps": 70.4225352112676,
+    "realtime": 2.3474178403755865,
+    "progress": {
+      "jobId": "cfa7e8d2-6334-4eca-908a-6745d3c8d799",
+      "state": "done",
+      "framesDone": 15,
+      "framesTotal": 15,
+      "fps": 70.4225352112676,
+      "etaSeconds": 0,
+      "output": "/tmp/cascade-export-formats/png.png",
+      "stalePaints": 20,
+      "workers": 1
+    }
+  },
+  {
+    "name": "wav",
+    "exporter": "wav",
+    "seconds": 0.5,
+    "width": 320,
+    "height": 180,
+    "workers": 1,
+    "hardware": false,
+    "elapsed": 0.187,
+    "fps": 80.21390374331551,
+    "realtime": 2.6737967914438503,
+    "progress": {
+      "jobId": "8207eba4-f815-41b7-a261-f78b7a78eca4",
+      "state": "done",
+      "framesDone": 15,
+      "framesTotal": 15,
+      "fps": 80.21390374331551,
+      "etaSeconds": 0,
+      "output": "/tmp/cascade-export-formats/wav.wav",
+      "stalePaints": 0,
+      "workers": 1
+    },
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "index": 0,
+          "codec_name": "pcm_s24le",
+          "r_frame_rate": "0/0",
+          "duration": "0.500000",
+          "nb_read_frames": "6"
+        }
+      ],
+      "format": {
+        "duration": "0.500000"
+      }
+    }
+  },
+  {
+    "name": "mp3",
+    "exporter": "mp3",
+    "seconds": 0.5,
+    "width": 320,
+    "height": 180,
+    "workers": 1,
+    "hardware": false,
+    "elapsed": 0.191,
+    "fps": 78.53403141361257,
+    "realtime": 2.6178010471204187,
+    "progress": {
+      "jobId": "7759144b-f30d-491d-8762-78cbe85af2b6",
+      "state": "done",
+      "framesDone": 15,
+      "framesTotal": 15,
+      "fps": 78.53403141361257,
+      "etaSeconds": 0,
+      "output": "/tmp/cascade-export-formats/mp3.mp3",
+      "stalePaints": 0,
+      "workers": 1
+    },
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "index": 0,
+          "codec_name": "mp3",
+          "r_frame_rate": "0/0",
+          "start_time": "0.023021",
+          "duration": "0.500000",
+          "nb_read_frames": "22"
+        }
+      ],
+      "format": {
+        "duration": "0.500000"
+      }
+    }
+  }
+]
