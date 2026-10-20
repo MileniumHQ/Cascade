@@ -198,7 +198,7 @@ export class Editing {
     this.doc.transact(`Add ${media.name}`, (d) => {
       const tl = this.tl(d)
       for (const c of clips) {
-        const track = this.pickTrack(tl, c.kind, c.trackId)
+        const track = this.pickTrack(tl, c.kind, c.trackId, c.clip.start, c.clip.start + c.clip.duration)
         ops.placeClip(track as Track, c.clip)
       }
     })

@@ -104,9 +104,10 @@ function mountThumbnails(el: HTMLElement, c: ClipBodyContext) {
   let disposed = false
   const layer = document.createElement('div')
   layer.className = 'clip-thumbs'
+  layer.style.cssText = 'position:absolute;inset:0;overflow:hidden;opacity:.85'
   el.appendChild(layer)
   const draw = () => {
-    if (!strip || disposed) return
+    if (!strip || disposed || strip.count === 0) return
     const v = c.view()
     const clip = c.clip()
     const speed = clip.speed ?? 1
@@ -120,20 +121,29 @@ function mountThumbnails(el: HTMLElement, c: ClipBodyContext) {
     for (let i = first; i < last && i - first < 400; i++) {
       const localSec = (i * tileW) / v.pxPerSecond
       const srcSec = clip.sourceIn / FLICKS + localSec * speed
-      const idx = Math.min(strip.count - 1, Math.max(0, Math.floor(srcSec / strip.interval)))
+      const raw = Math.max(0, Math.floor(srcSec / strip.interval))
+      if (strip.partial && raw >= strip.count) continue
+      const idx = Math.min(strip.count - 1, raw)
       const d = document.createElement('div')
-      d.style.cssText = `left:${i * tileW}px;width:${tileW}px;background-image:url("${strip.urlPattern.replace('{i}', String(idx))}")`
+      d.style.cssText = `position:absolute;top:0;bottom:0;left:${i * tileW}px;width:${tileW}px;background:center/cover no-repeat;box-shadow:inset -1px 0 rgba(0,0,0,.35);background-image:url("${strip.urlPattern.replace('{i}', String(idx))}")`
       frag.appendChild(d)
     }
     layer.replaceChildren(frag)
   }
-  void c.app.host.media.thumbnails(media.path, { height: 72 }).then((s) => {
-    strip = s
-    draw()
-  })
+  // Generation is incremental: poll while the main process is still extracting tiles.
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const fetch = () =>
+    void c.app.host!.media.thumbnails(media.path!, { height: 72 }).then((s) => {
+      if (disposed) return
+      strip = s
+      draw()
+      if (s?.partial) timer = setTimeout(fetch, 1000)
+    })
+  fetch()
   const unsub = c.subscribe(draw)
   return () => {
     disposed = true
+    clearTimeout(timer)
     unsub()
     layer.remove()
   }

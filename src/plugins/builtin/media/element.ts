@@ -39,6 +39,7 @@ export const elementPlugin = definePlugin({
       clipBody(el, c) {
         const d = document.createElement('div')
         d.className = 'clip-element-body'
+        d.style.cssText = 'position:absolute;inset:0;padding:3px 6px;font-size:11px;color:rgba(255,255,255,.6);overflow:hidden;white-space:nowrap;text-overflow:ellipsis'
         const draw = () => {
           const clip = c.clip()
           const text = clip.properties.find((p) => p.type === 'text')?.params.text?.value
