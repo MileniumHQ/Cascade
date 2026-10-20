@@ -48,4 +48,17 @@ describe('caption grouping', () => {
       if (i) expect(l.start).toBeGreaterThanOrEqual(lines[i-1].end)
     }
   })
+  it('never flashes a burst of collapsed words between two full captions', () => {
+    const sentence = (text: string, from: number, to: number) => { const t = text.split(' '); const d = (to - from) / t.length; return t.map((w, i) => ({ text: w, start: from + i * d, end: from + (i + 1) * d - 0.005 })) }
+    const a = sentence('We rebuilt the widgets from the ground up so they are more beautiful and data rich.', 0, 3)
+    // Whisper sometimes collapses a repeated phrase into ~60 ms of interpolated words.
+    const burst = sentence('Go go go go.', 3.0, 3.06)
+    const b = sentence('And you can now place them right on your home screen next to your favorite apps.', 3.06, 6)
+    const lines = groupCaptions(transcript([...a, ...burst, ...b]), { sourceIn: 0, start: 0, speed: 1, end: 8*F })
+    expect(lines.map(l => l.text.replace(/\n/g, ' ')).join(' ')).toContain('Go go go go.')
+    for (const [i, l] of lines.entries()) {
+      expect(l.end - l.start).toBeGreaterThanOrEqual(0.7*F)
+      if (i) expect(l.start).toBeGreaterThanOrEqual(lines[i-1].end)
+    }
+  })
 })
