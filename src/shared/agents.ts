@@ -1,5 +1,5 @@
 /**
- * Agent panel contract: external coding agents (Claude Code, Codex, OpenCode, Gemini…) driven over
+ * Agent panel contract: external coding agents (Claude Code, Codex, OpenCode…) driven over
  * the Agent Client Protocol by the main process. Each chat is one agent subprocess + one ACP session,
  * with Cascade's MCP server attached so the agent can edit the open project.
  */
@@ -11,7 +11,7 @@ export interface AgentProvider {
   id: string
   name: string
   /** Icon key for the UI. */
-  icon: 'claude' | 'codex' | 'opencode' | 'gemini' | 'agent'
+  icon: 'claude' | 'codex' | 'opencode' | 'agent'
   available: boolean
   /** Why it can't start (not installed, etc.). */
   reason?: string

@@ -16,8 +16,7 @@ export interface AgentLauncher { id: string; name: string; icon: AgentProvider['
 export const LAUNCHERS: AgentLauncher[] = [
   { id: 'claude', name: 'Claude Code', icon: 'claude', script: '@agentclientprotocol/claude-agent-acp/dist/index.js' },
   { id: 'codex', name: 'Codex', icon: 'codex', script: '@agentclientprotocol/codex-acp/dist/index.js' },
-  { id: 'opencode', name: 'OpenCode', icon: 'opencode', command: 'opencode', args: ['acp'] },
-  { id: 'gemini', name: 'Gemini CLI', icon: 'gemini', command: 'gemini', args: ['--experimental-acp'] }
+  { id: 'opencode', name: 'OpenCode', icon: 'opencode', command: 'opencode', args: ['acp'] }
 ]
 
 /** First prompt preamble: what the agent is embedded in and how to reach the editor. */

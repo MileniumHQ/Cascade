@@ -14,7 +14,6 @@ const MARKS: Record<string, string> = {
   claude: '<svg viewBox="0 0 24 24"><g stroke="#d97757" stroke-width="2.6" stroke-linecap="round"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></g></svg>',
   codex: '<svg viewBox="0 0 24 24" fill="none" stroke="#ececef" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.8 20 7.4v9.2L12 21.2 4 16.6V7.4z"/><path d="m8.5 10 2.5 2-2.5 2M12.5 14.5h3"/></svg>',
   opencode: '<svg viewBox="0 0 24 24" fill="none" stroke="#ececef" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z" fill="#ececef"/></svg>',
-  gemini: '<svg viewBox="0 0 24 24"><defs><linearGradient id="gm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#82cbff"/><stop offset="1" stop-color="#a98bff"/></linearGradient></defs><path fill="url(#gm)" d="M12 2c.6 5.3 4.7 9.4 10 10-5.3.6-9.4 4.7-10 10-.6-5.3-4.7-9.4-10-10C7.3 11.4 11.4 7.3 12 2z"/></svg>',
   agent: 'bot'
 }
 const providerOf = (id: string) => providers().find(p => p.id === id)

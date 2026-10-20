@@ -8,7 +8,6 @@ The **Agent** side panel (sparkles icon in the left sidebar switcher) runs codin
 | Claude Code | bundled `@agentclientprotocol/claude-agent-acp` (Claude Agent SDK) | your existing `claude` login |
 | Codex | bundled `@agentclientprotocol/codex-acp` (`@openai/codex`) | your existing `codex login` |
 | OpenCode | `opencode acp` from PATH | opencode's own config |
-| Gemini CLI | `gemini --experimental-acp` from PATH | gemini's own config |
 
 Bundled adapters run as Electron-as-Node (`ELECTRON_RUN_AS_NODE=1`). PATH lookups also check `~/.local/bin`, `~/.bun/bin`, `~/.npm-global/bin` and nvm, because GUI launches often miss your shell PATH. Unavailable agents appear dimmed in the picker, with the reason in the tooltip.
 
@@ -39,4 +38,4 @@ Bundled adapters run as Electron-as-Node (`ELECTRON_RUN_AS_NODE=1`). PATH lookup
 
 ## Limits
 - Images are not persisted in history, only their names.
-- Gemini CLI and OpenCode must be installed separately.
+- OpenCode must be installed separately.

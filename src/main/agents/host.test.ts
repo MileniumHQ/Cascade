@@ -46,7 +46,7 @@ test('closing a chat ends the process; unknown/missing agents fail clearly', asy
   await host.close(session.id)
   await expect(host.prompt(session.id, 'hi')).rejects.toThrow(/chat has ended/)
   await expect(host.start('nope')).rejects.toThrow(/Unknown agent/)
-  expect(LAUNCHERS.map(l => l.id)).toEqual(['claude', 'codex', 'opencode', 'gemini'])
+  expect(LAUNCHERS.map(l => l.id)).toEqual(['claude', 'codex', 'opencode'])
 })
 
 test('attachments become image / resource_link blocks; resume reloads the session without replaying history', async () => {
