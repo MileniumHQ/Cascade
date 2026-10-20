@@ -262,3 +262,20 @@ pre.ag-work-detail { font-family: ui-monospace, 'JetBrains Mono', monospace; }
 .ag-picker-note.error { color: #ffb4b4; }
 .spin { animation: ag-spin 0.9s linear infinite; }
 @keyframes ag-spin { to { transform: rotate(360deg); } }
+
+/* Attachments (draft chips in the composer, thumbnails in the thread). */
+.ag-atts { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 5px; }
+.ag-atts-draft { margin: 0; padding: 9px 10px 0; }
+.ag-att { position: relative; display: inline-flex; }
+.ag-thumb { width: 52px; height: 52px; object-fit: cover; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--line); display: block; }
+.ag-bubble .ag-thumb { width: 96px; height: 64px; }
+.ag-file { display: inline-flex; align-items: center; gap: 4px; max-width: 180px; height: 24px; padding: 0 7px; border-radius: 7px; background: rgba(255, 255, 255, 0.06); font-size: 11.5px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ag-att-x { position: absolute; top: -5px; right: -5px; width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; background: var(--panel-2); color: var(--text-2); box-shadow: 0 0 0 1px var(--line-2); opacity: 0; transition: opacity 0.12s; }
+.ag-att:hover .ag-att-x { opacity: 1; }
+.ag-attach { padding: 0 6px; }
+
+/* Queued follow-ups. */
+.ag-queue { display: flex; flex-direction: column; gap: 2px; padding: 6px 6px 6px 9px; border-radius: 12px; background: rgba(var(--sky-rgb), 0.05); box-shadow: inset 0 0 0 1px rgba(var(--sky-rgb), 0.16); }
+.ag-queue-head { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); padding-bottom: 2px; }
+.ag-queue-item { display: flex; align-items: center; gap: 2px; font-size: 12px; color: var(--text-2); }
+.ag-queue-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

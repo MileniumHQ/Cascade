@@ -1,12 +1,12 @@
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from 'solid-js'
 import type { PanelContext } from '@core/plugin-api'
 import { Icon } from '@ui/icon'
-import { IconButton, openMenu, Popover } from '@ui/kit'
-import type { SessionConfigOption } from '@shared/agents'
+import { IconButton, openMenu, Popover, type MenuItem } from '@ui/kit'
+import type { AgentAttachment, SessionConfigOption } from '@shared/agents'
 import { markdown } from './markdown'
 import {
-  active, activeId, cancel, chats, chooseProvider, closeChat, connect, draftProvider, flatOptions, newChat, providers, refreshProviders,
-  respond, send, setActiveId, setOption, startChat, starting, type Chat, type Entry
+  active, activeId, askFirst, cancel, chats, chooseProvider, closeChat, connect, draftProvider, flatOptions, newChat, providers, refreshProviders,
+  dropQueued, respond, resumeActive, send, sendQueued, setActiveId, setAskFirst, setOption, startChat, starting, type Chat, type Entry
 } from './state'
 
 // Simplified brand marks (inline SVG keeps them crisp at 12–24px).
@@ -93,7 +93,20 @@ function Row(props: { entry: Entry }) {
   const [open, setOpen] = createSignal(false)
   return (
     <Switch>
-      <Match when={props.entry.kind === 'user' && props.entry}>{(e) => <div class="ag-user"><div class="ag-bubble">{e().text}</div></div>}</Match>
+      <Match when={props.entry.kind === 'user' && props.entry}>{(e) => (
+        <div class="ag-user">
+          <div class="ag-bubble">
+            <Show when={e().attachments?.length}>
+              <div class="ag-atts">
+                <For each={e().attachments}>{(a) => a.src
+                  ? <img class="ag-thumb" src={a.src} alt={a.name} title={a.name} />
+                  : <span class="ag-file"><Icon name={a.kind === 'image' ? 'image' : 'file'} size={12} />{a.name}</span>}</For>
+              </div>
+            </Show>
+            <Show when={e().text}>{e().text}</Show>
+          </div>
+        </div>
+      )}</Match>
       <Match when={props.entry.kind === 'assistant' && props.entry}>{(e) => <div class="ag-assistant ag-md" innerHTML={markdown(e().text)} />}</Match>
       <Match when={props.entry.kind === 'thought' && props.entry}>{(e) => (
         <div class="ag-work">
@@ -149,22 +162,48 @@ function Working(props: { chat: Chat }) {
 function Composer() {
   const [text, setText] = createSignal('')
   const [error, setError] = createSignal('')
+  const [atts, setAtts] = createSignal<AgentAttachment[]>([])
   let input!: HTMLTextAreaElement
+  let picker!: HTMLInputElement
   const chat = active
   const busy = () => !!chat()?.running
   const permission = () => chat()?.permissions[0]
+  const ready = () => !!text().trim() || atts().length > 0
   const grow = () => { input.style.height = 'auto'; input.style.height = `${Math.min(220, input.scrollHeight)}px` }
   const submit = () => {
-    const value = text().trim()
-    if (!value || busy() || starting()) return
-    setText(''); setError(''); queueMicrotask(grow)
-    send(value).catch(e => setError(String(e?.message ?? e)))
+    if (!ready() || starting()) return
+    const value = text().trim(), attachments = atts()
+    setText(''); setAtts([]); setError(''); queueMicrotask(grow)
+    send(value, attachments).catch(e => setError(String(e?.message ?? e)))
+  }
+  const attach = async (files: Iterable<File>) => {
+    for (const file of files) {
+      const path = window.cascade?.fs.pathForFile(file) || ''
+      if (file.type.startsWith('image/') && file.size <= 8 * 1024 * 1024) {
+        const data = await new Promise<string>((done, fail) => { const r = new FileReader(); r.onload = () => done(String(r.result).split(',')[1] ?? ''); r.onerror = () => fail(r.error); r.readAsDataURL(file) })
+        setAtts(a => [...a, { kind: 'image', name: file.name || 'pasted image', mimeType: file.type, data }])
+      } else if (path) setAtts(a => [...a, { kind: 'file', name: file.name, path }])
+      else setError(`Can't attach ${file.name || 'that'}: images up to 8 MB, or files from disk.`)
+    }
+    input.focus()
   }
   const option = (category: string) => chat()?.options.find(o => o.category === category)
   const extras = () => chat()?.options.filter(o => !['model', 'thought_level', 'mode'].includes(o.category ?? '')) ?? []
   createEffect(on(activeId, () => input?.focus()))
   return (
     <div class="ag-composer-wrap">
+      <Show when={chat()?.queue.length}>
+        <div class="ag-queue">
+          <div class="ag-queue-head"><Icon name="list-ordered" size={12} />{chat()!.paused ? 'Queued (paused after stop)' : 'Queued, sends when the agent finishes'}</div>
+          <For each={chat()!.queue}>{(q) => (
+            <div class="ag-queue-item">
+              <span class="ag-queue-text">{q.text || q.attachments.map(a => a.name).join(', ')}</span>
+              <Show when={!busy()}><IconButton size="sm" icon="arrow-up" tip="Send now" onClick={() => void sendQueued(q.id)} /></Show>
+              <IconButton size="sm" icon="x" tip="Remove" onClick={() => dropQueued(q.id)} />
+            </div>
+          )}</For>
+        </div>
+      </Show>
       <Show when={permission()}>{(p) => (
         <div class="ag-approval">
           <div class="ag-approval-head"><Icon name="shield-alert" size={13} /><span>Permission needed</span>
@@ -179,25 +218,42 @@ function Composer() {
         </div>
       )}</Show>
       <Show when={error()}><div class="ag-notice ag-notice-error ag-composer-error">{error()}</div></Show>
-      <div class="ag-composer">
+      <div class="ag-composer"
+        onDragOver={(e) => { if (e.dataTransfer?.types.includes('Files')) { e.preventDefault(); e.stopPropagation() } }}
+        onDrop={(e) => { if (e.dataTransfer?.files.length) { e.preventDefault(); e.stopPropagation(); void attach(e.dataTransfer.files) } }}>
+        <Show when={atts().length}>
+          <div class="ag-atts ag-atts-draft">
+            <For each={atts()}>{(a, i) => (
+              <span class="ag-att">
+                <Show when={a.kind === 'image' && a} fallback={<span class="ag-file"><Icon name="file" size={12} />{a.name}</span>}>
+                  {(img) => <img class="ag-thumb" src={`data:${img().mimeType};base64,${img().data}`} alt={a.name} title={a.name} />}
+                </Show>
+                <button class="ag-att-x" data-tip="Remove" onClick={() => setAtts(list => list.filter((_, j) => j !== i()))}><Icon name="x" size={10} /></button>
+              </span>
+            )}</For>
+          </div>
+        </Show>
         <textarea
           ref={input}
           rows={2}
           value={text()}
-          placeholder={permission() ? 'Resolve the permission request to continue' : chat()?.ended ? 'This agent stopped. Send to start a new chat.' : `Ask ${providerOf(chat()?.providerId ?? draftProvider())?.name ?? 'the agent'} to edit…`}
+          placeholder={permission() ? 'Resolve the permission request to continue' : busy() ? 'Queue a follow-up…' : chat()?.ended ? 'Send to resume this chat' : `Ask ${providerOf(chat()?.providerId ?? draftProvider())?.name ?? 'the agent'} to edit…`}
           disabled={!!permission()}
           onInput={(e) => { setText(e.currentTarget.value); grow() }}
+          onPaste={(e) => { const files = [...(e.clipboardData?.files ?? [])]; if (files.length) { e.preventDefault(); void attach(files) } }}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit() } e.stopPropagation() }}
         />
         <div class="ag-footer">
           <div class="ag-controls">
+            <input ref={picker} type="file" multiple hidden onChange={(e) => { void attach([...(e.currentTarget.files ?? [])]); e.currentTarget.value = '' }} />
+            <button class="ag-chip ag-attach" data-tip="Attach images or files (or paste / drop)" onClick={() => picker.click()}><Icon name="paperclip" size={13} /></button>
             <ModelPicker />
             <Show when={option('thought_level')}>{(o) => <><span class="ag-sep" /><OptionChip option={o()} icon="brain" /></>}</Show>
             <Show when={option('mode')}>{(o) => <OptionChip option={o()} icon="shield" />}</Show>
-            <Show when={extras().length}><MoreMenu options={extras()} /></Show>
+            <MoreMenu options={extras()} />
           </div>
-          <Show when={busy() && !text().trim()} fallback={
-            <button class="ag-send" disabled={!text().trim() || busy() || starting()} onClick={submit} data-tip="Send (Enter)">
+          <Show when={busy() && !ready()} fallback={
+            <button class="ag-send" disabled={!ready() || starting()} onClick={submit} data-tip={busy() ? 'Queue (Enter)' : 'Send (Enter)'}>
               <Show when={starting()} fallback={<svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11.5V2.5M7 2.5 3 6.5M7 2.5l4 4" /></svg>}>
                 <Icon name="loader-circle" size={14} class="spin" />
               </Show>
@@ -238,14 +294,16 @@ function OptionChip(props: { option: SessionConfigOption; icon: string }) {
 
 function MoreMenu(props: { options: SessionConfigOption[] }) {
   const open = (e: MouseEvent) => {
-    const id = active()!.id
-    openMenu(e.currentTarget as HTMLElement, props.options.flatMap((o, i) => [
-      ...(i ? [{ separator: true }] : []),
+    const id = active()?.id ?? ''
+    const items: MenuItem[] = props.options.flatMap<MenuItem>(o => [
+      { separator: true },
       { label: o.name, disabled: true },
       ...(o.type === 'boolean'
         ? [{ label: o.currentValue ? 'On' : 'Off', checked: true, run: () => void setOption(id, o.id, !o.currentValue) }]
         : flatOptions(o).map(x => ({ label: x.name, checked: x.value === o.currentValue, run: () => void setOption(id, o.id, x.value) })))
-    ]))
+    ])
+    items.unshift({ label: 'Ask before actions', icon: 'shield-check', checked: askFirst(), run: () => setAskFirst(!askFirst()) })
+    openMenu(e.currentTarget as HTMLElement, items)
   }
   return <button class="ag-chip ag-more" data-tip="More options" onClick={open}><Icon name="ellipsis" size={14} /></button>
 }
@@ -268,6 +326,11 @@ function ModelPicker() {
   const ensure = async (id: string) => {
     const current = active()
     if (current && current.providerId === id && !current.ended) return
+    if (current?.ended && current.providerId === id && current.entries.length) {
+      setLoading(id)
+      try { await resumeActive() } finally { setLoading('') }
+      return
+    }
     if (current?.entries.length) { chooseProvider(id); return }
     setLoading(id)
     try { await startChat(id) } catch (e) { setLoading(''); throw e }

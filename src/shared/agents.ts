@@ -27,6 +27,25 @@ export interface AgentSession {
   options: SessionConfigOption[]
   /** False when the agent cannot reach Cascade's MCP server (tools unavailable). */
   cascadeTools: boolean
+  /** The agent's own session id (what `resume` takes). */
+  sessionId: string
+  cwd: string
+  /** True when `resume` reloaded the earlier conversation; false = fresh session. */
+  resumed: boolean
+  /** The agent accepts image prompt blocks. */
+  images: boolean
+}
+
+/** Sent with a prompt: images inline (base64), files as links to their path on disk. */
+export type AgentAttachment =
+  | { kind: 'image'; name: string; mimeType: string; data: string }
+  | { kind: 'file'; name: string; path: string }
+
+export interface StartOptions {
+  /** Defaults to the projects folder. */
+  cwd?: string
+  /** Agent session id to reload (ACP session/load) when the agent supports it. */
+  resume?: string
 }
 
 export type AgentEvent =
@@ -38,10 +57,10 @@ export type AgentEvent =
 
 export interface AgentsBridge {
   providers(): Promise<AgentProvider[]>
-  /** Spawn the agent and open a session. `cwd` defaults to the projects folder. */
-  start(providerId: string, cwd?: string): Promise<AgentSession>
+  /** Spawn the agent and open (or resume) a session. */
+  start(providerId: string, options?: StartOptions): Promise<AgentSession>
   /** Resolves when the turn ends; streaming arrives through onEvent. */
-  prompt(chatId: string, text: string): Promise<StopReason>
+  prompt(chatId: string, text: string, attachments?: AgentAttachment[]): Promise<StopReason>
   cancel(chatId: string): Promise<void>
   setOption(chatId: string, configId: string, value: string | boolean): Promise<SessionConfigOption[]>
   /** `optionId` null = dismiss (cancelled). */

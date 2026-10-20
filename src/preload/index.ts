@@ -50,8 +50,8 @@ const bridge: HostBridge = {
   },
   agents: {
     providers: () => ipcRenderer.invoke('agents:providers'),
-    start: (providerId, cwd) => ipcRenderer.invoke('agents:start', providerId, cwd),
-    prompt: (id, text) => ipcRenderer.invoke('agents:prompt', id, text),
+    start: (providerId, options) => ipcRenderer.invoke('agents:start', providerId, options),
+    prompt: (id, text, attachments) => ipcRenderer.invoke('agents:prompt', id, text, attachments),
     cancel: (id) => ipcRenderer.invoke('agents:cancel', id),
     setOption: (id, configId, value) => ipcRenderer.invoke('agents:setOption', id, configId, value),
     respond: (id, requestId, optionId) => ipcRenderer.invoke('agents:respond', id, requestId, optionId),

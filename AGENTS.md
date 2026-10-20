@@ -10,7 +10,7 @@ DOM-powered video editor. Electron 44 + TypeScript (TS 7 / tsgo) + SolidJS + pla
 - `bun run dev` — dev app. **This environment sets `ELECTRON_RUN_AS_NODE=1`; unset it** (`env -u ELECTRON_RUN_AS_NODE bun run dev`) or Electron starts as plain Node.
 
 ## Driving the real app (screenshots / e2e)
-- `node scripts/drive.mjs <shotsDir> <steps.mjs>` launches the built app (`bun run build` first) via Playwright `_electron`, at 1600×960, and runs `default async ({ app, win, shot, sleep })`. `window.cascadeApp` exposes `CascadeAPI` (`edit`, `playback`, `selection`, `view`, `registries`…). Example: `scripts/steps-example.mjs`.
+- `node scripts/drive.mjs <shotsDir> <steps.mjs>` launches the built app (`bun run build` first) via Playwright `_electron`, at 1600×960, and runs `default async ({ app, win, shot, sleep })`. `window.cascadeApp` exposes `CascadeAPI` (`edit`, `playback`, `selection`, `view`, `registries`…). Example: `scripts/steps-example.mjs`. `CASCADE_EXE=dist/linux-unpacked/cascade` drives the packaged build instead.
 - Isolation env vars: `CASCADE_USER_DATA` (profile dir; driver defaults to `/tmp/cascade-test-profile`; user plugins live in `<profile>/plugins`) and `CASCADE_PROJECTS` (projects dir).
 - Test footage: `~/wwdc.webm` (1h48m AV1 1080p 29.97 + Opus). The first ~5s are black; seek to e.g. 600s for content.
 

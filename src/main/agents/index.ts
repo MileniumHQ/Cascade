@@ -4,10 +4,11 @@ import { randomUUID } from 'node:crypto'
 import { access, constants, readdir, stat } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { delimiter, isAbsolute, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { Readable, Writable } from 'node:stream'
-import { client, ndJsonStream, PROTOCOL_VERSION, type ClientConnection, type McpServer, type PromptRequest, type PromptResponse, type RequestPermissionResponse, type SetSessionConfigOptionRequest, type SetSessionConfigOptionResponse } from '@agentclientprotocol/sdk'
+import { client, ndJsonStream, PROTOCOL_VERSION, type ClientConnection, type ContentBlock, type LoadSessionRequest, type LoadSessionResponse, type McpServer, type PromptRequest, type PromptResponse, type RequestPermissionResponse, type SetSessionConfigOptionRequest, type SetSessionConfigOptionResponse } from '@agentclientprotocol/sdk'
 import { tools as cascadeTools } from '../mcp/catalog'
-import type { AgentEvent, AgentProvider, AgentSession, SessionConfigOption, StopReason } from '../../shared/agents'
+import type { AgentAttachment, AgentEvent, AgentProvider, AgentSession, StartOptions, SessionConfigOption, StopReason } from '../../shared/agents'
 
 /** How to launch an agent. `script` = a bundled Node entry run with Electron-as-Node. */
 export interface AgentLauncher { id: string; name: string; icon: AgentProvider['icon']; script?: string; command?: string; args?: string[] }
@@ -46,6 +47,7 @@ interface Chat {
   connection: ClientConnection
   sessionId: string
   primed: boolean
+  images: boolean
   permissions: Map<string, (response: RequestPermissionResponse) => void>
   stderr: string
 }
@@ -92,7 +94,8 @@ export function createAgentHost(options: AgentHostOptions) {
     return chat
   }
 
-  async function start(providerId: string, cwd?: string): Promise<AgentSession> {
+  async function start(providerId: string, opts: StartOptions = {}): Promise<AgentSession> {
+    const { cwd, resume } = opts
     const launcher = LAUNCHERS.find(l => l.id === providerId)
     if (!launcher) throw new Error(`Unknown agent ${providerId}`)
     const how = await launch(launcher)
@@ -100,7 +103,7 @@ export function createAgentHost(options: AgentHostOptions) {
     const dir = cwd && isAbsolute(cwd) && (await stat(cwd).catch(() => null))?.isDirectory() ? cwd : options.defaultCwd
     const id = randomUUID()
     const child = spawn(how.command, how.args, { cwd: dir, env: how.env, stdio: ['pipe', 'pipe', 'pipe'] })
-    const chat = { id, child, sessionId: '', primed: false, permissions: new Map(), stderr: '' } as unknown as Chat
+    const chat = { id, child, sessionId: '', primed: false, images: false, permissions: new Map(), stderr: '' } as unknown as Chat
     child.stderr!.on('data', (b: Buffer) => { chat.stderr = (chat.stderr + b.toString()).slice(-4000) })
     const app = client({ name: 'cascade' })
       .onNotification('session/update', ({ params }) => { if (params.sessionId === chat.sessionId) options.emit({ chatId: id, type: 'update', update: params.update }) })
@@ -137,19 +140,36 @@ export function createAgentHost(options: AgentHostOptions) {
       const http = init.agentCapabilities?.mcpCapabilities?.http === true
       const mcpServers: McpServer[] = mcp.url && http ? [{ type: 'http', name: 'cascade', url: mcp.url, headers: [{ name: 'Authorization', value: `Bearer ${mcp.token}` }] }] : []
       const _meta = providerId === 'claude' && mcpServers.length ? { claudeCode: { options: { allowedTools: READ_ONLY_TOOLS } } } : undefined
-      const session = await Promise.race([chat.connection.agent.request('session/new', { cwd: dir, mcpServers, ...(_meta ? { _meta } : {}) }), exited])
-      chat.sessionId = session.sessionId
+      const extra = _meta ? { _meta } : {}
+      chat.images = init.agentCapabilities?.promptCapabilities?.image === true
+      let config: SessionConfigOption[] | null | undefined
+      let resumed = false
+      if (resume && init.agentCapabilities?.loadSession) {
+        // sessionId stays unset while loading, so the replayed history isn't re-emitted.
+        const loaded = await Promise.race([chat.connection.agent.request<LoadSessionResponse, LoadSessionRequest>('session/load', { sessionId: resume, cwd: dir, mcpServers, ...extra }), exited]).catch(() => null)
+        if (loaded) { chat.sessionId = resume; config = loaded.configOptions; resumed = true; chat.primed = true }
+      }
+      if (!resumed) {
+        const session = await Promise.race([chat.connection.agent.request('session/new', { cwd: dir, mcpServers, ...extra }), exited])
+        chat.sessionId = session.sessionId
+        config = session.configOptions
+      }
       const info = init.agentInfo
-      return { id, providerId, agent: info ? `${info.title ?? info.name} ${info.version}` : launcher.name, options: session.configOptions ?? [], cascadeTools: mcpServers.length > 0 }
+      return { id, providerId, agent: info ? `${info.title ?? info.name} ${info.version}` : launcher.name, options: config ?? [], cascadeTools: mcpServers.length > 0, sessionId: chat.sessionId, cwd: dir, resumed, images: chat.images }
     } catch (error) {
       await close(id)
       throw new Error(friendly(error, launcher))
     }
   }
 
-  async function prompt(id: string, text: string): Promise<StopReason> {
+  async function prompt(id: string, text: string, attachments: AgentAttachment[] = []): Promise<StopReason> {
     const chat = get(id)
-    const blocks = [{ type: 'text' as const, text: chat.primed ? text : `${CONTEXT}\n\n${text}` }]
+    const blocks: ContentBlock[] = [{ type: 'text', text: chat.primed ? text : `${CONTEXT}\n\n${text}` }]
+    for (const a of attachments) {
+      if (a.kind === 'file') blocks.push({ type: 'resource_link', uri: pathToFileURL(a.path).href, name: a.name })
+      else if (chat.images) blocks.push({ type: 'image', data: a.data, mimeType: a.mimeType })
+      else blocks.push({ type: 'text', text: `(The user attached an image, ${a.name}, but this agent can't view images.)` })
+    }
     chat.primed = true
     const response = await chat.connection.agent.request<PromptResponse, PromptRequest>('session/prompt', { sessionId: chat.sessionId, prompt: blocks })
     return response.stopReason
@@ -200,8 +220,8 @@ export async function registerAgentsIpc(options: Omit<AgentHostOptions, 'emit'>,
   const { ipcMain, app } = await import('electron')
   const host = createAgentHost({ ...options, emit: send })
   ipcMain.handle('agents:providers', () => host.providers())
-  ipcMain.handle('agents:start', (_e, providerId: string, cwd?: string) => host.start(providerId, cwd))
-  ipcMain.handle('agents:prompt', (_e, id: string, text: string) => host.prompt(id, text))
+  ipcMain.handle('agents:start', (_e, providerId: string, opts?: StartOptions) => host.start(providerId, opts))
+  ipcMain.handle('agents:prompt', (_e, id: string, text: string, attachments?: AgentAttachment[]) => host.prompt(id, text, attachments))
   ipcMain.handle('agents:cancel', (_e, id: string) => host.cancel(id))
   ipcMain.handle('agents:setOption', (_e, id: string, configId: string, value: string | boolean) => host.setOption(id, configId, value))
   ipcMain.handle('agents:respond', (_e, id: string, requestId: string, optionId: string | null) => host.respond(id, requestId, optionId))

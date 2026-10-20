@@ -18,16 +18,25 @@ Bundled adapters run as Electron-as-Node (`ELECTRON_RUN_AS_NODE=1`). PATH lookup
 - The first prompt is prefixed with a short context preamble (`CONTEXT`) that names the Cascade tools.
 - Model, effort, mode and other options are the agent's own ACP `configOptions`. The last value picked for each agent is remembered in localStorage and re-applied to new chats.
 
-## Safety
-- The agent cwd is the Cascade projects dir. Cascade advertises no ACP fs or terminal capability, so agents use their own sandboxing and permission flow. Every permission request shows as an approval banner with the agent's options.
-- Claude: Cascade's read-only MCP tools (`readOnlyHint` in `src/main/mcp/catalog.ts`) are pre-allowed through `_meta.claudeCode.options.allowedTools`. Edits, shell and file writes still ask in the default mode.
-- Project edits go through `timeline_apply_edits` (one undo step per batch).
+## Approvals
+- Off by default: the panel answers each permission request with the agent's allow option. Cascade edits are undoable.
+- **… → Ask before actions** turns approvals on. Each request then shows as a banner with the agent's own options.
+- With approvals on, Claude still runs Cascade's read-only MCP tools without asking (`readOnlyHint` in `src/main/mcp/catalog.ts`, passed as `_meta.claudeCode.options.allowedTools`).
+- The agent cwd is the Cascade projects dir. Cascade advertises no ACP fs or terminal capability, so agents use their own sandboxing.
+
+## Composer
+- **Queue:** Enter while the agent works queues the message, and the queue sends in order when the turn ends. After Stop or an error the queue pauses; each item has Send now and Remove.
+- **Attachments:** paste, drop or use the paperclip. Images (≤ 8 MB) go as ACP image blocks when the agent advertises `promptCapabilities.image`; other files go as `file://` resource links.
+
+## History
+- The last 30 chats are kept in localStorage, trimmed, without image data. They are saved shortly after each change and when the window closes.
+- Sending in a stopped or restored chat restarts the agent with `session/load` when it advertises `loadSession` (Claude and Codex do). Replayed history is dropped because the thread already has it. If the agent can't reload, a fresh session starts and the chat says so.
 
 ## Test
 - `bun run test src/main/agents`: drives a fake ACP agent (`fake-agent.mjs`) through the real host.
-- Real app: `.scratch`-style drive steps can open the panel with `.side-switch button[data-tip="Agent"]`, type into `.ag-composer textarea` and approve with `.ag-approval .ag-pill.primary`.
+- Packaged: `CASCADE_EXE=dist/linux-unpacked/cascade node scripts/drive.mjs …` drives the AppImage contents (adapters run from `app.asar.unpacked`).
+- Real app: drive steps can open the panel with `.side-switch button[data-tip="Agent"]`, type into `.ag-composer textarea` and approve with `.ag-approval .ag-pill.primary`.
 
 ## Limits
-- Chats live only as long as the app; they are not persisted or resumed.
-- You can't queue or steer a prompt while the agent is working (use Stop first).
-- Images and file attachments aren't supported in the composer.
+- Images are not persisted in history, only their names.
+- Gemini CLI and OpenCode must be installed separately.

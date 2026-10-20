@@ -1,5 +1,6 @@
 // Launch the built app with Playwright, run an optional step script, save screenshots.
 // usage: node scripts/drive.mjs <outdir> [steps.mjs]
+// CASCADE_EXE=dist/linux-unpacked/cascade drives a packaged build instead of the dev build in out/.
 import { _electron as electron } from 'playwright'
 import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -8,7 +9,10 @@ const out = resolve(process.argv[2] ?? '/tmp/cascade-shots')
 mkdirSync(out, { recursive: true })
 const env = { ...process.env, CASCADE_USER_DATA: process.env.CASCADE_USER_DATA ?? '/tmp/cascade-test-profile' }
 delete env.ELECTRON_RUN_AS_NODE
-const app = await electron.launch({ executablePath: resolve('node_modules/electron/dist/electron'), args: ['.', '--no-sandbox'], env })
+const packaged = process.env.CASCADE_EXE
+const app = await electron.launch(packaged
+  ? { executablePath: resolve(packaged), args: ['--no-sandbox'], env }
+  : { executablePath: resolve('node_modules/electron/dist/electron'), args: ['.', '--no-sandbox'], env })
 const logs = []
 app.on('window', (w) => {
   w.on('console', (m) => logs.push(`[${m.type()}] ${m.text()}`))

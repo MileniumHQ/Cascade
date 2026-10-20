@@ -49,6 +49,23 @@ test('closing a chat ends the process; unknown/missing agents fail clearly', asy
   expect(LAUNCHERS.map(l => l.id)).toEqual(['claude', 'codex', 'opencode', 'gemini'])
 })
 
+test('attachments become image / resource_link blocks; resume reloads the session without replaying history', async () => {
+  const events: AgentEvent[] = []
+  host = make(events)
+  const first = await host.start('claude')
+  expect(first.images).toBe(true)
+  await host.prompt(first.id, 'look', [{ kind: 'image', name: 'a.png', mimeType: 'image/png', data: 'iVBORw0KGgo=' }, { kind: 'file', name: 'notes.txt', path: '/tmp/notes.txt' }])
+  const said = () => events.flatMap(e => e.type === 'update' && e.update.sessionUpdate === 'agent_message_chunk' && e.update.content.type === 'text' ? [e.update.content.text] : []).join('')
+  expect(said()).toContain('blocks=text,image,resource_link(file:///tmp/notes.txt)')
+  await host.close(first.id)
+  const again = await host.start('claude', { resume: first.sessionId })
+  expect(again).toMatchObject({ resumed: true, sessionId: first.sessionId })
+  expect(said()).not.toContain('REPLAY')
+  // Resumed sessions are already primed: no second context preamble.
+  await host.prompt(again.id, 'more')
+  expect(said()).toContain('echo:more')
+})
+
 test('PATH search adds common install locations GUI launches miss', async () => {
   const dirs = await searchPath('/home/someone', '/usr/bin')
   expect(dirs[0]).toBe('/usr/bin')

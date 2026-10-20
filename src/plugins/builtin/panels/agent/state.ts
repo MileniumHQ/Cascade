@@ -1,16 +1,19 @@
-import { createStore, produce } from 'solid-js/store'
+import { createStore, produce, unwrap } from 'solid-js/store'
 import { createSignal } from 'solid-js'
-import type { AgentEvent, AgentProvider, AgentsBridge, PermissionOption, SessionConfigOption, SessionUpdate, ToolCallUpdate } from '@shared/agents'
+import type { AgentAttachment, AgentEvent, AgentProvider, AgentSession, AgentsBridge, PermissionOption, SessionConfigOption, SessionUpdate, ToolCallUpdate } from '@shared/agents'
 
 export type ToolStatus = 'pending' | 'in_progress' | 'completed' | 'failed'
 export type Entry =
-  | { kind: 'user'; text: string }
+  | { kind: 'user'; text: string; attachments?: Shown[] }
   | { kind: 'assistant'; text: string }
   | { kind: 'thought'; text: string }
   | { kind: 'tool'; id: string; title: string; toolKind: string; status: ToolStatus; detail: string }
   | { kind: 'plan'; items: { content: string; status: string }[] }
   | { kind: 'notice'; text: string; tone: 'info' | 'error' }
 
+/** How an attachment is shown in the thread (image data is kept in memory only, not persisted). */
+export interface Shown { kind: 'image' | 'file'; name: string; src?: string }
+export interface Queued { id: number; text: string; attachments: AgentAttachment[] }
 export interface Permission { requestId: string; toolCall: ToolCallUpdate; options: PermissionOption[] }
 export interface Chat {
   id: string
@@ -24,19 +27,64 @@ export interface Chat {
   permissions: Permission[]
   cascadeTools: boolean
   ended: boolean
+  /** Agent's session id + cwd, for resuming after the agent exits or the app restarts. */
+  sessionId: string
+  cwd: string
+  images: boolean
+  /** Messages typed while the agent was working; sent in order when it finishes. */
+  queue: Queued[]
+  /** The queue stops after a manual Stop until the user sends again. */
+  paused: boolean
 }
 
-const [chats, setChats] = createStore<Chat[]>([])
-const [activeId, setActiveId] = createSignal<string | null>(null)
+const STORE = 'cascade.agent.chats'
+const restore = (): Chat[] => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE) ?? '[]') as Chat[]
+    return saved.map(c => ({ ...c, running: false, permissions: [], queue: [], paused: false, ended: true }))
+  } catch { return [] }
+}
+const [chats, setChats] = createStore<Chat[]>(restore())
+const [activeId, setActiveId] = createSignal<string | null>(localStorage.getItem(`${STORE}.active`))
+if (!chats.some(c => c.id === activeId())) setActiveId(null)
+
+/** Save the last 30 chats (trimmed) shortly after changes. */
+let saveTimer: ReturnType<typeof setTimeout> | undefined
+function save() {
+  clearTimeout(saveTimer)
+  saveTimer = setTimeout(flush, 600)
+}
+function flush() {
+  clearTimeout(saveTimer)
+  const trimmed = chats.filter(c => c.entries.length).slice(-30).map(c => ({
+    ...c, running: false, permissions: [], queue: [],
+    entries: c.entries.slice(-300).map(e =>
+      e.kind === 'tool' ? { ...e, detail: e.detail.slice(0, 1500) }
+        : e.kind === 'user' && e.attachments ? { ...e, attachments: e.attachments.map(a => ({ kind: a.kind, name: a.name })) }
+          : e)
+  }))
+  try {
+    localStorage.setItem(STORE, JSON.stringify(trimmed))
+    localStorage.setItem(`${STORE}.active`, activeId() ?? '')
+  } catch { /* Quota: keep the in-memory history. */ }
+}
+addEventListener('pagehide', flush)
+addEventListener('beforeunload', flush)
 const [providers, setProviders] = createSignal<AgentProvider[]>([])
 /** Provider chosen for the next chat, before any session exists. */
 const [draftProvider, setDraftProvider] = createSignal(localStorage.getItem('cascade.agent.provider') ?? 'claude')
 const [starting, setStarting] = createSignal(false)
-export { chats, activeId, setActiveId, providers, draftProvider, starting }
+/** Off by default: permission requests are answered with the agent's allow option. Edits are undoable in Cascade. */
+const [askFirst, setAskFirstSignal] = createSignal(localStorage.getItem('cascade.agent.askFirst') === '1')
+export { chats, activeId, setActiveId, providers, draftProvider, starting, askFirst }
+export function setAskFirst(on: boolean) {
+  setAskFirstSignal(on)
+  localStorage.setItem('cascade.agent.askFirst', on ? '1' : '0')
+}
 
 export const active = () => chats.find(c => c.id === activeId()) ?? null
 const index = (id: string) => chats.findIndex(c => c.id === id)
-const edit = (id: string, fn: (chat: Chat) => void) => { const i = index(id); if (i >= 0) setChats(i, produce(fn)) }
+const edit = (id: string, fn: (chat: Chat) => void) => { const i = index(id); if (i >= 0) { setChats(i, produce(fn)); save() } }
 
 /** Remembered option values per provider (model, effort, mode…), re-applied to new chats. */
 const remembered = (providerId: string): Record<string, string | boolean> => {
@@ -70,21 +118,49 @@ export async function startChat(providerId = draftProvider()): Promise<Chat | nu
   setStarting(true)
   try {
     const session = await bridge.start(providerId)
-    const chat: Chat = { id: session.id, providerId, agent: session.agent, title: 'New chat', entries: [], options: session.options, running: false, startedAt: 0, permissions: [], cascadeTools: session.cascadeTools, ended: false }
+    const chat: Chat = { id: session.id, providerId, agent: session.agent, title: 'New chat', entries: [], options: session.options, running: false, startedAt: 0, permissions: [], cascadeTools: session.cascadeTools, ended: false, sessionId: session.sessionId, cwd: session.cwd, images: session.images, queue: [], paused: false }
     if (previous && !previous.entries.length) closeChat(previous.id)
     setChats(chats.length, chat)
     setActiveId(chat.id)
+    save()
     if (!session.cascadeTools) edit(chat.id, c => { c.entries.push({ kind: 'notice', tone: 'info', text: 'This agent could not attach Cascade’s editor tools, so it can chat but not edit the project.' }) })
     // Re-apply the user's last choices for this agent when they're still offered.
-    for (const [configId, value] of Object.entries(remembered(providerId))) {
-      const option = chat.options.find(o => o.id === configId)
-      if (!option || option.currentValue === value) continue
-      if (option.type === 'select' && !flatOptions(option).some(o => o.value === value)) continue
-      await setOption(chat.id, configId, value, false).catch(() => {})
-    }
+    await applyRemembered(chat.id, providerId, chat.options)
     return active()
   } finally { setStarting(false) }
 }
+
+async function applyRemembered(chatId: string, providerId: string, options: SessionConfigOption[]) {
+  for (const [configId, value] of Object.entries(remembered(providerId))) {
+    const option = options.find(o => o.id === configId)
+    if (!option || option.currentValue === value) continue
+    if (option.type === 'select' && !flatOptions(option).some(o => o.value === value)) continue
+    await setOption(chatId, configId, value, false).catch(() => {})
+  }
+}
+
+/** Bring an ended chat (agent exited, or restored after restart) back: reload its session when the agent can. */
+async function resumeChat(chat: Chat): Promise<string | null> {
+  if (!bridge) return null
+  setStarting(true)
+  try {
+    let session: AgentSession
+    try { session = await bridge.start(chat.providerId, { resume: chat.sessionId || undefined, cwd: chat.cwd || undefined }) }
+    catch (error) { edit(chat.id, c => { c.entries.push({ kind: 'notice', tone: 'error', text: message(error) }) }); return null }
+    const old = chat.id
+    edit(old, c => {
+      c.id = session.id; c.ended = false; c.sessionId = session.sessionId; c.cwd = session.cwd; c.images = session.images
+      c.options = session.options; c.agent = session.agent; c.cascadeTools = session.cascadeTools
+      if (!session.resumed) c.entries.push({ kind: 'notice', tone: 'info', text: 'Started a fresh session; the agent doesn’t remember the messages above.' })
+    })
+    if (activeId() === old) setActiveId(session.id)
+    if (!session.resumed) await applyRemembered(session.id, chat.providerId, session.options)
+    return session.id
+  } finally { setStarting(false) }
+}
+
+/** Resume the active chat if its agent has stopped (used by the picker to list models). */
+export async function resumeActive() { const c = active(); if (c?.ended && c.entries.length) await resumeChat(c) }
 
 export function newChat() {
   const current = active()
@@ -97,28 +173,63 @@ export function closeChat(id: string) {
   const i = index(id)
   if (i >= 0) setChats(produce(list => { list.splice(i, 1) }))
   if (activeId() === id) setActiveId(chats.at(-1)?.id ?? null)
+  save()
 }
 
-export async function send(text: string) {
+let queueId = 0
+/** Send now, or queue it when the agent is busy. */
+export async function send(text: string, attachments: AgentAttachment[] = []) {
   let chat = active()
-  if (!chat || chat.ended) chat = await startChat()
+  if (chat?.running) {
+    edit(chat.id, c => { c.queue.push({ id: ++queueId, text, attachments }); c.paused = false })
+    return
+  }
+  if (chat?.ended && chat.entries.length) {
+    const id = await resumeChat(chat)
+    chat = id ? chats[index(id)] : null
+  } else if (!chat || chat.ended) chat = await startChat()
   if (!chat || !bridge) return
-  const id = chat.id
+  await turn(chat.id, text, attachments)
+}
+
+const shown = (a: AgentAttachment): Shown => a.kind === 'image' ? { kind: 'image', name: a.name, src: `data:${a.mimeType};base64,${a.data}` } : { kind: 'file', name: a.name }
+
+async function turn(startId: string, text: string, attachments: AgentAttachment[]) {
+  if (!bridge) return
+  let id = startId
   edit(id, c => {
-    c.entries.push({ kind: 'user', text })
-    if (c.title === 'New chat') c.title = text.replace(/\s+/g, ' ').slice(0, 60)
+    c.entries.push({ kind: 'user', text, ...(attachments.length ? { attachments: attachments.map(shown) } : {}) })
+    if (c.title === 'New chat') c.title = (text || attachments[0]?.name || 'Chat').replace(/\s+/g, ' ').slice(0, 60)
     c.running = true; c.startedAt = Date.now()
   })
+  let next: Queued | undefined
   try {
-    const stop = await bridge.prompt(id, text)
+    // Queued items come out of the store as proxies, which IPC can't clone.
+    const stop = await bridge.prompt(id, text, structuredClone(unwrap(attachments)))
     if (stop === 'refusal') edit(id, c => { c.entries.push({ kind: 'notice', tone: 'error', text: 'The agent declined this request.' }) })
     if (stop === 'max_tokens' || stop === 'max_turn_requests') edit(id, c => { c.entries.push({ kind: 'notice', tone: 'info', text: 'The agent stopped early (turn limit). Say “continue” to resume.' }) })
+    if (stop === 'cancelled') edit(id, c => { if (c.queue.length) c.paused = true })
   } catch (error) {
-    edit(id, c => { c.entries.push({ kind: 'notice', tone: 'error', text: message(error) }) })
+    edit(id, c => { c.entries.push({ kind: 'notice', tone: 'error', text: message(error) }); if (c.queue.length) c.paused = true })
   } finally {
-    edit(id, c => { c.running = false; c.permissions = [] })
+    edit(id, c => {
+      c.running = false; c.permissions = []
+      if (!c.paused && !c.ended) next = c.queue.shift()
+    })
   }
+  const chat = chats[index(id)]
+  if (next && chat) { id = chat.id; await turn(id, next.text, next.attachments) }
 }
+
+/** Queue controls: send a queued message now (when idle) or drop it. */
+export async function sendQueued(itemId: number) {
+  const chat = active()
+  const item = chat?.queue.find(q => q.id === itemId)
+  if (!chat || !item || chat.running) return
+  edit(chat.id, c => { c.queue = c.queue.filter(q => q.id !== itemId); c.paused = false })
+  await send(item.text, item.attachments)
+}
+export const dropQueued = (itemId: number) => { const c = active(); if (c) edit(c.id, x => { x.queue = x.queue.filter(q => q.id !== itemId) }) }
 
 export const cancel = () => { const c = active(); if (c && bridge) void bridge.cancel(c.id).catch(() => {}) }
 export const respond = (requestId: string, optionId: string | null) => {
@@ -204,8 +315,11 @@ function apply(c: Chat, u: SessionUpdate) {
 
 function onEvent(e: AgentEvent) {
   if (e.type === 'update') edit(e.chatId, c => apply(c, e.update))
-  else if (e.type === 'permission') edit(e.chatId, c => { c.permissions.push({ requestId: e.requestId, toolCall: e.toolCall, options: e.options }) })
+  else if (e.type === 'permission' && !askFirst()) {
+    const allow = e.options.find(o => o.kind === 'allow_once') ?? e.options.find(o => o.kind === 'allow_always')
+    void bridge?.respond(e.chatId, e.requestId, allow?.optionId ?? null)
+  } else if (e.type === 'permission') edit(e.chatId, c => { c.permissions.push({ requestId: e.requestId, toolCall: e.toolCall, options: e.options }) })
   else if (e.type === 'permission-resolved') edit(e.chatId, c => { c.permissions = c.permissions.filter(p => p.requestId !== e.requestId) })
   else if (e.type === 'options') edit(e.chatId, c => { c.options = e.options })
-  else if (e.type === 'exit') edit(e.chatId, c => { c.ended = true; c.running = false; c.permissions = []; c.entries.push({ kind: 'notice', tone: 'error', text: `Agent stopped: ${e.message}` }) })
+  else if (e.type === 'exit') edit(e.chatId, c => { c.ended = true; c.running = false; c.permissions = []; c.paused = true; c.entries.push({ kind: 'notice', tone: 'error', text: `Agent stopped: ${e.message}` }) })
 }
