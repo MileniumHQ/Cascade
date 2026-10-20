@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
-import { createReadStream } from 'node:fs'
-import { access, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile, open } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
+import { downloadModel, size } from './model-download'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { availableParallelism } from 'node:os'
@@ -136,13 +136,6 @@ export function constrainToSpeech(transcript: Transcript, silences: { start: num
   return transcript
 }
 
-async function size(path: string) { return (await stat(path).catch(() => null))?.size ?? 0 }
-async function sha256(path: string) {
-  const hash = createHash('sha256')
-  for await (const chunk of createReadStream(path)) hash.update(chunk)
-  return hash.digest('hex')
-}
-
 export function createTranscriptionService(userData: string, resourcesPath = process.resourcesPath) {
   const modelsDir = join(userData, 'models')
   const cacheDir = join(userData, 'cache/transcripts')
@@ -176,38 +169,9 @@ export function createTranscriptionService(userData: string, resourcesPath = pro
     await mkdir(modelsDir, { recursive: true })
     const target = join(modelsDir, id)
     if (await size(target) === model.sizeBytes) return
-    const partial = `${target}.partial`
-    let offset = await size(partial)
-    if (offset > model.sizeBytes) { await rm(partial); offset = 0 }
-    if (offset < model.sizeBytes) {
-      const response = await fetch(model.url, { headers: offset ? { Range: `bytes=${offset}-` } : {}, signal })
-      if (!response.ok || !response.body) throw new Error(`Model download failed: HTTP ${response.status}`)
-      if (response.status === 206) {
-        if (!response.headers.get('content-range')?.startsWith(`bytes ${offset}-`)) throw new Error('Invalid model download resume offset')
-      } else offset = 0 // Server ignored Range: replace the partial file.
-      const file = await open(partial, offset ? 'a' : 'w')
-      let last = 0
-      try {
-        for await (const chunk of response.body) {
-          signal.throwIfAborted()
-          await file.writeFile(chunk)
-          offset += chunk.length
-          if (Date.now() - last > 250) {
-            last = Date.now()
-            emit({ phase: 'download', progress: Math.min(1, offset / model.sizeBytes), model: id, bytes: offset, totalBytes: model.sizeBytes, message: `Downloading ${model.name}` })
-          }
-        }
-      } finally { await file.close() }
-    }
-    signal.throwIfAborted()
-    emit({ phase: 'download', progress: 1, model: id, message: `Verifying ${model.name}` })
-    if (await size(partial) !== model.sizeBytes || await sha256(partial) !== model.sha256) {
-      await rm(partial, { force: true })
-      throw new Error(`Model checksum mismatch: ${id}. Retry the download.`)
-    }
-    signal.throwIfAborted()
-    await rename(partial, target)
+    await downloadModel(model, target, signal, (progress, message) => emit({ phase: 'download', progress, model: id, message }))
   }
+
   async function exclusive<T>(work: (signal: AbortSignal) => Promise<T>): Promise<T> {
     if (current) throw new Error('Captioning is already running. Cancel it before starting another job.')
     const controller = new AbortController()
@@ -251,7 +215,7 @@ export function createTranscriptionService(userData: string, resourcesPath = pro
       if (!binary) throw new Error('whisper-cli is missing. Run bun run setup:whisper, then retry.')
       const source = await stat(path)
       if (!source.isFile()) throw new Error('The transcription source must be a file')
-      const key = createHash('sha256').update(JSON.stringify([VERSION, resolve(path), source.mtimeMs, source.size, range, model, language])).digest('hex')
+      const key = createHash('sha256').update(JSON.stringify([VERSION, resolve(path), source.mtimeMs, source.size, range, model, language, !!opts.verbatim])).digest('hex')
       await mkdir(cacheDir, { recursive: true })
       const cached = join(cacheDir, `${key}.json`)
       try {
@@ -287,7 +251,8 @@ export function createTranscriptionService(userData: string, resourcesPath = pro
         let progressBuffer = ''
         const args = ['-m', join(modelsDir, model), '-f', wav, '-l', language, '--vad', '-vm', join(modelsDir, VAD_MODEL),
           '--dtw', 'large.v3.turbo', '--no-flash-attn', '-ojf', '--split-on-word', '-pp', '-of', join(temp, 'transcript'),
-          '-t', String(Math.min(8, availableParallelism()))]
+          '-t', String(Math.min(4, availableParallelism())),
+          ...(opts.verbatim ? ['--prompt', 'Umm, let me think, like, hmm... I, uh, I guess so.'] : [])]
         const report = (text: string) => {
           progressBuffer = (progressBuffer + text).slice(-1024)
           const matches = [...progressBuffer.matchAll(/progress\s*=\s*(\d+)%/g)]
@@ -310,6 +275,7 @@ export function createTranscriptionService(userData: string, resourcesPath = pro
         }
         const json = JSON.parse(await readFile(join(temp, 'transcript.json'), 'utf8')) as WhisperJSON
         const transcript = constrainToSpeech(parseWhisperJSON(json, path, model, range?.start, range?.end), silences)
+        transcript.silences = silences
         signal.throwIfAborted()
         const staging = join(temp, 'cache.json')
         await writeFile(staging, JSON.stringify(transcript))
@@ -342,4 +308,5 @@ export async function registerTranscribeIpc(userData: string) {
   ipcMain.handle('transcribe:run', (event, path: string, opts?: TranscribeOptions) => withOwner(event.sender, () => service.run(path, opts)))
   ipcMain.handle('transcribe:cancel', (event) => { if (owner === event.sender) return service.cancel() })
   app.on('before-quit', () => { void service.cancel() })
+  return service
 }

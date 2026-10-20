@@ -52,6 +52,10 @@ export interface AnalysisEvent {
 }
 
 export interface SourceAnalysis {
+  /** Parts that failed; completed parts remain usable. */
+  errors?: Partial<Record<AnalysisPart, string>>
+  /** Wall-clock milliseconds per part, excluding cache hits. */
+  timings?: Partial<Record<AnalysisPart, number>>
   version: number
   path: string
   /** Analyzed source range. */

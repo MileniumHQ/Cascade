@@ -20,12 +20,15 @@ export interface TranscriptSegment {
   words: TranscriptWord[]
 }
 export interface Transcript {
+  silences?: { start: Flicks; end: Flicks }[]
   path: string
   model: string
   language: string
   segments: TranscriptSegment[]
 }
 export interface TranscribeOptions {
+  /** Preserve spoken disfluencies via a filler-rich initial prompt. */
+  verbatim?: boolean
   range?: { start: Flicks; end: Flicks }
   language?: string
   model?: string
@@ -195,8 +198,8 @@ export interface HostBridge {
     onProgress(fn: (progress: TranscribeProgress) => void): () => void
   }
 
-  /** Local source analysis (words, tone, sound events, shots). Optional until the service lands. */
-  analysis?: AnalysisBridge
+  /** Local source analysis (words, tone, sound events, shots). */
+  analysis: AnalysisBridge
 
   export: {
     start(req: ExportRequest): Promise<string>

@@ -10,6 +10,8 @@ files:
   - "!**/*.map"
 # Native executables can't run from inside the asar archive.
 asarUnpack:
+  - node_modules/sherpa-onnx-node/**
+  - node_modules/sherpa-onnx-linux-x64/**
   - node_modules/ffmpeg-static/**
   - node_modules/esbuild/**
   - node_modules/@esbuild/**
