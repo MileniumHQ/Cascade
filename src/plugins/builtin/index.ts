@@ -14,12 +14,12 @@ import { textPropertiesPlugin } from './properties/text'
 import { audioPropertiesPlugin } from './properties/audio'
 import { placeholderPanel } from './panels/placeholder'
 import { previewPlugin } from './panels/preview'
+import { sourcesPlugin } from './panels/sources'
 
 const panelsPlugin = definePlugin({
   id: 'cascade.panels',
   name: 'Panels',
   activate(ctx) {
-    ctx.panels.register(placeholderPanel({ id: 'sources', title: 'Sources', icon: 'folder-open', region: 'side' }))
     ctx.panels.register(placeholderPanel({ id: 'inspector', title: 'Clip', icon: 'sliders-horizontal', region: 'top' }))
     ctx.panels.register(placeholderPanel({ id: 'timeline', title: 'Timeline', icon: 'gantt-chart', region: 'bottom', order: 0 }))
     ctx.panels.register(placeholderPanel({ id: 'keyframes', title: 'Keyframes', icon: 'diamond', region: 'bottom', order: 1 }))
@@ -45,7 +45,8 @@ export const builtinPlugins: PluginDefinition[] = [
   textPropertiesPlugin,
   audioPropertiesPlugin,
   panelsPlugin,
-  previewPlugin
+  previewPlugin,
+  sourcesPlugin
 ]
 
 /** Plugins that are safe to load in headless export workers (no UI). */

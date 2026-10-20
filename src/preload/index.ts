@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type { HostBridge, McpCall, RenderWorkerBridge } from '../shared/ipc'
 
 function on<T>(channel: string, callback: (value: T) => void): () => void {
@@ -26,7 +26,8 @@ const bridge: HostBridge = {
     readText: (path) => ipcRenderer.invoke('fs:readText', path),
     writeText: (path, text) => ipcRenderer.invoke('fs:writeText', path, text),
     exists: (path) => ipcRenderer.invoke('fs:exists', path),
-    stat: (path) => ipcRenderer.invoke('fs:stat', path)
+    stat: (path) => ipcRenderer.invoke('fs:stat', path),
+    pathForFile: (file) => webUtils.getPathForFile(file)
   },
   projects: {
     recent: () => ipcRenderer.invoke('projects:recent'),

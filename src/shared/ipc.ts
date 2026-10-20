@@ -104,6 +104,8 @@ export interface HostBridge {
     writeText(path: string, text: string): Promise<void>
     exists(path: string): Promise<boolean>
     stat(path: string): Promise<{ size: number; mtime: number } | null>
+    /** Filesystem path of a File from a drop / file input (Electron removed `File.path`). */
+    pathForFile(file: File): string
   }
 
   projects: {
