@@ -77,10 +77,11 @@ export const elementPlugin = definePlugin({
       description: 'A rectangle with corners, border and shadow',
       icon: 'square',
       mediaType: 'element',
-      create: () => ({
+      create: (project) => ({
         name: 'Shape',
         clipData: { kind: 'shape' },
-        properties: [{ type: 'transform' }, { type: 'size', values: { size: [0.3, 0.3 * (16 / 9)] } }, { type: 'fill', values: { color: '#c6f24e' } }, { type: 'corners' }]
+        // Square: 30% of the frame height on both axes, whatever the aspect ratio.
+        properties: [{ type: 'transform' }, { type: 'size', values: { size: [0.3 * (project.settings.height / project.settings.width), 0.3] } }, { type: 'fill', values: { color: '#c6f24e' } }, { type: 'corners' }]
       })
     })
   }

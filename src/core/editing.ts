@@ -98,7 +98,7 @@ export class Editing {
   addGenerated(generatorId: string): Id | null {
     const gen = this.app.registries.generators.get(generatorId)
     if (!gen) return null
-    const res = gen.create()
+    const res = gen.create(this.app.project())
     const m: MediaItem = { id: uid('md_'), type: gen.mediaType, name: res.name, meta: {}, data: { ...res.data, clipData: res.clipData, properties: res.properties, generator: gen.id } }
     this.doc.transact(`Add ${gen.name}`, (d) => {
       d.media[m.id] = m

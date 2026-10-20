@@ -342,7 +342,8 @@ export interface GeneratorContribution extends Contribution {
   description: string
   icon: Icon
   mediaType: string
-  create(): {
+  /** `project` is the current document, e.g. to size things for the frame's aspect ratio. */
+  create(project: Project): {
     name: string
     data?: Record<string, unknown>
     clipData?: Record<string, unknown>
