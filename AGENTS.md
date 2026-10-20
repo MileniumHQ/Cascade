@@ -8,6 +8,14 @@ DOM-powered video editor. Electron 44 + TypeScript (TS 7 / tsgo) + SolidJS + pla
 - `bun run build` — electron-vite build to `out/`.
 - `bun run dev` — dev app. **This environment sets `ELECTRON_RUN_AS_NODE=1`; unset it** (`env -u ELECTRON_RUN_AS_NODE bun run dev`) or Electron starts as plain Node.
 
+## Driving the real app (screenshots / e2e)
+- `node scripts/drive.mjs <shotsDir> <steps.mjs>` launches the built app (`bun run build` first) via Playwright `_electron`, at 1600×960, and runs `default async ({ app, win, shot, sleep })`. `window.cascadeApp` exposes `CascadeAPI` (`edit`, `playback`, `selection`, `view`, `registries`…). Example: `scripts/steps-example.mjs`.
+- Isolation env vars: `CASCADE_USER_DATA` (profile dir; driver defaults to `/tmp/cascade-test-profile`; user plugins live in `<profile>/plugins`) and `CASCADE_PROJECTS` (projects dir).
+- Test footage: `~/wwdc.webm` (1h48m AV1 1080p 29.97 + Opus). The first ~5s are black; seek to e.g. 600s for content.
+
+## User plugins
+- `.ts/.tsx/.js/.mjs` files in `<userData>/plugins` are bundled with esbuild and hot-reloaded on save. Default-export a `PluginDefinition`. Example: `examples/plugins/wiggle.ts` (typecheck with `tsc -p tsconfig.examples.json`).
+
 ## Layout
 - `src/shared/` — pure types/utilities used everywhere: `time.ts` (flicks, timecode), `project.ts` (document schema), `ipc.ts` (`HostBridge` = `window.cascade`).
 - `src/core/` — the kernel: `plugin-api.ts` (THE plugin contract), `plugin-host.ts`, `registry.ts`, `document.ts` (immer + undo), `editing.ts` (all undoable edit ops), `timeline-ops.ts` (pure overwrite/split/trim logic), `evaluate.ts` (keyframes/easing), `app.ts` (services + `CascadeAPI`).
