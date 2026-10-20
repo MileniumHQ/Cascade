@@ -11,6 +11,8 @@ import { Ids, applyEdits, staging, commit } from './edits'
 import { frame, imageResult, sheet } from './images'
 import { pluginDocs } from './plugin-docs'
 import type { CaptionsService } from '../captions'
+import type { SourceAnalysis } from '@shared/analysis'
+import { buildIndex, formatTranscript, searchTranscript, type Analyses, type TWord, type TSentence } from './transcript'
 
 interface CaptionJob { jobId: string; state: 'running' | 'done' | 'error'; phase: string; progress: number; message: string; clips?: number }
 
@@ -19,6 +21,7 @@ export class AgentTools {
   readonly ids = new Ids()
   readonly jobs = new Map<string, ExportProgress>()
   readonly captionJobs = new Map<string, CaptionJob>()
+  readonly analyses: Analyses = new Map()
   readonly history: { label: string; source: string }[] = []
   constructor(readonly app: CascadeAPI) {}
   private session() {
@@ -41,6 +44,18 @@ export class AgentTools {
     }
     for (const m of app.timeline().markers) lines.push(`marker ${ids.show(m.id, 'k')} ${formatTimecode(m.t, app.fps())} ${JSON.stringify(m.name)}`)
     return lines.join('\n')
+  }
+  /** Pull cached analyses for every file-backed source (cheap; nothing is computed). */
+  private async loadAnalyses(): Promise<Analyses> {
+    const bridge = this.app.host?.analysis
+    if (!bridge) return this.analyses
+    const paths = [...new Set(Object.values(this.app.project().media).map(m => m.path).filter((p): p is string => !!p))]
+    await Promise.all(paths.map(async path => { this.analyses.set(path, await bridge.cached(path)) }))
+    return this.analyses
+  }
+  private transcriptIds() {
+    const ids = this.ids
+    return { wordId: (w: TWord) => ids.show(w.key, 'w'), sentenceId: (s: TSentence) => ids.show(s.key, 's'), clipLabel: (c: { id: string }) => ids.show(c.id, 'c'), trackLabel: (t: { id: string; name: string }) => `${ids.show(t.id, 't')} ${t.name}` }
   }
   async call(call: McpCall): Promise<CallToolResult> {
     try {
@@ -84,8 +99,14 @@ export class AgentTools {
           commit(app, importer.project(), `import ${imported.length} media`)
           return text(imported.map(id => ({ id: ids.show(id, 'm'), name: app.project().media[id].name })))
         }
-        case 'timeline_get': return text(a.detail === 'detailed' ? `${this.timeline()}\n${JSON.stringify(app.timeline())}` : this.timeline())
-        case 'timeline_apply_edits': return text(applyEdits(app, a, ids))
+        case 'timeline_get': {
+          const index = buildIndex(app.project(), await this.loadAnalyses())
+          const hint = index.words.length ? `transcript: ${index.words.length} words, ${index.events.length} sound events, ${index.shots.length} shot cuts on the timeline; read with transcript_get`
+            : index.unanalyzed.length ? `transcript: none; media_analyze ${[...new Set(index.unanalyzed.map(u => ids.show(u.clip.mediaId!, 'm')))].join(', ')} to edit by words, tone, sound events and shots` : ''
+          const body = a.detail === 'detailed' ? `${this.timeline()}\n${JSON.stringify(app.timeline())}` : this.timeline()
+          return text(hint ? `${body}\n${hint}` : body)
+        }
+        case 'timeline_apply_edits': return text(applyEdits(app, a, ids, await this.loadAnalyses()))
         case 'timeline_undo': return text(app.doc.undo() ? 'Undone' : 'Nothing to undo')
         case 'timeline_redo': return text(app.doc.redo() ? 'Redone' : 'Nothing to redo')
         case 'history_get': return text({ canUndo: app.doc.canUndo, undo: app.doc.undoLabel, canRedo: app.doc.canRedo, redo: app.doc.redoLabel, recentEvents: this.history.slice(-30) })
@@ -111,6 +132,48 @@ export class AgentTools {
         }
         case 'job_get': { const job = this.jobs.get(a.jobId) ?? this.captionJobs.get(a.jobId); if (!job) throw new Error('Unknown job; use a jobId from export_start in this editor session'); return text(job) }
         case 'export_cancel': if (!this.jobs.has(a.jobId)) throw new Error('Unknown job'); await host.export.cancel(a.jobId); return text('Cancellation requested')
+        case 'media_analyze': {
+          const bridge = host.analysis
+          if (!bridge) throw new Error('The analysis service is not available in this build')
+          const media = app.project().media[ids.resolve(a.mediaId)]
+          if (!media?.path || !(media.type === 'video' || media.type === 'audio')) throw new Error('Pick a video or audio source from media_list')
+          if (media.meta.hasAudio === false) throw new Error('Source has no audio track')
+          const end = a.end ?? media.meta.duration
+          const range = a.start !== undefined || a.end !== undefined ? { start: a.start ?? 0, end: end! } : undefined
+          if (range && !(range.end > range.start)) throw new Error('end must be after start (source flicks)')
+          if ([...this.captionJobs.values()].some(j => j.state === 'running')) throw new Error('An analysis/captions job is already running; poll job_get')
+          const jobId = `analysis-${this.captionJobs.size + 1}`
+          const job: CaptionJob = { jobId, state: 'running', phase: 'starting', progress: 0, message: 'Starting' }
+          this.captionJobs.set(jobId, job)
+          const off = bridge.onProgress(p => { if (job.state === 'running' && p.path === media.path) Object.assign(job, { phase: p.part, progress: Math.round(p.progress * 100) / 100, message: p.message }) })
+          const run = async () => {
+            const status = await bridge.status()
+            if (status.missing.length) {
+              const total = status.missing.reduce((n, m) => n + m.sizeBytes, 0)
+              Object.assign(job, { phase: 'download', message: 'Waiting for the user to approve the model download in the editor' })
+              const answer = await host.dialog.confirm({ message: 'Download local analysis models?', detail: `${Math.ceil(total / 1e6)} MB for ${[...new Set(status.missing.map(m => m.part))].join(', ')}. Everything runs on this computer.`, buttons: ['Download models', 'Skip'] })
+              if (answer === 0) await bridge.installModels()
+            }
+            return bridge.run(media.path!, { range, language: a.language })
+          }
+          run().then((result: SourceAnalysis) => {
+            const list = (this.analyses.get(media.path!) ?? []).filter(x => x.range.start !== result.range.start || x.range.end !== result.range.end)
+            this.analyses.set(media.path!, [...list, result])
+            Object.assign(job, { state: 'done', progress: 1, message: `Analyzed ${result.words.length} words, ${result.sentences.length} sentences, ${result.events.length} sound events, ${result.shots.length} shot cuts (parts: ${result.parts.join(', ')}). Next: transcript_get.` })
+          }).catch(error => Object.assign(job, { state: 'error', message: error instanceof Error ? error.message : String(error) })).finally(off)
+          return text({ jobId, next: 'Poll job_get (about 2s per minute of speech), then transcript_get.' })
+        }
+        case 'transcript_get': {
+          const index = buildIndex(app.project(), await this.loadAnalyses())
+          return text(formatTranscript(index, { fps: app.fps(), view: a.view, start: a.start, end: a.end, clipId: a.clipId && ids.resolve(a.clipId), maxLines: a.maxLines, ...this.transcriptIds() }))
+        }
+        case 'transcript_search': {
+          const index = buildIndex(app.project(), await this.loadAnalyses())
+          const hits = searchTranscript(index, a.query, a.regex)
+          const t = this.transcriptIds(), tc = (v: number) => formatTimecode(v, app.fps())
+          if (!hits.length) return text(index.words.length ? 'No matches.' : 'No transcript yet. Run media_analyze on the sources first.')
+          return text(hits.slice(0, 100).map(h => { const w = h.sentence.words; return `${t.sentenceId(h.sentence)} ${t.wordId(w[h.from])}${h.to > h.from ? `–${t.wordId(w[h.to])}` : ''} ${tc(w[h.from].start)}–${tc(w[h.to].end)} ${w.map((x, i) => `${i === h.from ? '«' : ''}${x.text}${i === h.to ? '»' : ''}`).join(' ')}` }).join('\n') + (hits.length > 100 ? `\n… ${hits.length - 100} more` : ''))
+        }
         case 'captions_generate': {
           const captions = app.services.get('captions') as CaptionsService | undefined
           if (!captions) throw new Error('The captions plugin is not active')

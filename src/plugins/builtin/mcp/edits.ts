@@ -3,6 +3,8 @@ import { clipEnd, findClip, type Project, type Clip } from '@shared/project'
 import { MIN_CLIP } from '@core/timeline-ops'
 import { editSchema } from '../../../main/mcp/catalog'
 import type { ParamDef } from '@core/plugin-api'
+import { FLICKS } from '@shared/time'
+import { buildIndex, mergeCuts, pauseCuts, wordsCut, type Analyses, type CutRange, type TWord } from './transcript'
 
 /** Stable aliases for this editor lifetime; full document ids also work. */
 export class Ids {
@@ -36,7 +38,7 @@ function validateValue(def: ParamDef, value: unknown) {
   else if (['text', 'font', 'color', 'select'].includes(def.type) && typeof value !== 'string') throw new Error(`${def.id} needs a string`)
   if (def.options && !def.options.some(o => o.value === value)) throw new Error(`Unknown ${def.id} option; inspect registry_list`)
 }
-export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids) {
+export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?: Analyses) {
   const ops = editSchema.array().min(1).max(200).parse((input as { ops: unknown }).ops)
   const copy = staging(app)
   const refs = new Map<string, string>()
@@ -53,10 +55,25 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids) {
     if (!tr || tr.locked || tr.kind !== kind) throw new Error(`Invalid/locked destination track ${value ?? kind}`)
     return tr.id
   }
+  // Split boundaries explicitly, then remove the interval and shift all unlocked tracks equally (including gaps).
+  const ripple = (start: number, end: number) => {
+    for (const t of [end, start]) {
+      const targets = copy.timeline().tracks.filter(t => !t.locked).flatMap(tr => tr.clips.filter(c => c.start < t && clipEnd(c) > t).map(c => c.id))
+      for (const id of targets) editable(id)
+      if (targets.length) copy.edit.splitAt(t, targets)
+    }
+    const remove = copy.timeline().tracks.filter(t => !t.locked).flatMap(t => t.clips.filter(c => c.start >= start && clipEnd(c) <= end).map(c => c.id))
+    for (const id of remove) editable(id)
+    copy.edit.deleteClips(remove)
+    for (const tr of copy.timeline().tracks.filter(t => !t.locked)) for (const c of tr.clips) if (c.start >= end) editable(c.id)
+    copy.edit.moveClips(copy.timeline().tracks.filter(t => !t.locked).flatMap(t => t.clips.filter(c => c.start >= end).map(c => ({ clipId: c.id, trackId: t.id, start: c.start - (end - start) }))))
+    copy.doc.transact('Ripple markers', d => { const tl = d.timelines[d.activeTimeline]; tl.markers = tl.markers.filter(m => m.t < start || m.t >= end); for (const m of tl.markers) if (m.t >= end) m.t -= end - start })
+  }
   const results: string[] = []
   for (const [index, op] of ops.entries()) {
     try {
       let created: string | null | undefined
+      let summary: string | undefined
       if ('ref' in op && op.ref && (refs.has(op.ref) || ids.resolve(op.ref) !== op.ref)) throw new Error(`Duplicate/reserved ref ${op.ref}`)
       if (op.op === 'add_clip' || op.op === 'add_text') {
         let clip: Clip | null
@@ -94,18 +111,41 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids) {
       } else if (op.op === 'add_marker') copy.edit.addMarker(op.time, op.name)
       else if (op.op === 'ripple_delete') {
         if (op.end <= op.start) throw new Error('end must be after start')
-        // Split boundaries explicitly, then remove the interval and shift all unlocked tracks equally (including gaps).
-        for (const t of [op.end, op.start]) {
-          const targets = copy.timeline().tracks.filter(t => !t.locked).flatMap(tr => tr.clips.filter(c => c.start < t && clipEnd(c) > t).map(c => c.id))
-          for (const id of targets) editable(id)
-          if (targets.length) copy.edit.splitAt(t, targets)
+        ripple(op.start, op.end)
+      } else if (op.op === 'cut_words' || op.op === 'remove_fillers' || op.op === 'tighten_pauses') {
+        if (!analyses) throw new Error('Transcript edits need analysis; run media_analyze first')
+        const index = buildIndex(copy.project(), analyses)
+        const fps = copy.project().settings.fps
+        const bounds = (w: TWord) => { const c = findClip(copy.timeline(), w.clipId)!.clip; return { start: c.start, end: clipEnd(c) } }
+        let cuts: CutRange[]
+        if (op.op === 'cut_words') {
+          const locate = (value: string, edge: 'first' | 'last') => {
+            const key = ids.resolve(value)
+            const s = index.sentences.find(x => x.key === key)
+            const w = s ? (edge === 'first' ? s.words[0] : s.words.at(-1)!) : index.words.find(x => x.key === key)
+            if (!w) throw new Error(`${value} is not in the current transcript (already cut, or not an id from transcript_get)`)
+            return index.words.indexOf(w)
+          }
+          const a = locate(op.from, 'first'), b = locate(op.to ?? op.from, 'last')
+          if (b < a) throw new Error('to comes before from')
+          cuts = [wordsCut(index.words, a, b, fps, bounds)]
+        } else {
+          const clip = op.clipId ? editable(op.clipId).clip : undefined
+          const range = { start: Math.max(op.start ?? 0, clip?.start ?? 0), end: Math.min(op.end ?? Number.MAX_SAFE_INTEGER, clip ? clipEnd(clip) : Number.MAX_SAFE_INTEGER) }
+          if (op.op === 'remove_fillers') {
+            cuts = []
+            const w = index.words
+            for (let i = 0; i < w.length; i++) {
+              if (!w[i].filler || w[i].start < range.start || w[i].end > range.end) continue
+              let j = i
+              while (j + 1 < w.length && w[j + 1].filler && w[j + 1].clipId === w[i].clipId) j++
+              cuts.push(wordsCut(w, i, j, fps, bounds)); i = j
+            }
+          } else cuts = pauseCuts(index, op.maxPause, op.keep ?? op.maxPause, fps, range, op.keepEvents)
         }
-        const remove = copy.timeline().tracks.filter(t => !t.locked).flatMap(t => t.clips.filter(c => c.start >= op.start && clipEnd(c) <= op.end).map(c => c.id))
-        for (const id of remove) editable(id)
-        copy.edit.deleteClips(remove)
-        for (const tr of copy.timeline().tracks.filter(t => !t.locked)) for (const c of tr.clips) if (c.start >= op.end) editable(c.id)
-        copy.edit.moveClips(copy.timeline().tracks.filter(t => !t.locked).flatMap(t => t.clips.filter(c => c.start >= op.end).map(c => ({ clipId: c.id, trackId: t.id, start: c.start - (op.end - op.start) }))))
-        copy.doc.transact('Ripple markers', d => { const tl = d.timelines[d.activeTimeline]; tl.markers = tl.markers.filter(m => m.t < op.start || m.t >= op.end); for (const m of tl.markers) if (m.t >= op.end) m.t -= op.end - op.start })
+        const merged = mergeCuts(cuts)
+        for (const c of merged) ripple(c.start, c.end)
+        summary = merged.length ? `removed ${merged.length} range${merged.length === 1 ? '' : 's'}, ${(merged.reduce((n, c) => n + c.end - c.start, 0) / FLICKS).toFixed(2)}s total` : 'nothing to remove'
       } else {
         const { clip, track: currentTrack } = editable(op.clipId)
         if (op.op === 'move') {
@@ -144,7 +184,7 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids) {
         }
       }
       if ('ref' in op && op.ref && created) refs.set(op.ref, created)
-      results.push(`${index + 1}. ${op.op}: ok${created ? ` ${ids.show(created, op.op === 'add_property' ? 'p' : 'c')}${'ref' in op && op.ref ? ` (${op.ref})` : ''}` : ''}`)
+      results.push(`${index + 1}. ${op.op}: ok${summary ? ` (${summary})` : ''}${created ? ` ${ids.show(created, op.op === 'add_property' ? 'p' : 'c')}${'ref' in op && op.ref ? ` (${op.ref})` : ''}` : ''}`)
     } catch (e) { throw new Error(`Operation ${index + 1} (${op.op}): ${e instanceof Error ? e.message : e}. No edits applied.`) }
   }
   for (const tr of copy.timeline().tracks) for (const clip of tr.clips) {
