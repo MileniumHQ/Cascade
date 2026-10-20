@@ -1,0 +1,26 @@
+appId: app.cascade.editor
+productName: Cascade
+executableName: cascade
+directories:
+  output: dist
+  buildResources: resources
+files:
+  - out/**
+  - package.json
+  - "!**/*.map"
+# Native executables can't run from inside the asar archive.
+asarUnpack:
+  - node_modules/ffmpeg-static/**
+  - node_modules/esbuild/**
+  - node_modules/@esbuild/**
+extraResources:
+  # Built by `bun run setup:whisper`; resolved via process.resourcesPath in src/main/transcribe.ts.
+  - from: resources/whisper/linux-x64
+    to: whisper/linux-x64
+    filter: ["whisper-cli", "LICENSE", "build.json"]
+linux:
+  target:
+    - AppImage
+    - dir
+  icon: resources/icon.png
+  category: AudioVideo

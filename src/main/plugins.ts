@@ -1,11 +1,21 @@
 import { watch, type FSWatcher } from 'node:fs'
 import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
-import { build, stop, type BuildFailure } from 'esbuild'
+import { fileURLToPath } from 'node:url'
+import type { BuildFailure } from 'esbuild'
 import type { PluginFile } from '../shared/ipc'
 
 interface BuiltPlugin { file: PluginFile; version: number; code?: string; fingerprint: string }
 const extensions = ['.ts', '.tsx', '.js', '.mjs']
+
+// Packaged builds: esbuild's native binary is unpacked next to the asar (see electron-builder.yml);
+// it can't be spawned from inside the archive. esbuild reads this at module load, hence the lazy import.
+const here = fileURLToPath(import.meta.url)
+if (!process.env.ESBUILD_BINARY_PATH && here.includes('app.asar')) {
+  process.env.ESBUILD_BINARY_PATH = join(here.replace(/app\.asar(?=[/\\]|$).*$/, 'app.asar.unpacked'), 'node_modules', '@esbuild', `${process.platform}-${process.arch}`, 'bin', 'esbuild')
+}
+let esbuild: typeof import('esbuild') | undefined
+const loadEsbuild = async () => (esbuild ??= await import('esbuild'))
 
 export class UserPlugins {
   private plugins = new Map<string, BuiltPlugin>()
@@ -73,7 +83,7 @@ export class UserPlugins {
     const version = (this.versions.get(name) ?? 0) + 1
     const file: PluginFile = { name, path, url: `cascade-plugin://plugins/${encodeURIComponent(name)}.js?v=${version}` }
     try {
-      const result = await build({ entryPoints: [path], bundle: true, format: 'esm', platform: 'browser', target: 'esnext', write: false, metafile: true, logLevel: 'silent', sourcemap: 'inline', sourcesContent: true })
+      const result = await (await loadEsbuild()).build({ entryPoints: [path], bundle: true, format: 'esm', platform: 'browser', target: 'esnext', write: false, metafile: true, logLevel: 'silent', sourcemap: 'inline', sourcesContent: true })
       const code = result.outputFiles[0].text
       return { file, version, code, fingerprint: `${path}\0${code}` }
     } catch (error) {
@@ -147,6 +157,6 @@ export class UserPlugins {
     clearTimeout(this.timer)
     for (const watcher of this.watchers) watcher.close()
     this.watchers = []
-    stop()
+    esbuild?.stop()
   }
 }

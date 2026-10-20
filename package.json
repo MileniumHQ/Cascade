@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "setup:whisper": "node scripts/setup-whisper.mjs",
-    "dist:linux": "electron-vite build && electron-builder --linux"
+    "dist:linux": "(test -x resources/whisper/linux-x64/whisper-cli || node scripts/setup-whisper.mjs) && electron-vite build && electron-builder --linux"
   },
   "trustedDependencies": ["electron", "electron-winstaller", "esbuild", "ffmpeg-static"],
   "dependencies": {
