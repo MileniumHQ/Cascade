@@ -689,6 +689,12 @@
   color: var(--muted);
   font-size: 11px;
 }
+.status-sep {
+  width: 1px;
+  height: 10px;
+  margin: 0 4px;
+  background: var(--line-2);
+}
 .status-fill {
   flex: 1;
 }
