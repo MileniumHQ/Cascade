@@ -43,6 +43,7 @@ function disposeStage(value: Stage) {
   stageResources.delete(value)
 }
 
+/** Stereo PCM for `[start, start+duration)` of a decoded source (`mediaId`, or `clip:<id>` for processed clip audio). */
 async function audioBuffer(context: OfflineAudioContext, mediaId: string, start: number, duration: number) {
   const source = job.pcmSources?.[mediaId]
   if (!source) throw new Error(`Missing PCM for media ${mediaId}`)
@@ -119,7 +120,8 @@ async function initialize() {
         const context = new OfflineAudioContext(2, Math.max(1, Math.round(command.duration * sampleRate)), sampleRate)
         const audio: StageAudio = {
           context, destination: context.destination, chunk: { start: command.start, duration: command.duration },
-          getBuffer: (media, start, duration) => audioBuffer(context, media.id, start, duration)
+          getBuffer: (media, start, duration) => audioBuffer(context, media.id, start, duration),
+          getClipBuffer: async (clip, start, duration) => (job.pcmSources?.[`clip:${clip.id}`] ? audioBuffer(context, `clip:${clip.id}`, start, duration) : null)
         }
         const audioStage = createStage(audio)
         try {

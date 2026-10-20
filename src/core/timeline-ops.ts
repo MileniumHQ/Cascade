@@ -5,8 +5,23 @@
  */
 import { clipEnd, uid, type Clip, type Id, type Timeline, type Track } from '@shared/project'
 import type { Flicks } from '@shared/time'
+import { constantMap, type TimeMap } from './time-remap'
 
 export const MIN_CLIP: Flicks = 705_600_000 / 240
+
+/** How clip-local time maps to source time; the editor scopes one aware of keyframed speed. */
+const constantResolver = (clip: Clip) => constantMap(clip.speed ?? 1)
+let resolveTimeMap: (clip: Clip) => TimeMap = constantResolver
+/** Run `body` with `fn` resolving time maps for trims and splits (scoped: several apps may coexist). */
+export function withTimeMaps<T>(fn: (clip: Clip) => TimeMap, body: () => T): T {
+  const prev = resolveTimeMap
+  resolveTimeMap = fn
+  try {
+    return body()
+  } finally {
+    resolveTimeMap = prev
+  }
+}
 
 export function sortClips(track: Track) {
   track.clips.sort((a, b) => a.start - b.start)
@@ -22,9 +37,11 @@ function shiftKeyframes(clip: Clip, delta: Flicks) {
 /** Move the clip's start edge to `newStart` keeping the content in place (trim in). */
 export function trimStartTo(clip: Clip, newStart: Flicks) {
   const delta = newStart - clip.start
+  const map = resolveTimeMap(clip)
   clip.start = newStart
   clip.duration -= delta
-  clip.sourceIn += delta * (clip.speed ?? 1)
+  // offset() extrapolates below 0 at the first speed, so trimming outwards works too.
+  clip.sourceIn += Math.round(map.offset(delta))
   shiftKeyframes(clip, delta)
 }
 
@@ -114,17 +131,17 @@ export function trimClip(track: Track, clipId: Id, edge: 'start' | 'end', t: Fli
   const i = track.clips.findIndex((c) => c.id === clipId)
   if (i < 0) return
   const c = track.clips[i]
-  const speed = c.speed ?? 1
+  const map = resolveTimeMap(c)
   if (edge === 'start') {
     const prev = track.clips[i - 1]
     let min = prev ? clipEnd(prev) : 0
-    if (limits.sourceDuration !== undefined) min = Math.max(min, c.start - c.sourceIn / speed)
+    if (limits.sourceDuration !== undefined) min = Math.max(min, c.start + map.localAt(-c.sourceIn))
     const max = clipEnd(c) - MIN_CLIP
     trimStartTo(c, Math.round(Math.min(max, Math.max(min, t))))
   } else {
     const next = track.clips[i + 1]
     let max = next ? next.start : Number.MAX_SAFE_INTEGER
-    if (limits.sourceDuration !== undefined) max = Math.min(max, c.start + (limits.sourceDuration - c.sourceIn) / speed)
+    if (limits.sourceDuration !== undefined) max = Math.min(max, c.start + map.localAt(limits.sourceDuration - c.sourceIn))
     const min = c.start + MIN_CLIP
     trimEndTo(c, Math.round(Math.max(min, Math.min(max, t))))
   }

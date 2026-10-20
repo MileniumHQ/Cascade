@@ -4,7 +4,7 @@ import type { Clip } from '@shared/project'
 import { formatTimecode } from '@shared/time'
 import { Icon } from '@ui/icon'
 import { IconButton, NumberField, Segmented, TextField } from '@ui/kit'
-import { useRegistry } from '@ui/reactive'
+import { useRegistry, useValue } from '@ui/reactive'
 
 const FITS = [
   { value: 'contain', label: 'Contain', tip: 'Fit inside the frame' },
@@ -35,6 +35,12 @@ function Timecode(props: { label: string; value: string; tip?: string }) {
 
 export function ClipHeader(props: { app: CascadeAPI; clip: Clip }) {
   const app = props.app
+  const time = useValue(app.playback.time)
+  // Effective speed at the playhead (speed may be keyframed, or come from the linked clip).
+  const speedNow = createMemo(() => {
+    const map = app.edit.timeMap(props.clip)
+    return map.constant ?? map.speedAt(Math.max(0, time() - props.clip.start))
+  })
   const types = useRegistry(app.registries.mediaTypes)
   const mt = createMemo(() => (types(), app.registries.mediaTypes.get(props.clip.type)))
   const fps = () => app.fps()
@@ -82,7 +88,7 @@ export function ClipHeader(props: { app: CascadeAPI; clip: Clip }) {
             <div class="ins-opt">
               <NumberField
                 prefix="Speed"
-                value={props.clip.speed ?? 1}
+                value={speedNow()}
                 min={0.05}
                 max={32}
                 step={0.05}
@@ -91,7 +97,7 @@ export function ClipHeader(props: { app: CascadeAPI; clip: Clip }) {
                 width="112px"
                 onChange={(speed, gesture) => app.edit.updateClip(props.clip.id, { speed }, { gesture })}
               />
-              <Show when={(props.clip.speed ?? 1) !== 1}>
+              <Show when={Math.abs(speedNow() - 1) > 1e-6}>
                 <IconButton icon="rotate-ccw" size="sm" tip="Reset speed" onClick={() => app.edit.updateClip(props.clip.id, { speed: 1 })} />
               </Show>
             </div>

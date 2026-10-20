@@ -3,6 +3,7 @@ import { Value } from '@core/value'
 import { findClip, uid, type Clip, type Id, type MediaItem, type PropertyInstance } from '@shared/project'
 import type { TranscribeProgress } from '@shared/ipc'
 import { pushToast } from '@ui/kit'
+import { constantMap } from '@core/time-remap'
 import { groupCaptions } from './group'
 import { mountCaptionProgress } from './progress'
 
@@ -39,10 +40,9 @@ export const captionsPlugin = definePlugin({
         if (clipId && !clip) throw new Error('The caption target clip no longer exists')
         const media = project.media[opts.mediaId ?? clip?.mediaId ?? app.selection.media.get().at(-1) ?? '']
         if (!supported(media) || (clip && !['video', 'audio'].includes(clip.type))) throw new Error('Select a video or audio clip, or an audio source, to generate captions')
-        const speed = clip?.speed ?? 1
-        if (!Number.isFinite(speed) || speed <= 0) throw new Error('Captions require a positive playback speed')
+        const speed = clip ? app.edit.timeMap(clip) : constantMap(1)
         const sourceIn = clip?.sourceIn ?? 0
-        const sourceEnd = clip ? Math.round(sourceIn + clip.duration * speed) : media.meta.duration
+        const sourceEnd = clip ? Math.round(sourceIn + speed.offset(clip.duration)) : media.meta.duration
         if (!sourceEnd || sourceEnd <= sourceIn) throw new Error('The source has no usable duration')
         const mapping = { sourceIn, start: clip?.start ?? app.playback.time.get(), speed, end: 0 }
         mapping.end = mapping.start + (clip?.duration ?? sourceEnd)
@@ -75,7 +75,7 @@ export const captionsPlugin = definePlugin({
           const current = app.project()
           const currentTimeline = current.timelines[timelineId]
           const now = clip && currentTimeline && findClip(currentTimeline, clip.id)?.clip
-          if (current.id !== project.id || current.activeTimeline !== timelineId || current.media[media.id]?.path !== media.path || (clip && (!now || now.start !== clip.start || now.duration !== clip.duration || now.sourceIn !== clip.sourceIn || now.speed !== clip.speed || now.mediaId !== clip.mediaId))) {
+          if (current.id !== project.id || current.activeTimeline !== timelineId || current.media[media.id]?.path !== media.path || (clip && (!now || now.start !== clip.start || now.duration !== clip.duration || now.sourceIn !== clip.sourceIn || Math.round(app.edit.timeMap(now).offset(now.duration)) !== sourceEnd - sourceIn || now.mediaId !== clip.mediaId))) {
             throw new Error('The caption target changed. Select it and generate again (the transcript is cached).')
           }
           const captions = groupCaptions(transcript, mapping)

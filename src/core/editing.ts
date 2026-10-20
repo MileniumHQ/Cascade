@@ -2,7 +2,7 @@
  * High-level, undoable editing operations. The UI, keyboard commands, the MCP server and
  * plugins all edit through here so behaviour is identical everywhere.
  */
-import type { Draft } from 'immer'
+import { current, type Draft } from 'immer'
 import {
   clipEnd,
   findClip,
@@ -23,6 +23,7 @@ import type { CascadeApp } from './app'
 import { defaultParams, evaluateParam, keyframeAt, KF_EPSILON } from './evaluate'
 import type { ImportCandidate, MediaTypeContribution, ParamDef, PropertyContribution } from './plugin-api'
 import * as ops from './timeline-ops'
+import { clipTimeMap, constantMap, type TimeMap } from './time-remap'
 
 type DProject = Draft<Project>
 
@@ -33,8 +34,12 @@ export interface GestureOpts {
 export class Editing {
   constructor(private app: CascadeApp) {}
 
-  private get doc() {
-    return this.app.doc
+  /** Trims and splits need the real (possibly keyframed) speed of a clip, linked partners included. */
+  private readonly maps = (clip: Clip) => clipTimeMap(clip, this.app.timeline(), this.app.registries)
+
+  /** The document, with every edit transaction resolving time maps for this app's timeline. */
+  private readonly doc = {
+    transact: (...args: Parameters<CascadeApp['doc']['transact']>) => ops.withTimeMaps(this.maps, () => this.app.doc.transact(...args))
   }
 
   private tl(d: DProject): Draft<Timeline> {
@@ -46,11 +51,11 @@ export class Editing {
   }
 
   private gesture(key: string, opts?: GestureOpts) {
-    if (opts?.gesture === 'start') this.doc.beginGesture(key)
+    if (opts?.gesture === 'start') this.app.doc.beginGesture(key)
     return { coalesce: key }
   }
   private endGesture(opts?: GestureOpts) {
-    if (opts?.gesture === 'end') this.doc.endGesture()
+    if (opts?.gesture === 'end') this.app.doc.endGesture()
   }
 
   // ───────────────────────── media ─────────────────────────
@@ -331,22 +336,68 @@ export class Editing {
   }
 
   updateClip(clipId: Id, patch: Partial<Pick<Clip, 'name' | 'color' | 'speed'>>, opts?: GestureOpts) {
+    const at = this.localTime(clipId)
     this.doc.transact(
       'Edit clip',
       (d) => {
         const f = this.findDraftClip(d, clipId)
         if (!f) return
-        Object.assign(f.clip, patch)
-        // Linked partners (video + its audio) share timing, so speed changes apply to the group.
-        if (patch.speed !== undefined && f.clip.linkId)
-          for (const id of ops.expandLinked(this.tl(d) as Timeline, [clipId])) {
-            const p = id !== clipId && this.findDraftClip(d, id)
-            if (p) p.clip.speed = patch.speed
-          }
+        const { speed, ...rest } = patch
+        Object.assign(f.clip, rest)
+        if (speed !== undefined) this.writeSpeed(d, clipId, speed, at)
       },
       this.gesture(`clip:${clipId}`, opts)
     )
     this.endGesture(opts)
+  }
+
+  /** The time-remap property type (the built-in Speed), if one is registered. */
+  private remapType(): string | undefined {
+    return this.app.registries.properties.entries().find((e) => e.value.timeRemap)?.value.id
+  }
+
+  /**
+   * Speed is the time-remap property of the link group's owner (the clip that has one, else the
+   * picture), so video and its audio stay in sync. Keyframed speed gets a keyframe at `at`.
+   * A legacy `clip.speed` multiplier is folded into the property.
+   */
+  private writeSpeed(d: DProject, clipId: Id, speed: number, at: Flicks) {
+    const type = this.remapType()
+    const tl = this.tl(d) as Timeline
+    const group = [...ops.expandLinked(tl, [clipId])].map((id) => this.findDraftClip(d, id)?.clip).filter((c): c is Clip => !!c)
+    const self = group.find((c) => c.id === clipId)
+    if (!self) return
+    const param = type && this.app.registries.properties.get(type)!.timeRemap!
+    const has = (c: Clip) => !!type && c.properties.some((p) => p.type === type && p.enabled)
+    const visual = (c: Clip) => this.app.registries.mediaTypes.get(c.type)?.track === 'visual'
+    let owner = has(self) ? self : (group.find(has) ?? group.find(visual) ?? self)
+    if (type && param && !has(owner)) {
+      const contrib = this.app.registries.properties.get(type)!
+      if (!this.propertyApplies(contrib, owner)) owner = self
+      if (this.propertyApplies(contrib, owner)) {
+        const inst = this.newPropertyInstance(type)
+        if (inst) owner.properties.push(inst)
+      }
+    }
+    const prop = type ? owner.properties.find((p) => p.type === type && p.enabled) : undefined
+    if (!prop || !param) {
+      // No Speed property available: fall back to the plain multiplier on the whole group.
+      for (const c of group) c.speed = speed
+      return
+    }
+    const base = owner.speed ?? 1
+    for (const c of group) delete c.speed
+    const pv = (prop.params[param] ??= { value: 1 })
+    if (pv.keyframes?.length) {
+      if (base !== 1) for (const k of pv.keyframes) k.value = Number(k.value) * base
+      const t = at + (self.start - owner.start)
+      const k = keyframeAt(pv as ParamValue, t)
+      if (k) k.value = speed
+      else {
+        pv.keyframes.push({ id: uid('kf_'), t, value: speed, easing: { id: this.defaultEasing() } })
+        pv.keyframes.sort((a, b) => a.t - b.t)
+      }
+    } else pv.value = speed
   }
 
   setClipData(clipId: Id, patch: Record<string, unknown>, opts?: GestureOpts) {
@@ -367,7 +418,20 @@ export class Editing {
         const f = this.findDraftClip(d, id)
         if (!f?.clip.linkId) continue
         const link = f.clip.linkId
-        for (const tr of this.tl(d).tracks) for (const c of tr.clips) if (c.linkId === link) c.linkId = undefined
+        const group = this.tl(d).tracks.flatMap((tr) => tr.clips.filter((c) => c.linkId === link))
+        // Partners that followed the group's speed keep it once unlinked.
+        const type = this.remapType()
+        const owner = type && group.find((c) => c.properties.some((p) => p.type === type && p.enabled))
+        for (const c of group) {
+          c.linkId = undefined
+          if (!owner || c === owner || c.properties.some((p) => p.type === type)) continue
+          const prop = owner.properties.find((p) => p.type === type && p.enabled)!
+          const shift = owner.start - c.start
+          const copy = structuredClone(current(prop))
+          copy.id = uid('pi_')
+          for (const pv of Object.values(copy.params)) for (const k of pv.keyframes ?? []) (k.t += shift), (k.id = uid('kf_'))
+          c.properties.push(copy)
+        }
       }
     })
   }
@@ -483,6 +547,12 @@ export class Editing {
     const f = findClip(this.app.timeline(), clipId)
     if (!f) return 0
     return Math.min(f.clip.duration, Math.max(0, this.app.playback.time.get() - f.clip.start))
+  }
+
+  /** Timeline → source mapping of a clip (its own or its link group's speed curve). */
+  timeMap(clip: Clip | Id): TimeMap {
+    const c = typeof clip === 'string' ? findClip(this.app.timeline(), clip)?.clip : clip
+    return c ? clipTimeMap(c, this.app.timeline(), this.app.registries) : constantMap(1)
   }
 
   /** Evaluated value of a param at the playhead. */

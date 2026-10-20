@@ -1,6 +1,7 @@
 import { CascadeApp, type CascadeAPI } from '@core/app'
 import { clipEnd, findClip, type Project, type Clip } from '@shared/project'
 import { MIN_CLIP } from '@core/timeline-ops'
+import type { TimeMap } from '@core/time-remap'
 import { ANCHOR, editSchema, type Edit } from '../../../main/mcp/catalog'
 import type { ParamDef } from '@core/plugin-api'
 import { FLICKS } from '@shared/time'
@@ -24,12 +25,12 @@ export class Ids {
 type Resolved = Edit extends infer E ? E extends unknown ? { [K in keyof E]: K extends 'start' | 'end' | 'time' ? Extract<E[K], number | undefined> : E[K] } : never : never
 
 /** Timeline flicks for a transcript anchor (w12, w12.end, s3.start, w12.end+80ms, s3.end+2f) in `project`. */
-export function resolveAnchor(project: Project, analyses: Analyses | undefined, ids: Ids, value: string): number {
+export function resolveAnchor(project: Project, analyses: Analyses | undefined, ids: Ids, value: string, timeMap?: (clip: Clip) => TimeMap): number {
   const match = ANCHOR.exec(value)
   if (!match) throw new Error(`Invalid anchor ${value}`)
   const [, id, edge, sign, amount, unit] = match
   const key = ids.resolve(id)
-  const index = buildIndex(project, analyses ?? new Map())
+  const index = buildIndex(project, analyses ?? new Map(), timeMap)
   const item = index.sentences.find(x => x.key === key) ?? index.words.find(x => x.key === key)
   if (!item) throw new Error(`${id} is not on the timeline (cut already, or not an id from transcript_get/transcript_search)`)
   const fps = project.settings.fps
@@ -88,7 +89,7 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
     copy.doc.transact('Ripple markers', d => { const tl = d.timelines[d.activeTimeline]; tl.markers = tl.markers.filter(m => m.t < start || m.t >= end); for (const m of tl.markers) if (m.t >= end) m.t -= end - start })
   }
   // Transcript anchors (w12.end+80ms) resolve against the staged timeline as edited so far.
-  const anchor = (value: string) => resolveAnchor(copy.project(), analyses, ids, value)
+  const anchor = (value: string) => resolveAnchor(copy.project(), analyses, ids, value, (c) => copy.edit.timeMap(c))
   let retargeted = ''
   const resolveTimes = (raw: Edit): Resolved => {
     retargeted = ''

@@ -12,6 +12,7 @@ import { clipEnd, type Clip, type Id, type MediaItem, type Project, type Track }
 import { FLICKS, type Flicks } from '@shared/time'
 import type { Registries } from '@core/app'
 import { evaluateProperty } from '@core/evaluate'
+import { clipTimeMap } from '@core/time-remap'
 import { Emitter } from '@core/events'
 import type {
   AudioPropertyNode,
@@ -304,13 +305,14 @@ export class Stage {
     m.clip = clip
     const visible = t >= clip.start && t < clipEnd(clip) && !(track.kind === 'visual' && track.hidden)
     const local = Math.min(Math.max(0, t - clip.start), clip.duration)
-    const speed = clip.speed ?? 1
+    const remap = clipTimeMap(clip, project.timelines[this.timelineId ?? project.activeTimeline], this.opts.registries)
     const state: ClipFrameState = {
       time: t,
       local,
-      sourceTime: (clip.sourceIn + local * speed) / FLICKS,
+      sourceTime: (clip.sourceIn + remap.offset(local)) / FLICKS,
       playing: o.playing && visible,
-      rate: (o.rate ?? 1) * speed,
+      rate: (o.rate ?? 1) * remap.speedAt(local),
+      remap,
       clip,
       media,
       project,
@@ -467,9 +469,10 @@ export class Stage {
         mounted.audio!.gain.gain.setValueAtTime(1, (from - start) / FLICKS)
         mounted.audio!.gain.gain.setValueAtTime(0, (to - start) / FLICKS)
         const local = from - clip.start
+        const remap = clipTimeMap(clip, timeline, this.opts.registries)
         const state: ClipFrameState = {
-          time: from, local, sourceTime: (clip.sourceIn + local * (clip.speed ?? 1)) / FLICKS,
-          playing: false, rate: clip.speed ?? 1, clip, media: clip.mediaId ? project.media[clip.mediaId] : undefined,
+          time: from, local, sourceTime: (clip.sourceIn + remap.offset(local)) / FLICKS,
+          playing: false, rate: remap.speedAt(local), remap, clip, media: clip.mediaId ? project.media[clip.mediaId] : undefined,
           project, mode: 'render', extra: {}, u: this.units
         }
         mounted.inst.update(state)

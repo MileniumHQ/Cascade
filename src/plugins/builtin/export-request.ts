@@ -1,7 +1,8 @@
 import type { CascadeAPI } from '@core/app'
-import type { ExportRequest } from '@shared/ipc'
+import type { ClipAudioPlan, ExportRequest } from '@shared/ipc'
 import { clipEnd } from '@shared/project'
-import type { Flicks, FrameRate } from '@shared/time'
+import { FLICKS, type Flicks, type FrameRate } from '@shared/time'
+import { pitchOf } from './properties/audio'
 
 export interface ExportJobSpec {
   exporter: string
@@ -18,6 +19,56 @@ export interface ExportJobSpec {
 export function rangeHasAudio(app: CascadeAPI, range: { start: Flicks; end: Flicks }): boolean {
   const tl = app.project().timelines[app.project().activeTimeline]
   return !!tl?.tracks.some((t) => t.kind === 'audio' && !t.muted && t.clips.some((c) => c.start < range.end && clipEnd(c) > range.start))
+}
+
+/** Max rubberband commands per clip for a varying speed (a 10 Hz control rate, capped). */
+const MAX_COMMANDS = 400
+
+/**
+ * Audio processing for every audible clip in the range. Unchanged or "match speed" clips are
+ * resampled by the render worker; others are time-stretched by ffmpeg so pitch matches the
+ * preview (where the media element preserves pitch).
+ */
+export function audioPlan(app: CascadeAPI, range: { start: Flicks; end: Flicks }): Record<string, ClipAudioPlan> {
+  const project = app.project()
+  const tl = project.timelines[project.activeTimeline]
+  const plan: Record<string, ClipAudioPlan> = {}
+  for (const track of tl?.tracks ?? []) {
+    // Sound comes from audio tracks only (a video's picture clip is muted).
+    if (track.muted || track.kind !== 'audio') continue
+    for (const clip of track.clips) {
+      const media = clip.mediaId ? project.media[clip.mediaId] : undefined
+      if (!media?.path || media.meta.hasAudio === false) continue
+      const from = Math.max(range.start, clip.start) - clip.start
+      const to = Math.min(range.end, clipEnd(clip)) - clip.start
+      if (to <= from) continue
+      const map = app.edit.timeMap(clip)
+      const { semitones, matchSpeed } = pitchOf(clip)
+      const o0 = map.offset(from)
+      const sourceStart = Math.max(0, (clip.sourceIn + o0) / FLICKS)
+      const sourceEnd = Math.max(sourceStart, (clip.sourceIn + map.offset(to)) / FLICKS)
+      const base = { mediaId: media.id, sourceStart, sourceEnd }
+      if (semitones === 0 && (matchSpeed || map.constant === 1)) {
+        plan[clip.id] = { mode: 'source', ...base }
+        continue
+      }
+      const shift = Math.pow(2, semitones / 12)
+      const at = (t: Flicks) => {
+        const tempo = map.speedAt(t)
+        return { tempo, pitch: (matchSpeed ? tempo : 1) * shift }
+      }
+      const commands: NonNullable<ClipAudioPlan['commands']> = []
+      if (map.constant === null) {
+        const n = Math.min(MAX_COMMANDS, Math.max(2, Math.ceil(((to - from) / FLICKS) * 10)))
+        for (let i = 1; i < n; i++) {
+          const t = from + ((to - from) * i) / n
+          commands.push({ t: (map.offset(t) - o0) / FLICKS, ...at(t) })
+        }
+      }
+      plan[clip.id] = { mode: 'stretch', ...base, localStart: from / FLICKS, ...at(from), commands }
+    }
+  }
+  return plan
 }
 
 /** Resolve an export spec into a full ExportRequest: option defaults, global settings and the exporter's ffmpeg plan. */
@@ -45,6 +96,7 @@ export async function prepareExportRequest(app: CascadeAPI, spec: ExportJobSpec)
     exporter: exporter.id,
     options,
     encoding,
-    workers: app.settings.get<number>('export.workers') ?? 0
+    workers: app.settings.get<number>('export.workers') ?? 0,
+    audio: audioPlan(app, range)
   }
 }

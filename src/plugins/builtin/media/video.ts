@@ -111,7 +111,7 @@ function mountThumbnails(el: HTMLElement, c: ClipBodyContext) {
     if (!strip || disposed || strip.count === 0) return
     const v = c.view()
     const clip = c.clip()
-    const speed = clip.speed ?? 1
+    const map = c.app.edit.timeMap(clip)
     const h = v.height
     const tileW = Math.max(16, (strip.width / strip.height) * h)
     const startPx = (v.visibleStart / FLICKS) * v.pxPerSecond
@@ -119,13 +119,13 @@ function mountThumbnails(el: HTMLElement, c: ClipBodyContext) {
     const first = Math.floor(startPx / tileW)
     const last = Math.ceil(endPx / tileW)
     // Clip changes that don't move the tiles (most param edits) must not rebuild them.
-    const key = `${first}:${last}:${tileW}:${clip.sourceIn}:${speed}:${strip.count}:${v.pxPerSecond}`
+    const key = `${first}:${last}:${tileW}:${clip.sourceIn}:${map.offset(FLICKS)}:${map.offset(clip.duration)}:${strip.count}:${v.pxPerSecond}`
     if (key === drawn) return
     drawn = key
     const frag = document.createDocumentFragment()
     for (let i = first; i < last && i - first < 400; i++) {
-      const localSec = (i * tileW) / v.pxPerSecond
-      const srcSec = clip.sourceIn / FLICKS + localSec * speed
+      const local = ((i * tileW) / v.pxPerSecond) * FLICKS
+      const srcSec = (clip.sourceIn + map.offset(local)) / FLICKS
       const raw = Math.max(0, Math.floor(srcSec / strip.interval))
       if (strip.partial && raw >= strip.count) continue
       const idx = Math.min(strip.count - 1, raw)

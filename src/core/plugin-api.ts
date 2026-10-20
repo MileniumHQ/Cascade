@@ -19,6 +19,7 @@ import type { Clip, EasingRef, Id, MediaItem, MediaMeta, Project, PropertyInstan
 import type { FFmpegExportPlan } from '@shared/ipc'
 import type { Flicks, FrameRate } from '@shared/time'
 import type { CascadeAPI } from './app'
+import type { TimeMap } from './time-remap'
 
 export type Cleanup = () => void
 /** Mount a UI into `el`; return cleanup. */
@@ -179,6 +180,11 @@ export interface PropertyContribution extends Contribution {
   apply?(values: Record<string, unknown>, ctx: PropertyApplyContext): PropertyOutput | void
   /** Audio processing (Web Audio). */
   audio?: { create(ctx: BaseAudioContext, values: Record<string, unknown>): AudioPropertyNode }
+  /**
+   * Id of a number param that multiplies the clip's playback speed over time (keyframeable).
+   * The stage integrates it to map timeline time to source time; linked clips share it.
+   */
+  timeRemap?: string
   /** Custom inspector UI replacing the default param rows. */
   editor?: Mount<PropertyEditorContext>
   /** Compact one-line summary in the inspector header (e.g. "12px"). */
@@ -246,7 +252,10 @@ export interface ClipFrameState {
   /** Seconds into the source media (accounts for sourceIn and speed). */
   sourceTime: number
   playing: boolean
+  /** Playback rate × the clip's speed at this instant. */
   rate: number
+  /** Clip-local → source mapping (speed may vary over time). */
+  remap: TimeMap
   clip: Clip
   media?: MediaItem
   project: Project
@@ -288,6 +297,11 @@ export interface StageAudio {
   destination: AudioNode
   /** Render mode: decoded PCM for a media range (seconds). */
   getBuffer?(media: MediaItem, startSec: number, durationSec: number): Promise<AudioBuffer | null>
+  /**
+   * Render mode: audio already processed for a clip (e.g. time-stretched by ffmpeg), starting at
+   * clip-local `localSec`. Null when the clip has none; use `getBuffer` on the source then.
+   */
+  getClipBuffer?(clip: Clip, localSec: number, durationSec: number): Promise<AudioBuffer | null>
   /** Render mode: the chunk being rendered, in timeline seconds. */
   chunk?: { start: number; duration: number }
 }

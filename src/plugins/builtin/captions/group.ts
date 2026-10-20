@@ -1,3 +1,4 @@
+import { constantMap, type TimeMap } from '@core/time-remap'
 import type { Transcript, TranscriptWord } from '@shared/ipc'
 import { FLICKS } from '@shared/time'
 
@@ -23,10 +24,11 @@ function wrap(words: TranscriptWord[]): string | null {
 }
 
 /** Map before grouping, so pauses/minimum reading time respect playback speed. */
-export function groupCaptions(transcript: Transcript, mapping: { sourceIn: number; start: number; speed: number; end: number }): CaptionLine[] {
+export function groupCaptions(transcript: Transcript, mapping: { sourceIn: number; start: number; speed: number | TimeMap; end: number }): CaptionLine[] {
   const { sourceIn, start, speed, end } = mapping
-  if (!Number.isFinite(speed) || speed <= 0) throw new Error('Captions require a positive playback speed')
-  const map = (t: number) => Math.round(start + (t - sourceIn) / speed)
+  if (typeof speed === 'number' && (!Number.isFinite(speed) || speed <= 0)) throw new Error('Captions require a positive playback speed')
+  const remap = typeof speed === 'number' ? constantMap(speed) : speed
+  const map = (t: number) => Math.round(start + remap.localAt(t - sourceIn))
   const words = transcript.segments.flatMap((s) => s.words).map((w) => ({ ...w, start: Math.max(start, map(w.start)), end: Math.min(end, map(w.end)) }))
     .filter((w) => w.text.trim() && w.end > start && w.start < end).sort((a, b) => a.start - b.start)
   const groups: TranscriptWord[][] = []

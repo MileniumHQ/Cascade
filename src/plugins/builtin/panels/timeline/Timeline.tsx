@@ -724,6 +724,16 @@ function ClipView(props: {
   dragging: boolean
 }) {
   const app = props.app
+  const doc = useProject(app)
+  // "2×", or the range of a keyframed speed ("0.5–3×"). Reads the project: a linked partner may own the speed.
+  const speedLabel = createMemo(() => {
+    doc()
+    const map = app.edit.timeMap(props.clip)
+    const fmt = (v: number) => `${+v.toFixed(2)}`
+    if (map.constant !== null) return Math.abs(map.constant - 1) > 1e-6 ? `${fmt(map.constant)}×` : ''
+    const [lo, hi] = [map.min, map.max]
+    return fmt(lo) === fmt(hi) ? `${fmt(lo)}×` : `${fmt(lo)}–${fmt(hi)}×`
+  })
   const mt = () => app.registries.mediaTypes.get(props.clip.type)
   // Clamp the element to the visible window so hour-long clips stay cheap at any zoom.
   const geo = createMemo(() => {
@@ -777,8 +787,8 @@ function ClipView(props: {
           <Icon name="link-2" size={10} class="tl-clip-link" />
         </Show>
         <span class="tl-clip-name">{props.clip.name}</span>
-        <Show when={(props.clip.speed ?? 1) !== 1}>
-          <span class="tl-clip-speed tnum">{+(props.clip.speed ?? 1).toFixed(2)}×</span>
+        <Show when={speedLabel()}>
+          <span class="tl-clip-speed tnum">{speedLabel()}</span>
         </Show>
       </div>
       <div class="tl-clip-body">

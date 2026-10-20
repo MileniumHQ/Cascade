@@ -12,6 +12,7 @@ import { visualPropertiesPlugin } from './properties/visual'
 import { effectsPlugin } from './properties/effects'
 import { textPropertiesPlugin } from './properties/text'
 import { audioPropertiesPlugin } from './properties/audio'
+import { timePropertiesPlugin } from './properties/time'
 import { timelinePlugin } from './panels/timeline'
 import { mcpPlugin } from './mcp'
 import { previewPlugin } from './panels/preview'
@@ -41,6 +42,7 @@ export const builtinPlugins: PluginDefinition[] = [
   effectsPlugin,
   textPropertiesPlugin,
   audioPropertiesPlugin,
+  timePropertiesPlugin,
   previewPlugin,
   timelinePlugin,
   inspectorPlugin,
@@ -54,4 +56,4 @@ export const builtinPlugins: PluginDefinition[] = [
 ]
 
 /** Plugins that are safe to load in headless export workers (no UI). */
-export const renderPlugins: PluginDefinition[] = [exportersPlugin, paramsPlugin, easingsPlugin, videoPlugin, imagePlugin, elementPlugin, audioPlugin, visualPropertiesPlugin, effectsPlugin, textPropertiesPlugin, audioPropertiesPlugin]
+export const renderPlugins: PluginDefinition[] = [exportersPlugin, paramsPlugin, easingsPlugin, videoPlugin, imagePlugin, elementPlugin, audioPlugin, visualPropertiesPlugin, effectsPlugin, textPropertiesPlugin, audioPropertiesPlugin, timePropertiesPlugin]

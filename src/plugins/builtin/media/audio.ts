@@ -1,5 +1,6 @@
 import { definePlugin, type ClipBodyContext } from '@core/plugin-api'
 import { FLICKS } from '@shared/time'
+import { pitchOf } from '../properties/audio'
 import { frameSeconds, MediaSync } from './common'
 
 export const AUDIO_EXT = ['mp3', 'wav', 'flac', 'ogg', 'oga', 'opus', 'm4a', 'aac', 'aiff', 'aif', 'wma', 'weba']
@@ -44,13 +45,30 @@ export const audioPlugin = definePlugin({
                 const from = Math.max(chunk.start, clipStart)
                 const to = Math.min(chunk.start + chunk.duration, clipEnd)
                 if (to <= from) return
-                const speed = s.clip.speed ?? 1
-                const srcFrom = s.clip.sourceIn / FLICKS + (from - clipStart) * speed
-                const buf = await audio.getBuffer(s.media, srcFrom, (to - from) * speed)
-                if (!buf) return
-                scheduled = audio.context.createBufferSource()
-                scheduled.buffer = buf
-                scheduled.playbackRate.value = speed
+                const local = from - clipStart
+                // Time-stretched by ffmpeg (pitch independent of speed): play as is.
+                const stretched = await audio.getClipBuffer?.(s.clip, local, to - from)
+                if (stretched) {
+                  scheduled = audio.context.createBufferSource()
+                  scheduled.buffer = stretched
+                } else {
+                  // Resample: the source plays at the clip's (possibly varying) speed, so pitch follows it.
+                  const map = s.remap
+                  const F = FLICKS
+                  const o0 = map.offset(local * F)
+                  const srcFrom = s.clip.sourceIn / F + o0 / F
+                  const buf = await audio.getBuffer(s.media, srcFrom, (map.offset((to - clipStart) * F) - o0) / F)
+                  if (!buf) return
+                  scheduled = audio.context.createBufferSource()
+                  scheduled.buffer = buf
+                  const rate = scheduled.playbackRate
+                  const at = from - chunk.start
+                  if (map.constant !== null) rate.value = map.constant
+                  else {
+                    rate.setValueAtTime(map.speedAt(local * F), at)
+                    for (let t = 0.01; t < to - from; t += 0.01) rate.linearRampToValueAtTime(map.speedAt((local + t) * F), at + t)
+                  }
+                }
                 scheduled.connect(out)
                 scheduled.start(from - chunk.start)
               },
@@ -73,6 +91,9 @@ export const audioPlugin = definePlugin({
           return {
             audioOut: source,
             update(s) {
+              // Pitch is preserved unless the clip's Pitch property says it follows speed.
+              const keep = !pitchOf(s.clip).matchSpeed
+              if (el.preservesPitch !== keep) el.preservesPitch = keep
               sync.update(s, frameSeconds(s.project))
             },
             dispose() {
@@ -123,7 +144,8 @@ function mountWaveform(el: HTMLElement, c: ClipBodyContext) {
     if (!data) return
     const v = c.view()
     const clip = c.clip()
-    const speed = clip.speed ?? 1
+    const map = c.app.edit.timeMap(clip)
+    const src = (px: number) => (clip.sourceIn + map.offset((px / v.pxPerSecond) * FLICKS)) / FLICKS
     const startPx = Math.floor((v.visibleStart / FLICKS) * v.pxPerSecond)
     const endPx = Math.ceil((v.visibleEnd / FLICKS) * v.pxPerSecond)
     const w = Math.max(1, Math.min(8192, endPx - startPx))
@@ -141,8 +163,8 @@ function mountWaveform(el: HTMLElement, c: ClipBodyContext) {
     const n = peaks.length / 2
     const mid = h / 2
     for (let x = 0; x < w; x++) {
-      const s0 = clip.sourceIn / FLICKS + ((startPx + x) / v.pxPerSecond) * speed
-      const s1 = clip.sourceIn / FLICKS + ((startPx + x + 1) / v.pxPerSecond) * speed
+      const s0 = src(startPx + x)
+      const s1 = src(startPx + x + 1)
       let i0 = Math.floor(s0 * data.rate)
       const i1 = Math.max(i0 + 1, Math.floor(s1 * data.rate))
       let lo = 0

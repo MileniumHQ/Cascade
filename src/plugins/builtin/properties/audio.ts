@@ -1,4 +1,5 @@
 import { definePlugin, type AudioPropertyNode } from '@core/plugin-api'
+import type { Clip } from '@shared/project'
 
 const n = (v: unknown) => Number(v) || 0
 const dbToGain = (db: number) => (db <= -60 ? 0 : Math.pow(10, db / 20))
@@ -8,6 +9,54 @@ const isAudio = (clip: { type: string }) => clip.type === 'audio'
 const ramp = (p: AudioParam, v: number, at: number) => {
   if (Math.abs(p.value - v) < 1e-6) return
   p.setTargetAtTime(v, at, 0.012)
+}
+
+/**
+ * Pitch settings of a clip. By default sped-up audio keeps its pitch (time-stretch); with
+ * `matchSpeed` it follows speed like tape. `semitones` shifts on top of either.
+ * Read by the audio media type (preview) and the export audio plan.
+ */
+export function pitchOf(clip: Clip): { semitones: number; matchSpeed: boolean } {
+  const p = clip.properties.find((x) => x.type === 'pitch' && x.enabled)
+  return { semitones: n(p?.params.semitones?.value), matchSpeed: !!p?.params.matchSpeed?.value }
+}
+
+// Delay-line pitch shifter for the live preview: two taps sweeping a 50 ms window, crossfaded.
+// Export bakes pitch with ffmpeg rubberband instead, so this is a passthrough offline.
+const SHIFTER = `
+class CascadePitch extends AudioWorkletProcessor {
+  static get parameterDescriptors() { return [{ name: 'ratio', defaultValue: 1, minValue: 0.25, maxValue: 4, automationRate: 'k-rate' }] }
+  constructor() { super(); this.n = Math.round(sampleRate * 0.05); this.len = this.n * 2; this.buf = [new Float32Array(this.len), new Float32Array(this.len)]; this.w = 0; this.ph = 0 }
+  read(b, d) { let p = this.w - d; while (p < 0) p += this.len; const i = Math.floor(p), f = p - i; return b[i] * (1 - f) + b[(i + 1) % this.len] * f }
+  process(inputs, outputs, params) {
+    const inp = inputs[0], out = outputs[0], ratio = params.ratio[0]
+    if (!inp.length) return true
+    if (Math.abs(ratio - 1) < 1e-4) { for (let c = 0; c < out.length; c++) out[c].set(inp[Math.min(c, inp.length - 1)]); return true }
+    const step = (1 - ratio) / this.n
+    for (let i = 0; i < out[0].length; i++) {
+      this.ph = (this.ph + step + 1) % 1
+      const p2 = (this.ph + 0.5) % 1
+      const g1 = 1 - Math.abs(2 * this.ph - 1), g2 = 1 - Math.abs(2 * p2 - 1)
+      for (let c = 0; c < out.length; c++) {
+        const b = this.buf[c]
+        b[this.w] = inp[Math.min(c, inp.length - 1)][i]
+        out[c][i] = this.read(b, this.ph * this.n) * g1 + this.read(b, p2 * this.n) * g2
+      }
+      this.w = (this.w + 1) % this.len
+    }
+    return true
+  }
+}
+registerProcessor('cascade-pitch', CascadePitch)`
+const shifterLoaded = new WeakMap<BaseAudioContext, Promise<void>>()
+function loadShifter(ac: BaseAudioContext) {
+  let p = shifterLoaded.get(ac)
+  if (!p) {
+    const url = URL.createObjectURL(new Blob([SHIFTER], { type: 'text/javascript' }))
+    p = ac.audioWorklet.addModule(url).finally(() => URL.revokeObjectURL(url))
+    shifterLoaded.set(ac, p)
+  }
+  return p
 }
 
 /** Web Audio–backed properties for audio clips. */
@@ -116,6 +165,55 @@ export const audioPropertiesPlugin = definePlugin({
           return { input: f, output: f, update }
         }
       }
+    })
+    ctx.properties.register({
+      id: 'pitch',
+      name: 'Pitch',
+      description: 'Shift pitch, or let it follow speed',
+      icon: 'music',
+      category: 'Audio',
+      keywords: ['semitone', 'tone', 'key', 'chipmunk', 'tape', 'speed'],
+      appliesTo: isAudio,
+      params: [
+        { id: 'semitones', label: 'Semitones', type: 'number', default: 0, min: -24, max: 24, softMin: -12, softMax: 12, step: 0.1, animatable: false },
+        { id: 'matchSpeed', label: 'Match speed', type: 'toggle', default: false }
+      ],
+      audio: {
+        create(ac, v) {
+          const io = ac.createGain()
+          const out = ac.createGain()
+          io.connect(out)
+          // Offline (export) audio arrives already pitch-shifted by ffmpeg.
+          if (typeof OfflineAudioContext !== 'undefined' && ac instanceof OfflineAudioContext) return { input: io, output: out, update() {} }
+          let node: AudioWorkletNode | null = null
+          let disposed = false
+          const ratio = (x: Record<string, unknown>) => Math.pow(2, n(x.semitones) / 12)
+          let last = v
+          void loadShifter(ac)
+            .then(() => {
+              if (disposed) return
+              node = new AudioWorkletNode(ac, 'cascade-pitch', { outputChannelCount: [2] })
+              node.parameters.get('ratio')!.value = ratio(last)
+              io.disconnect()
+              io.connect(node).connect(out)
+            })
+            .catch((e) => console.warn('[pitch] shifter unavailable', e))
+          return {
+            input: io,
+            output: out,
+            update(x) {
+              last = x
+              const r = node?.parameters.get('ratio')
+              if (r && Math.abs(r.value - ratio(x)) > 1e-6) r.value = ratio(x)
+            },
+            dispose() {
+              disposed = true
+              node?.disconnect()
+            }
+          }
+        }
+      },
+      summary: (v) => [n(v.semitones) ? `${n(v.semitones) > 0 ? '+' : ''}${+n(v.semitones).toFixed(1)} st` : '', v.matchSpeed ? 'follows speed' : ''].filter(Boolean).join(' · ') || 'Original'
     })
     ctx.properties.register({
       id: 'compressor',

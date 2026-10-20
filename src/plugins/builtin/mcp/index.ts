@@ -100,7 +100,7 @@ export class AgentTools {
           return text(imported.map(id => ({ id: ids.show(id, 'm'), name: app.project().media[id].name })))
         }
         case 'timeline_get': {
-          const index = buildIndex(app.project(), await this.loadAnalyses())
+          const index = buildIndex(app.project(), await this.loadAnalyses(), (c) => app.edit.timeMap(c))
           const hint = index.words.length ? `transcript: ${index.words.length} words, ${index.events.length} sound events, ${index.shots.length} shot cuts on the timeline; read with transcript_get`
             : index.unanalyzed.length ? `transcript: none; media_analyze ${[...new Set(index.unanalyzed.map(u => ids.show(u.clip.mediaId!, 'm')))].join(', ')} to edit by words, intonation, sound events and shots` : ''
           const body = a.detail === 'detailed' ? `${this.timeline()}\n${JSON.stringify(app.timeline())}` : this.timeline()
@@ -115,7 +115,7 @@ export class AgentTools {
           return text({ mediaTypes: r.mediaTypes.all().map(({ id, name, track, extensions, defaultProperties }) => ({ id, name, track, extensions, defaultProperties })), properties: r.properties.all().map(({ id, name, description, params, appliesTo, stackable }) => ({ id, name, description, params, appliesTo: Array.isArray(appliesTo) ? appliesTo : 'predicate/default; validated when adding', stackable })), easings: r.easings.all().map(({ id, name, params }) => ({ id, name, params })), generators: r.generators.all().map(({ id, name, mediaType }) => ({ id, name, mediaType })), exporters: r.exporters.all().map(({ id, name, extension, options }) => ({ id, name, extension, options })) })
         }
         case 'frame_get': {
-          const t = typeof a.time === 'string' ? resolveAnchor(app.project(), await this.loadAnalyses(), ids, a.time) : a.time
+          const t = typeof a.time === 'string' ? resolveAnchor(app.project(), await this.loadAnalyses(), ids, a.time, (c) => app.edit.timeMap(c)) : a.time
           return imageResult(await frame(app, t, a.width), `${typeof a.time === 'string' ? `${a.time} = ` : ''}${formatTimecode(t, app.fps())}`)
         }
         case 'contact_sheet': return await sheet(app, a)
@@ -167,11 +167,11 @@ export class AgentTools {
           return text({ jobId, next: 'Poll job_get (about 2s per minute of speech), then transcript_get.' })
         }
         case 'transcript_get': {
-          const index = buildIndex(app.project(), await this.loadAnalyses())
+          const index = buildIndex(app.project(), await this.loadAnalyses(), (c) => app.edit.timeMap(c))
           return text(formatTranscript(index, { fps: app.fps(), view: a.view, start: a.start, end: a.end, clipId: a.clipId && ids.resolve(a.clipId), maxLines: a.maxLines, ...this.transcriptIds() }))
         }
         case 'transcript_search': {
-          const index = buildIndex(app.project(), await this.loadAnalyses())
+          const index = buildIndex(app.project(), await this.loadAnalyses(), (c) => app.edit.timeMap(c))
           const hits = searchTranscript(index, a.query, a.regex)
           const t = this.transcriptIds(), tc = (v: number) => formatTimecode(v, app.fps())
           if (!hits.length) return text(index.words.length ? 'No matches.' : 'No transcript yet. Run media_analyze on the sources first.')

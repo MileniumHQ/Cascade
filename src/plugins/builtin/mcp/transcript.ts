@@ -5,6 +5,7 @@
 import type { AnalysisPart, AnalysisSentence, SourceAnalysis } from '@shared/analysis'
 import { clipEnd, type Clip, type Id, type Project, type Track } from '@shared/project'
 import { FLICKS, formatTimecode, type Flicks, type FrameRate } from '@shared/time'
+import { constantMap, type TimeMap } from '@core/time-remap'
 
 /** Cached analyses per source file path. */
 export type Analyses = Map<string, SourceAnalysis[]>
@@ -35,7 +36,7 @@ export interface TSentence {
   speaker?: number
 }
 export interface TEvent { cue: string; start: Flicks; end: Flicks; score: number; underSpeech: boolean; clipId: Id }
-export interface TClip { clip: Clip; track: Track; mediaName: string; parts: AnalysisPart[]; role: 'speech' | 'shots' | 'both' }
+export interface TClip { clip: Clip; track: Track; mediaName: string; parts: AnalysisPart[]; role: 'speech' | 'shots' | 'both'; /** Constant speed, or null when keyframed. */ speed: number | null }
 export interface TIndex {
   words: TWord[]
   sentences: TSentence[]
@@ -56,7 +57,8 @@ function pick(list: SourceAnalysis[] | undefined, from: Flicks, to: Flicks) {
 }
 function covered(ranges: { start: Flicks; end: Flicks }[], t: Flicks) { return ranges.some((r) => t >= r.start && t < r.end) }
 
-export function buildIndex(project: Project, analyses: Analyses): TIndex {
+/** `timeMap` gives each clip's (possibly keyframed) speed mapping; defaults to `clip.speed`. */
+export function buildIndex(project: Project, analyses: Analyses, timeMap: (clip: Clip) => TimeMap = (c) => constantMap(c.speed ?? 1)): TIndex {
   const tl = project.timelines[project.activeTimeline]
   const out: TIndex = { words: [], sentences: [], events: [], shots: [], clips: [], unanalyzed: [] }
   if (!tl) return out
@@ -66,15 +68,15 @@ export function buildIndex(project: Project, analyses: Analyses): TIndex {
     for (const clip of track.clips) {
       const media = clip.mediaId ? project.media[clip.mediaId] : undefined
       if (!media?.path || !(media.type === 'video' || media.type === 'audio')) continue
-      const speed = clip.speed ?? 1
-      const srcStart = clip.sourceIn, srcEnd = clip.sourceIn + clip.duration * speed
-      const toTimeline = (src: Flicks) => Math.min(clipEnd(clip), Math.max(clip.start, clip.start + Math.round((src - clip.sourceIn) / speed)))
+      const map = timeMap(clip)
+      const srcStart = clip.sourceIn, srcEnd = clip.sourceIn + map.offset(clip.duration)
+      const toTimeline = (src: Flicks) => Math.min(clipEnd(clip), Math.max(clip.start, clip.start + Math.round(map.localAt(src - clip.sourceIn))))
       const inClip = (src: Flicks) => src >= srcStart && src < srcEnd
       const list = pick(analyses.get(media.path), srcStart, srcEnd)
       if (!list.length) { out.unanalyzed.push({ clip, track }); continue }
       const speech = track.kind === 'audio' || !(clip.linkId && linkedAudio.has(`${clip.linkId}|${clip.mediaId}`))
       const shots = track.kind === 'visual'
-      out.clips.push({ clip, track, mediaName: media.name, parts: [...new Set(list.flatMap((a) => a.parts))], role: speech && shots ? 'both' : speech ? 'speech' : 'shots' })
+      out.clips.push({ clip, track, mediaName: media.name, parts: [...new Set(list.flatMap((a) => a.parts))], role: speech && shots ? 'both' : speech ? 'speech' : 'shots', speed: map.constant })
       const used: { start: Flicks; end: Flicks }[] = []
       for (const a of list) {
         const fresh = (src: Flicks) => inClip(src) && src >= a.range.start && src < a.range.end && !covered(used, src)
@@ -149,7 +151,7 @@ export function formatTranscript(index: TIndex, o: FormatOptions): string {
   const lines: string[] = [TRANSCRIPT_LEGEND]
   for (const c of index.clips) {
     if (!clipOk(c.clip.id) || !inRange(c.clip.start, clipEnd(c.clip))) continue
-    lines.push(`${o.clipLabel(c.clip)} ${JSON.stringify(c.mediaName)} on ${o.trackLabel(c.track)} ${tc(c.clip.start)}–${tc(clipEnd(c.clip))} source ${tc(c.clip.sourceIn)}${(c.clip.speed ?? 1) !== 1 ? ` speed ${c.clip.speed}` : ''} · ${c.role === 'shots' ? 'shots only (speech on linked audio)' : `analysis: ${c.parts.join(', ')}`}`)
+    lines.push(`${o.clipLabel(c.clip)} ${JSON.stringify(c.mediaName)} on ${o.trackLabel(c.track)} ${tc(c.clip.start)}–${tc(clipEnd(c.clip))} source ${tc(c.clip.sourceIn)}${c.speed === null ? ' speed keyframed' : c.speed !== 1 ? ` speed ${+c.speed.toFixed(3)}` : ''} · ${c.role === 'shots' ? 'shots only (speech on linked audio)' : `analysis: ${c.parts.join(', ')}`}`)
   }
   for (const u of index.unanalyzed) if (clipOk(u.clip.id) && inRange(u.clip.start, clipEnd(u.clip))) lines.push(`${o.clipLabel(u.clip)} on ${o.trackLabel(u.track)}: not analyzed. Run media_analyze.`)
   type Item = { t: Flicks; line: () => string[] }

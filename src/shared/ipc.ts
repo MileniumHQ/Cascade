@@ -117,6 +117,29 @@ export interface ExportRequest {
   encoding: FFmpegExportPlan
   /** Parallel render workers (0 = auto). */
   workers?: number
+  /** Per audio clip (by id): which source audio to decode and how to process it. */
+  audio?: Record<string, ClipAudioPlan>
+}
+
+/**
+ * How an audio clip's sound is produced for export. Computed in the editor (which knows speed
+ * curves and pitch settings); main only runs ffmpeg.
+ * - `source`: decode the source range; the render worker resamples it (pitch follows speed).
+ * - `stretch`: ffmpeg time-stretches the range with rubberband (pitch independent of speed);
+ *   the worker plays the result at rate 1 from `localStart`.
+ */
+export interface ClipAudioPlan {
+  mode: 'source' | 'stretch'
+  mediaId: string
+  /** Source seconds covered by the export range. */
+  sourceStart: number
+  sourceEnd: number
+  /** Clip-local seconds where the stretched audio begins (stretch only). */
+  localStart?: number
+  /** Rubberband settings at `sourceStart`; `commands` change them at source-relative seconds. */
+  tempo?: number
+  pitch?: number
+  commands?: { t: number; tempo: number; pitch: number }[]
 }
 
 export interface ExportProgress {
