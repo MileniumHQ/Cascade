@@ -48,6 +48,16 @@ const bridge: HostBridge = {
     cancel: () => ipcRenderer.invoke('transcribe:cancel'),
     onProgress: (fn) => on('transcribe:progress', fn)
   },
+  agents: {
+    providers: () => ipcRenderer.invoke('agents:providers'),
+    start: (providerId, cwd) => ipcRenderer.invoke('agents:start', providerId, cwd),
+    prompt: (id, text) => ipcRenderer.invoke('agents:prompt', id, text),
+    cancel: (id) => ipcRenderer.invoke('agents:cancel', id),
+    setOption: (id, configId, value) => ipcRenderer.invoke('agents:setOption', id, configId, value),
+    respond: (id, requestId, optionId) => ipcRenderer.invoke('agents:respond', id, requestId, optionId),
+    close: (id) => ipcRenderer.invoke('agents:close', id),
+    onEvent: (fn) => on('agents:event', fn)
+  },
   analysis: {
     status: () => ipcRenderer.invoke('analysis:status'),
     installModels: (parts) => ipcRenderer.invoke('analysis:installModels', parts),

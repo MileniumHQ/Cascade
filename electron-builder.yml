@@ -15,6 +15,10 @@ asarUnpack:
   - node_modules/ffmpeg-static/**
   - node_modules/esbuild/**
   - node_modules/@esbuild/**
+  # Agent panel: ACP adapters spawn these as separate processes / native binaries.
+  - node_modules/@agentclientprotocol/**
+  - node_modules/@anthropic-ai/claude-agent-sdk*/**
+  - node_modules/@openai/codex*/**
 extraResources:
   # Built by `bun run setup:whisper`; resolved via process.resourcesPath in src/main/transcribe.ts.
   - from: resources/whisper/linux-x64

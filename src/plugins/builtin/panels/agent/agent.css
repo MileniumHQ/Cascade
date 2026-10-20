@@ -1,0 +1,264 @@
+/* Agent panel: compact chat modelled on T3 Code's thread + composer. */
+.ag {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  container-type: inline-size;
+}
+.ag-empty { padding: 16px; color: var(--muted); font-size: 12px; }
+
+.ag-thread {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.ag-hero {
+  margin: auto 8px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 24px;
+}
+.ag-hero h2 { font-size: 17px; font-weight: 500; letter-spacing: -0.01em; color: var(--text); margin: 4px 0 0; }
+.ag-hero p { margin: 0; color: var(--muted); font-size: 12px; max-width: 260px; }
+.ag-mark svg { width: 100%; height: 100%; }
+
+.ag-user { display: flex; justify-content: flex-end; margin: 6px 0 2px; }
+.ag-bubble {
+  max-width: 85%;
+  padding: 8px 11px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ag-assistant { padding: 0 2px; color: var(--text); overflow-wrap: anywhere; }
+
+.ag-md p { margin: 0 0 7px; }
+.ag-md p:last-child { margin-bottom: 0; }
+.ag-md ul, .ag-md ol { margin: 0 0 7px; padding-left: 18px; }
+.ag-md li { margin: 1px 0; }
+.ag-md h3, .ag-md h4, .ag-md h5, .ag-md h6 { font-size: 13px; font-weight: 600; margin: 9px 0 4px; }
+.ag-md code {
+  font-family: ui-monospace, 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+.ag-md pre {
+  margin: 0 0 7px;
+  padding: 8px 10px;
+  border-radius: var(--r);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--line);
+  overflow-x: auto;
+}
+.ag-md pre code { background: none; padding: 0; }
+.ag-md a { color: var(--sky); }
+.ag-md strong { color: var(--text); font-weight: 600; }
+
+/* Work log rows (tools, thoughts). */
+.ag-work { display: flex; flex-direction: column; }
+.ag-work-row {
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 2px;
+  border-radius: 6px;
+  color: var(--text-2);
+  text-align: left;
+  font-size: 12.5px;
+}
+.ag-work-row:not(:disabled):hover { background: rgba(255, 255, 255, 0.04); }
+.ag-work-row:disabled { cursor: default; }
+.ag-work-icon { color: var(--muted); flex: none; }
+.ag-work-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ag-chev { color: var(--dim); flex: none; }
+.ag-fail { color: var(--danger); flex: none; }
+.ag-failed .ag-work-icon { color: var(--danger); }
+.ag-pending .ag-work-label, .ag-in_progress .ag-work-label, .ag-shine {
+  background: linear-gradient(90deg, var(--muted) 0%, var(--text) 45%, var(--muted) 90%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ag-shine 1.6s linear infinite;
+}
+.ag-in_progress .ag-work-icon { color: var(--text); }
+@keyframes ag-shine { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+.ag-work-detail {
+  margin: 2px 0 6px 23px;
+  max-height: 260px;
+  overflow: auto;
+  padding: 6px 8px;
+  border-radius: var(--r);
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--line);
+  color: var(--text-2);
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+pre.ag-work-detail { font-family: ui-monospace, 'JetBrains Mono', monospace; }
+
+.ag-plan { display: flex; flex-direction: column; gap: 3px; padding: 6px 8px; border-radius: var(--r); border: 1px solid var(--line); font-size: 12px; }
+.ag-plan-item { display: flex; gap: 7px; align-items: flex-start; color: var(--text-2); }
+.ag-plan-item .icon { margin-top: 2px; flex: none; color: var(--muted); }
+.ag-plan-completed { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--dim); }
+.ag-plan-completed .icon { color: var(--lime); }
+.ag-plan-in_progress .icon { color: var(--sky); }
+
+.ag-notice { font-size: 12px; padding: 6px 9px; border-radius: var(--r); color: var(--text-2); background: rgba(255, 255, 255, 0.04); }
+.ag-notice-error { color: #ffb4b4; background: var(--danger-soft); }
+.ag-working { padding: 4px 2px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* Composer. */
+.ag-composer-wrap { flex: none; padding: 0 8px 8px; display: flex; flex-direction: column; gap: 6px; }
+.ag-composer-error { margin: 0 2px; }
+.ag-composer {
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--panel-2) 92%, white 3%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: box-shadow 0.15s;
+}
+.ag-composer:focus-within { box-shadow: inset 0 0 0 1px rgba(var(--sky-rgb), 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04); }
+.ag-composer textarea {
+  display: block;
+  width: 100%;
+  min-height: 52px;
+  max-height: 220px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 11px 12px 4px;
+}
+.ag-composer textarea::placeholder { color: var(--dim); }
+.ag-footer { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 4px 6px 6px 6px; }
+.ag-controls { flex: 1; min-width: 0; display: flex; align-items: center; gap: 2px; overflow-x: auto; scrollbar-width: none; }
+.ag-sep { width: 1px; height: 14px; background: var(--line-2); margin: 0 2px; flex: none; }
+.ag-chip {
+  height: 24px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 7px;
+  border-radius: 8px;
+  color: rgba(236, 236, 239, 0.62);
+  font-size: 12px;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s, transform 0.08s;
+}
+.ag-chip:hover { background: rgba(255, 255, 255, 0.05); color: var(--text); }
+.ag-chip:active { transform: scale(0.97); }
+.ag-chip .icon { opacity: 0.8; }
+.ag-model { flex: 0 1 auto; min-width: 0; color: var(--text-2); }
+.ag-model-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ag-more { padding: 0 5px; }
+/* Narrow sidebar: option chips go icon-only first (tooltips name them); the model name goes last. */
+@container (max-width: 360px) { .ag-chip-text { display: none; } }
+@container (max-width: 210px) { .ag-model-name { display: none; } }
+
+.ag-send {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--lime);
+  color: #111;
+  transition: transform 0.12s, opacity 0.12s;
+}
+.ag-send:not(:disabled):hover { transform: scale(1.05); }
+.ag-send:disabled { opacity: 0.35; }
+.ag-stop { background: rgba(255, 107, 107, 0.9); }
+.ag-stop span { width: 9px; height: 9px; border-radius: 2px; background: white; }
+
+/* Approval banner (attached above the composer). */
+.ag-approval {
+  border-radius: 14px;
+  padding: 10px 11px;
+  background: rgba(242, 193, 78, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(242, 193, 78, 0.22);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.ag-approval-head { display: flex; align-items: center; gap: 6px; color: var(--warn); font-size: 11px; font-weight: 500; }
+.ag-count { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ag-approval-title { font-size: 12.5px; color: var(--text); }
+.ag-approval-detail {
+  margin: 0;
+  max-height: 120px;
+  overflow: auto;
+  font-family: ui-monospace, 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ag-approval-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px; }
+.ag-pill {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+.ag-pill:hover { background: rgba(255, 255, 255, 0.11); }
+.ag-pill.primary { background: var(--lime); color: #111; font-weight: 500; }
+.ag-pill.outline { background: transparent; box-shadow: inset 0 0 0 1px var(--line-2); color: var(--text-2); }
+
+/* Popovers: option menus and the agent/model picker. */
+.ag-pop { min-width: 200px; max-width: 300px; }
+.ag-pop-head, .ag-picker-head { padding: 5px 9px 4px; font-size: 11px; font-weight: 500; color: var(--muted); }
+.ag-pick { width: 100%; justify-content: space-between; text-align: left; white-space: normal; }
+.ag-pick:hover { background: rgba(255, 255, 255, 0.05); }
+.ag-pick-text { display: flex; flex-direction: column; min-width: 0; }
+.ag-pick-text small { color: var(--muted); font-size: 11px; line-height: 1.35; }
+.ag-picker { display: flex; padding: 0; width: 320px; max-height: 360px; overflow: hidden; }
+.ag-rail {
+  width: 44px;
+  flex: none;
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.025);
+  border-right: 1px solid var(--line);
+}
+.ag-rail-btn { aspect-ratio: 1; display: grid; place-items: center; border-radius: 7px; position: relative; }
+.ag-rail-btn:hover { background: rgba(255, 255, 255, 0.07); }
+.ag-rail-btn.on { background: rgba(255, 255, 255, 0.09); }
+.ag-rail-btn.on::after { content: ''; position: absolute; right: -6px; top: 25%; bottom: 25%; width: 2px; border-radius: 2px; background: var(--lime); }
+.ag-rail-btn.off { opacity: 0.4; }
+.ag-picker-main { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 4px 4px 4px 4px; }
+.ag-search { display: flex; align-items: center; gap: 6px; margin: 2px 6px 4px; padding-bottom: 5px; border-bottom: 1px solid var(--line); color: rgba(141, 141, 150, 0.7); }
+.ag-search:focus-within { border-bottom-color: var(--sky-line); }
+.ag-search input { flex: 1; min-width: 0; height: 24px; border: 0; outline: 0; background: none; color: var(--text); font: inherit; font-size: 12px; }
+.ag-models { flex: 1; min-height: 0; overflow-y: auto; }
+.ag-picker-note { margin: 0; padding: 10px 9px; color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.ag-picker-note.error { color: #ffb4b4; }
+.spin { animation: ag-spin 0.9s linear infinite; }
+@keyframes ag-spin { to { transform: rotate(360deg); } }

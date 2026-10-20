@@ -10,7 +10,8 @@ import { createMediaService } from './media'
 import { UserPlugins } from './plugins'
 import { serveMedia, servePlugin } from './protocols'
 import { getHostPaths, registerStoreIpc } from './store'
-import { startMcp } from './mcp'
+import { mcpInfo, startMcp } from './mcp'
+import { registerAgentsIpc } from './agents'
 import { runStdio } from './mcp/stdio'
 
 protocol.registerSchemesAsPrivileged(['media', 'cascade-plugin'].map((scheme) => ({
@@ -161,6 +162,9 @@ async function initialize(): Promise<void> {
   ipcMain.on('plugins:openFolder', () => { void shell.openPath(paths.plugins).then((error) => { if (error) console.warn(error) }).catch(console.warn) })
   protocol.handle('media', serveMedia)
   protocol.handle('cascade-plugin', (request) => servePlugin(request, (name) => userPlugins.code(name)))
+  await registerAgentsIpc({ home: paths.home, defaultCwd: paths.projects, mcp: () => mcpInfo }, (event) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('agents:event', event)
+  })
   createWindows()
   await startMcp(() => mainWindow)
 }

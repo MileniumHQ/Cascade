@@ -53,7 +53,7 @@ export function Workbench(props: { app: CascadeApp }) {
       <div class="wb-row">
       <Show when={!sideRight()}>{sideEl}</Show>
       <Show when={!sideRight()}>
-        <Splitter dir="x" onDrag={(dx) => setSideW(clamp(sideW() + dx, 200, 520))} />
+        <Splitter dir="x" onDrag={(dx) => setSideW(clamp(sideW() + dx, 200, 760))} />
       </Show>
       <div class="wb-main" ref={main}>
         <div class="wb-top" ref={topRow} style={{ height: `${(1 - bottomH()) * 100}%` }}>

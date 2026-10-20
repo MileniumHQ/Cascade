@@ -5,6 +5,7 @@
 import type { MediaMeta, Project } from './project'
 import type { Flicks, FrameRate } from './time'
 import type { AnalysisBridge } from './analysis'
+import type { AgentsBridge } from './agents'
 
 /** All transcript times are integer flicks in the original source media. */
 export interface TranscriptWord {
@@ -197,6 +198,9 @@ export interface HostBridge {
     cancel(): Promise<void>
     onProgress(fn: (progress: TranscribeProgress) => void): () => void
   }
+
+  /** External coding agents over ACP, for the agent panel. */
+  agents: AgentsBridge
 
   /** Local source analysis (words, prosody, sound events, shots). */
   analysis: AnalysisBridge

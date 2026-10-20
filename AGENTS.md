@@ -18,6 +18,9 @@ DOM-powered video editor. Electron 44 + TypeScript (TS 7 / tsgo) + SolidJS + pla
 - MCP tools are documented in `docs/mcp.md`. Content-aware editing (`media_analyze` → `transcript_get`, then ordinary ops with word anchors like `w12.end+80ms`) lives in `src/plugins/builtin/mcp/transcript.ts`, built on the `SourceAnalysis` contract in `src/shared/analysis.ts`. Keep agent tools as information + primitives; don't add hard-coded editing macros.
 - Resource limits: run one GPU-heavy job at a time (whisper Vulkan, export, Electron test instance); the machine has crashed under load.
 
+## Agent panel
+- Left sidebar "Agent" panel runs Claude Code / Codex / OpenCode / Gemini over ACP with Cascade's MCP attached. See `docs/agents.md`; host in `src/main/agents/`, UI in `src/plugins/builtin/panels/agent/`.
+
 ## User plugins
 - `.ts/.tsx/.js/.mjs` files in `<userData>/plugins` are bundled with esbuild and hot-reloaded on save. Default-export a `PluginDefinition`. Example: `examples/plugins/wiggle.ts` (typecheck with `tsc -p tsconfig.examples.json`).
 

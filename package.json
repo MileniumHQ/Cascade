@@ -17,6 +17,9 @@
   },
   "trustedDependencies": ["electron", "electron-winstaller", "esbuild", "ffmpeg-static"],
   "dependencies": {
+    "@agentclientprotocol/claude-agent-acp": "^0.94.0",
+    "@agentclientprotocol/codex-acp": "^2.2.2",
+    "@agentclientprotocol/sdk": "^2.0.0",
     "@fontsource-variable/commissioner": "^5.3.0",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "esbuild": "^0.28.2",

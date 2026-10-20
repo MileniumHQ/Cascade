@@ -17,6 +17,7 @@ import { mcpPlugin } from './mcp'
 import { previewPlugin } from './panels/preview'
 import { inspectorPlugin } from './panels/inspector'
 import { sourcesPlugin } from './panels/sources'
+import { agentPanelPlugin } from './panels/agent'
 import { statusBarPlugin } from './statusbar'
 import { keyframesPlugin } from './panels/keyframes'
 import { exportPanelPlugin } from './panels/export'
@@ -44,6 +45,7 @@ export const builtinPlugins: PluginDefinition[] = [
   timelinePlugin,
   inspectorPlugin,
   sourcesPlugin,
+  agentPanelPlugin,
   statusBarPlugin,
   mcpPlugin,
   keyframesPlugin,
