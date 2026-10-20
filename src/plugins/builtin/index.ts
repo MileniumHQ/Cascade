@@ -19,12 +19,12 @@ import { previewPlugin } from './panels/preview'
 import { inspectorPlugin } from './panels/inspector'
 import { sourcesPlugin } from './panels/sources'
 import { statusBarPlugin } from './statusbar'
+import { keyframesPlugin } from './panels/keyframes'
 
 const panelsPlugin = definePlugin({
   id: 'cascade.panels',
   name: 'Panels',
   activate(ctx) {
-    ctx.panels.register(placeholderPanel({ id: 'keyframes', title: 'Keyframes', icon: 'diamond', region: 'bottom', order: 1 }))
     ctx.panels.register(placeholderPanel({ id: 'export', title: 'Export', icon: 'clapperboard', region: 'bottom', order: 2 }))
   }
 })
@@ -52,7 +52,8 @@ export const builtinPlugins: PluginDefinition[] = [
   inspectorPlugin,
   sourcesPlugin,
   statusBarPlugin,
-  mcpPlugin
+  mcpPlugin,
+  keyframesPlugin
 ]
 
 /** Plugins that are safe to load in headless export workers (no UI). */
