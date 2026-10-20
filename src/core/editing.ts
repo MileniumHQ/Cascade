@@ -499,23 +499,42 @@ export class Editing {
    * otherwise sets the static value. `at` overrides the clip-local time.
    */
   setParam(clipId: Id, propertyId: Id, paramId: string, value: unknown, opts: GestureOpts & { at?: Flicks } = {}) {
+    this.writeParams('Change value', clipId, { [propertyId]: { [paramId]: value } }, `param:${propertyId}:${paramId}`, opts)
+  }
+
+  /** Set several params of one property in a single undoable step (e.g. scale + position from a handle drag). */
+  setParams(clipId: Id, propertyId: Id, values: Record<string, unknown>, opts: GestureOpts & { at?: Flicks } = {}) {
+    this.writeParams('Change values', clipId, { [propertyId]: values }, `params:${propertyId}`, opts)
+  }
+
+  /** Set params across several properties of one clip in a single undoable step: `{ [propertyId]: { [paramId]: value } }`. */
+  setClipParams(clipId: Id, byProperty: Record<Id, Record<string, unknown>>, opts: GestureOpts & { at?: Flicks } = {}) {
+    this.writeParams('Change values', clipId, byProperty, `clipparams:${clipId}`, opts)
+  }
+
+  private writeParams(label: string, clipId: Id, byProperty: Record<Id, Record<string, unknown>>, key: string, opts: GestureOpts & { at?: Flicks }) {
     const at = opts.at ?? this.localTime(clipId)
     this.doc.transact(
-      'Change value',
+      label,
       (d) => {
-        const p = this.findDraftClip(d, clipId)?.clip.properties.find((x) => x.id === propertyId)
-        if (!p) return
-        const pv = (p.params[paramId] ??= { value })
-        if (pv.keyframes && pv.keyframes.length) {
-          const k = keyframeAt(pv as ParamValue, at)
-          if (k) k.value = value
-          else {
-            pv.keyframes.push({ id: uid('kf_'), t: at, value, easing: { id: this.defaultEasing() } })
-            pv.keyframes.sort((a, b) => a.t - b.t)
+        const clip = this.findDraftClip(d, clipId)?.clip
+        for (const [propertyId, values] of Object.entries(byProperty)) {
+          const p = clip?.properties.find((x) => x.id === propertyId)
+          if (!p) continue
+          for (const [paramId, value] of Object.entries(values)) {
+            const pv = (p.params[paramId] ??= { value })
+            if (pv.keyframes && pv.keyframes.length) {
+              const k = keyframeAt(pv as ParamValue, at)
+              if (k) k.value = value
+              else {
+                pv.keyframes.push({ id: uid('kf_'), t: at, value, easing: { id: this.defaultEasing() } })
+                pv.keyframes.sort((a, b) => a.t - b.t)
+              }
+            } else pv.value = value
           }
-        } else pv.value = value
+        }
       },
-      this.gesture(`param:${propertyId}:${paramId}`, opts)
+      this.gesture(key, opts)
     )
     this.endGesture(opts)
   }

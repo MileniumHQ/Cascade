@@ -23,6 +23,7 @@ export const visualPropertiesPlugin = definePlugin({
         params: [
           { id: 'position', label: 'Position', type: 'vec2', unit: 'frameXY', default: [0, 0] },
           { id: 'scale', label: 'Scale', type: 'number', unit: 'percent', default: 1, softMin: 0, softMax: 4, step: 1 },
+          { id: 'stretch', label: 'Stretch', type: 'vec2', unit: 'percent', default: [1, 1], step: 1 },
           { id: 'rotation', label: 'Rotation', type: 'angle', unit: 'deg', default: 0, step: 0.5 },
           { id: 'anchor', label: 'Anchor', type: 'vec2', unit: 'percent', default: [0.5, 0.5], step: 1 }
         ],
@@ -32,7 +33,10 @@ export const visualPropertiesPlugin = definePlugin({
           const t: string[] = []
           if (x || y) t.push(`translate(${u.x(x)}, ${u.y(y)})`)
           if (n(v.rotation)) t.push(`rotate(${r(n(v.rotation), 3)}deg)`)
-          if (n(v.scale) !== 1) t.push(`scale(${r(n(v.scale))})`)
+          const [sx, sy] = Array.isArray(v.stretch) ? vec(v.stretch) : [1, 1]
+          const k = n(v.scale)
+          if (sx !== 1 || sy !== 1) t.push(`scale(${r(k * sx)}, ${r(k * sy)})`)
+          else if (k !== 1) t.push(`scale(${r(k)})`)
           const style: Record<string, string> = {}
           if (ax !== 0.5 || ay !== 0.5) {
             // Move the box so the anchor sits at the position, then pivot around it.
