@@ -1,6 +1,7 @@
 {
   "name": "cascade",
   "productName": "Cascade",
+  "author": "Milenium",
   "version": "0.1.0",
   "description": "DOM-powered video editor",
   "type": "module",

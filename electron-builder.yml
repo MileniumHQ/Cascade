@@ -1,5 +1,6 @@
 appId: app.cascade.editor
 productName: Cascade
+copyright: © 2026 Milenium
 executableName: cascade
 directories:
   output: dist

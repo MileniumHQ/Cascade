@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 875 875">
-  <path d="M225 75H725A150 150 0 0 1 875 225V615A260 260 0 0 1 615 875H225A150 150 0 0 1 75 725V225A150 150 0 0 1 225 75Z" fill="#f2f2f4" fill-opacity="0.62"/>
-  <rect x="0" y="0" width="800" height="800" rx="150" fill="#82cbff" fill-opacity="0.62"/>
+<svg width="875" height="875" viewBox="0 0 875 875" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M75 225C75 142.157 142.157 75 225 75H725C807.843 75 875 142.157 875 225V650C875 774.264 774.264 875 650 875H225C142.157 875 75 807.843 75 725V225Z" fill="#32FF5B" fill-opacity="0.75"/>
+<rect width="800" height="800" rx="150" fill="#43BDFF" fill-opacity="0.75"/>
 </svg>
