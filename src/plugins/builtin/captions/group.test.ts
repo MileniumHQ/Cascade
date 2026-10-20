@@ -36,4 +36,16 @@ describe('caption grouping', () => {
     expect(lines[1].end).toBe(10.3*F)
     expect(groupCaptions(transcript([]), { sourceIn: 0, start: 0, speed: 1, end: 10*F })).toEqual([])
   })
+  it('never flashes a short trailing phrase squeezed against the clip end', () => {
+    const sentence = (text: string, from: number, to: number) => { const t = text.split(' '); const d = (to - from) / t.length; return t.map((w, i) => ({ text: w, start: from + i * d, end: from + (i + 1) * d - 0.01 })) }
+    const a = sentence('We rebuilt the widgets from the ground up so they are more beautiful and data rich.', 0, 3)
+    const b = sentence('And you can now place them right on your home screen next to your favorite apps.', 3.15, 6)
+    const lines = groupCaptions(transcript([...a, { text: 'Yes.', start: 3.02, end: 3.1 }, ...b]), { sourceIn: 0, start: 0, speed: 1, end: 6*F })
+    // The clip ends right after "apps.": its caption has no free space after it.
+    expect(lines.at(-1)!.end).toBeLessThanOrEqual(6*F)
+    for (const [i, l] of lines.entries()) {
+      expect(l.end - l.start).toBeGreaterThanOrEqual(0.7*F)
+      if (i) expect(l.start).toBeGreaterThanOrEqual(lines[i-1].end)
+    }
+  })
 })

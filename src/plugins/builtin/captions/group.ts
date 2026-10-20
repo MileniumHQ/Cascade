@@ -68,5 +68,19 @@ export function groupCaptions(transcript: Transcript, mapping: { sourceIn: numbe
     c.end = Math.min(next, end, Math.max(c.end, c.start + MIN))
     if (i > 0) c.start = Math.max(c.start, captions[i - 1].end)
   }
+  // Still too brief to read (dense speech, no free space): borrow time from a neighbour that can
+  // spare it, so nothing flashes. Show the phrase slightly early rather than for a few frames.
+  for (let i = 0; i < captions.length; i++) {
+    const c = captions[i], prev = captions[i - 1], next = captions[i + 1]
+    if (c.end - c.start >= MIN) continue
+    if (prev) {
+      const start = Math.max(prev.start + MIN, c.end - MIN)
+      if (start < c.start) { prev.end = Math.min(prev.end, start); c.start = start }
+    }
+    if (c.end - c.start < MIN && next) {
+      const finish = Math.min(next.end - MIN, c.start + MIN, end)
+      if (finish > c.end) { next.start = Math.max(next.start, finish); c.end = finish }
+    }
+  }
   return captions.filter((c) => c.end > c.start)
 }
