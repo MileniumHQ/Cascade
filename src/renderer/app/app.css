@@ -5,6 +5,126 @@
   overflow: hidden;
 }
 
+/* ───────────────────────────── title bar ───────────────────────────── */
+
+.titlebar {
+  height: 38px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 6px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.titlebar button,
+.titlebar input,
+.titlebar .tb-crumb span {
+  -webkit-app-region: no-drag;
+}
+.tb-logo {
+  width: 18px;
+  height: 18px;
+  margin: 0 4px 0 6px;
+}
+.tb-menus {
+  display: flex;
+  align-items: center;
+}
+.tb-menu {
+  height: 26px;
+  padding: 0 9px;
+  border-radius: var(--r);
+  color: var(--text-2);
+}
+.tb-menu:hover,
+.tb-menu.open {
+  background: var(--panel-2);
+  color: var(--text);
+}
+.tb-crumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 6px;
+  border-left: 1px solid var(--line);
+  margin-left: 2px;
+  min-width: 0;
+}
+.tb-project {
+  font-weight: 600;
+  padding: 3px 6px;
+  border-radius: var(--r-sm);
+  white-space: nowrap;
+}
+.tb-project:hover {
+  background: var(--panel-2);
+}
+.tb-rename {
+  font: inherit;
+  font-weight: 600;
+  background: var(--panel-2);
+  border: 1px solid var(--sky-line);
+  color: var(--text);
+  border-radius: var(--r-sm);
+  padding: 2px 6px;
+  outline: none;
+  width: 180px;
+}
+.tb-sep {
+  color: var(--dim);
+}
+.tb-timeline {
+  color: var(--muted);
+  white-space: nowrap;
+}
+.tb-dirty {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.75;
+  margin-left: 2px;
+}
+.tb-actions {
+  display: flex;
+  gap: 2px;
+  margin-left: 8px;
+}
+.tb-drag {
+  flex: 1;
+  align-self: stretch;
+}
+.tb-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 550;
+}
+.tb-pill i {
+  width: 1px;
+  height: 10px;
+  background: var(--line-2);
+}
+.tb-pill:hover {
+  border-color: var(--line-2);
+  background: var(--panel-2);
+  color: var(--text);
+}
+/* Room for the native window buttons (Electron titleBarOverlay). */
+.tb-controls {
+  flex: none;
+  width: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+}
+
 /* ───────────────────────────── home ───────────────────────────── */
 
 .home {
@@ -12,59 +132,82 @@
   overflow: auto;
   display: flex;
   justify-content: center;
-  background: var(--bg);
+  background:
+    radial-gradient(900px 500px at 15% -10%, rgba(var(--accent-rgb), 0.05), transparent 60%),
+    radial-gradient(900px 600px at 100% 110%, rgba(var(--sky-rgb), 0.05), transparent 60%),
+    var(--bg);
 }
 .home-inner {
-  width: min(720px, 100%);
-  padding: 56px 32px 48px;
+  width: min(760px, 100%);
+  padding: 72px 32px 48px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 32px;
 }
 .home-hero {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 20px;
 }
 .home-logo {
-  width: 32px;
-  height: 32px;
+  width: 64px;
+  height: 64px;
 }
 .home-hero h1 {
   margin: 0;
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.home-hero p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
 }
 .home-actions {
-  display: flex;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
 }
 .home-card {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 14px;
   align-items: center;
-  gap: 8px;
-  height: 32px;
-  padding: 0 12px;
+  text-align: left;
+  padding: 18px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  transition: border-color 0.15s, background 0.15s;
+}
+.home-card .icon {
+  grid-row: span 2;
+  width: 40px !important;
+  height: 40px !important;
+  padding: 10px;
   border-radius: var(--r);
-  border: 1px solid var(--line-2);
-  background: var(--panel-2);
+  background: var(--panel-3);
   color: var(--text-2);
 }
 .home-card b {
-  font-weight: 500;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.home-card span {
+  color: var(--muted);
 }
 .home-card:hover {
-  background: var(--panel-3);
-  color: var(--text);
+  border-color: var(--line-2);
+  background: var(--panel-2);
 }
-.home-card.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #111;
+.home-card.primary .icon {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 .home-card.primary:hover {
-  background: #fff;
-  color: #000;
+  border-color: var(--accent-line);
 }
 .home-recent h2 {
   margin: 0 0 10px;
@@ -543,17 +686,6 @@
   display: flex;
   align-items: center;
   gap: 6px;
-}
-.status-button {
-  height: 18px;
-  padding: 0 6px;
-  border-radius: 4px;
-  color: inherit;
-  font: inherit;
-}
-.status-button:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text);
 }
 .mount {
   display: contents;

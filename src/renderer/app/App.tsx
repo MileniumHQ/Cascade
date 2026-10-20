@@ -2,7 +2,7 @@ import { createEffect, createSignal, Match, onCleanup, onMount, Show, Switch } f
 import type { CascadeApp } from '@core/app'
 import { Button, MenuLayer, Modal, TextField, ToastLayer, TooltipLayer } from '../ui/kit'
 import type { Session } from './session'
-import { installNativeMenu } from './menu'
+import { TitleBar } from './TitleBar'
 import { ProjectSettingsModal } from './ProjectSettings'
 import { SettingsModal } from './Settings'
 import { Home } from './Home'
@@ -45,7 +45,6 @@ export function App(props: { app: CascadeApp; session: Session }) {
     app.registries.keybindings.register({ id: 'app.quit:Mod+Q', command: 'app.quit', key: 'Mod+Q' }, 'cascade.app', true)
   ]
   onCleanup(() => disposers.forEach((d) => d.dispose()))
-  installNativeMenu(app, session)
 
   // Window title: project name, unsaved marker.
   const title = () => app.host?.window.setTitle(editor() ? `${app.doc.dirty ? '• ' : ''}${app.project().name} — Cascade` : 'Cascade')
@@ -90,6 +89,7 @@ export function App(props: { app: CascadeApp; session: Session }) {
 
   return (
     <div class="app">
+      <TitleBar app={app} session={session} />
       <Switch>
         <Match when={session.screen() === 'home'}>
           <Home app={app} session={session} />

@@ -3,8 +3,8 @@ import type { CascadeAPI } from '@core/app'
 import type { Clip } from '@shared/project'
 import { formatTimecode } from '@shared/time'
 import { Icon } from '@ui/icon'
-import { IconButton, NumberField, Segmented, TextField } from '@ui/kit'
-import { useRegistry, useValue } from '@ui/reactive'
+import { Segmented, TextField } from '@ui/kit'
+import { useRegistry } from '@ui/reactive'
 
 const FITS = [
   { value: 'contain', label: 'Contain', tip: 'Fit inside the frame' },
@@ -35,18 +35,11 @@ function Timecode(props: { label: string; value: string; tip?: string }) {
 
 export function ClipHeader(props: { app: CascadeAPI; clip: Clip }) {
   const app = props.app
-  const time = useValue(app.playback.time)
-  // Effective speed at the playhead (speed may be keyframed, or come from the linked clip).
-  const speedNow = createMemo(() => {
-    const map = app.edit.timeMap(props.clip)
-    return map.constant ?? map.speedAt(Math.max(0, time() - props.clip.start))
-  })
   const types = useRegistry(app.registries.mediaTypes)
   const mt = createMemo(() => (types(), app.registries.mediaTypes.get(props.clip.type)))
   const fps = () => app.fps()
   const fit = () => (typeof props.clip.data.fit === 'string' ? (props.clip.data.fit as string) : null)
   const showFit = () => mt()?.track !== 'audio' && fit() !== null
-  const showSpeed = () => !!mt()?.timeBased
 
   return (
     <div class="ins-clip">
@@ -82,26 +75,8 @@ export function ClipHeader(props: { app: CascadeAPI; clip: Clip }) {
         <Timecode label="Source in" value={formatTimecode(props.clip.sourceIn, fps())} tip="Where this clip begins inside its source" />
       </div>
 
-      <Show when={showSpeed() || showFit()}>
+      <Show when={showFit()}>
         <div class="ins-clip-opts">
-          <Show when={showSpeed()}>
-            <div class="ins-opt">
-              <NumberField
-                prefix="Speed"
-                value={speedNow()}
-                min={0.05}
-                max={32}
-                step={0.05}
-                precision={2}
-                suffix="×"
-                width="112px"
-                onChange={(speed, gesture) => app.edit.updateClip(props.clip.id, { speed }, { gesture })}
-              />
-              <Show when={Math.abs(speedNow() - 1) > 1e-6}>
-                <IconButton icon="rotate-ccw" size="sm" tip="Reset speed" onClick={() => app.edit.updateClip(props.clip.id, { speed: 1 })} />
-              </Show>
-            </div>
-          </Show>
           <Show when={showFit()}>
             <div class="ins-opt grow">
               <Segmented value={fit()! as (typeof FITS)[number]['value']} options={[...FITS]} onChange={(v) => app.edit.setClipData(props.clip.id, { fit: v })} />

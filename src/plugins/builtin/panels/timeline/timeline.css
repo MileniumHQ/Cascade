@@ -66,6 +66,7 @@
   width: 1px;
   margin-left: 0;
   background: var(--accent);
+  box-shadow: 0 0 6px rgba(var(--accent-rgb), 0.45);
   pointer-events: none;
   z-index: 6;
 }

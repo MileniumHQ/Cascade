@@ -31,12 +31,14 @@ export function Home(props: { app: CascadeApp; session: Session }) {
 
         <section class="home-actions">
           <button class="home-card primary" onClick={() => setCreating(true)}>
-            <Icon name="plus" size={16} />
-            <b>New project…</b>
+            <Icon name="plus" size={20} />
+            <b>New project</b>
+            <span>Start from a blank timeline</span>
           </button>
           <button class="home-card" onClick={() => void session.openDialog()}>
-            <Icon name="folder-open" size={16} />
-            <b>Open project…</b>
+            <Icon name="folder-open" size={20} />
+            <b>Open project</b>
+            <span>Browse for a .cascade file</span>
           </button>
         </section>
 
@@ -44,7 +46,7 @@ export function Home(props: { app: CascadeApp; session: Session }) {
           <header>
             <h2>Recent</h2>
           </header>
-          <Show when={recent()?.length} fallback={<div class="home-empty">No recent projects</div>}>
+          <Show when={recent()?.length} fallback={<div class="home-empty">Projects you open will show up here.</div>}>
             <div class="recent-list">
               <For each={recent()}>
                 {(r) => (

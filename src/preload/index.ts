@@ -16,9 +16,7 @@ const bridge: HostBridge = {
     toggleMaximize: () => ipcRenderer.send('window:toggleMaximize'),
     close: () => ipcRenderer.send('window:close'),
     setTitle: (title) => ipcRenderer.send('window:setTitle', title),
-    onMaximizeChange: (fn) => on('window:maximizeChange', fn),
-    setMenu: (menu) => ipcRenderer.send('window:setMenu', menu),
-    onMenu: (fn) => on('window:menu', fn)
+    onMaximizeChange: (fn) => on('window:maximizeChange', fn)
   },
   dialog: {
     openFiles: (opts) => ipcRenderer.invoke('dialog:openFiles', opts),

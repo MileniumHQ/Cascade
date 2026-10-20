@@ -1,5 +1,4 @@
 import { app, BrowserWindow, ipcMain, Menu, protocol, shell } from 'electron'
-import type { NativeMenuItem } from '../shared/ipc'
 import { join } from 'node:path'
 import { execFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -49,6 +48,8 @@ function createWindows(): void {
   })
   const main = new BrowserWindow({
     width: 1440, height: 900, minWidth: 1000, minHeight: 640, title: 'Cascade',
+    // Custom title bar (menus, project) with the platform's own window buttons drawn over it.
+    titleBarStyle: 'hidden', titleBarOverlay: { color: '#09090a', symbolColor: '#a8a8b0', height: 37 },
     backgroundColor: '#09090a', show: false, webPreferences
   })
   mainWindow = main
@@ -132,11 +133,6 @@ function registerWindowIpc(): void {
   ipcMain.on('window:setTitle', (event, title: string) => {
     if (typeof title === 'string') BrowserWindow.fromWebContents(event.sender)?.setTitle(title)
   })
-  ipcMain.on('window:setMenu', (event, items: NativeMenuItem[]) => {
-    const window = BrowserWindow.fromWebContents(event.sender)
-    if (!window || window !== mainWindow || !Array.isArray(items)) return
-    Menu.setApplicationMenu(Menu.buildFromTemplate(items.map((item) => nativeItem(item, window))))
-  })
   ipcMain.on('splash:progress', (event, message: string, done: number, total: number) => {
     if (event.sender !== mainWindow?.webContents) return
     splashProgress = { message, done, total }
@@ -145,22 +141,6 @@ function registerWindowIpc(): void {
   ipcMain.on('splash:ready', (event) => {
     if (event.sender === mainWindow?.webContents) finishSplash?.()
   })
-}
-
-const ROLES = new Set(['togglefullscreen', 'toggleDevTools', 'reload'])
-/** Renderer-described menu item → Electron item. Accelerators are labels only; the renderer owns the keymap. */
-function nativeItem(item: NativeMenuItem, window: BrowserWindow): Electron.MenuItemConstructorOptions {
-  if (item.type === 'separator') return { type: 'separator' }
-  if (item.role && ROLES.has(item.role)) return { role: item.role, ...(item.label ? { label: item.label } : {}) }
-  return {
-    label: String(item.label ?? ''),
-    type: item.submenu ? 'submenu' : item.type === 'checkbox' ? 'checkbox' : 'normal',
-    enabled: item.enabled !== false,
-    checked: !!item.checked,
-    ...(item.accelerator ? { accelerator: item.accelerator, registerAccelerator: false } : {}),
-    ...(item.submenu ? { submenu: item.submenu.map((sub) => nativeItem(sub, window)) } : {}),
-    click: item.id ? () => { if (!window.isDestroyed()) window.webContents.send('window:menu', item.id) } : undefined
-  }
 }
 
 async function initialize(): Promise<void> {

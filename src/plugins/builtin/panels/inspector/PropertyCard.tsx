@@ -3,7 +3,7 @@ import type { CascadeAPI } from '@core/app'
 import { evaluateProperty, isAnimated } from '@core/evaluate'
 import type { Id, PropertyInstance } from '@shared/project'
 import { Icon } from '@ui/icon'
-import { IconButton, openMenu, Toggle } from '@ui/kit'
+import { IconButton, openMenu, Toggle, type Anchor } from '@ui/kit'
 import { useRegistry, useValue } from '@ui/reactive'
 import { instanceOf, makePropertyContext, subscribeEditing } from './context'
 import { MountHost } from './MountHost'
@@ -51,9 +51,9 @@ export function PropertyCard(props: CardProps) {
 
   const select = () => app.selection.property.set(id)
 
-  const menu = (anchor: HTMLElement) =>
+  const menu = (anchor: Anchor) =>
     openMenu(anchor, [
-      { label: 'Reset', icon: 'rotate-ccw', run: () => app.edit.resetProperty(clipId, id) },
+      { label: 'Reset to default', icon: 'rotate-ccw', run: () => app.edit.resetProperty(clipId, id) },
       { separator: true },
       { label: 'Move up', icon: 'arrow-up', disabled: props.index() === 0, run: () => app.edit.moveProperty(clipId, id, props.index() - 1) },
       { label: 'Move down', icon: 'arrow-down', disabled: props.index() >= props.count() - 1, run: () => app.edit.moveProperty(clipId, id, props.index() + 1) },
@@ -78,6 +78,11 @@ export function PropertyCard(props: CardProps) {
         class="ins-card-head"
         onPointerDown={headerDown}
         onClick={() => setCardCollapsed(id, !collapsed())}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          select()
+          menu({ x: e.clientX, y: e.clientY })
+        }}
       >
         <Icon name="chevron-down" size={13} class="ins-chev" />
         <Icon name={contrib()?.icon ?? 'circle-help'} size={14} class="ins-card-icon" />

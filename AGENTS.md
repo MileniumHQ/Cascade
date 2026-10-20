@@ -40,4 +40,4 @@ DOM-powered video editor. Electron 44 + TypeScript (TS 7 / tsgo) + SolidJS + pla
 - All document mutations go through `app.edit.*` / `doc.transact` (undoable). Never mutate project objects directly (they're frozen).
 - The core must not know specific media types/properties — those belong in plugins.
 - UI contribution points are framework-agnostic `mount(el, ctx) => cleanup`.
-- Visual design: a professional tool, not a SaaS page — dark neutral greys (not blue-tinted), flat surfaces, no decorative glows/gradients, no marketing taglines. Accents: neutral white (`--accent`), light blue `#82cbff` secondary at reduced opacity. Font: Inter. Native window frame; app menus come from `app/*` menu contributions (`src/renderer/app/menu.ts`).
+- Visual design: dark neutral greys (not blue-tinted), glassy popovers, no marketing taglines. Accents: neutral white (`--accent`), light blue `#82cbff` secondary at reduced opacity. Font: Inter. Custom title bar (`src/renderer/app/TitleBar.tsx`) with in-app File/Edit/… menus built from `app/*` menu contributions (`src/renderer/app/menu.ts`); the OS window buttons come from Electron's `titleBarOverlay`.

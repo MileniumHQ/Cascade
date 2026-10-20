@@ -24,7 +24,9 @@ export function ParamRow(props: { app: CascadeAPI; clipId: Id; propId: Id; def: 
   const animatable = isAnimatable(app, def)
   const kf = useKeyframeState(app, ctx, clipId, propId)
 
-  const labelMenu = (e: MouseEvent) =>
+  const rowMenu = (e: MouseEvent) => {
+    // Text fields keep their own copy/paste menu.
+    if ((e.target as HTMLElement).closest('input, textarea, [contenteditable="true"]')) return
     openContextMenu(e, [
       { label: 'Clear keyframes', icon: 'diamond-minus', disabled: !kf().animated, run: () => app.edit.clearKeyframes(clipId, propId, def.id) },
       {
@@ -33,10 +35,11 @@ export function ParamRow(props: { app: CascadeAPI; clipId: Id; propId: Id; def: 
         run: () => app.edit.setParam(clipId, propId, def.id, structuredClone(def.default))
       }
     ])
+  }
 
   return (
-    <div class="ins-row" classList={{ stack: def.type === 'color' || (def.type === 'text' && !!def.config?.multiline), keyed: animatable && kf().keyed, animated: animatable && kf().animated }}>
-      <div class="ins-label" onContextMenu={labelMenu} data-tip={def.label}>
+    <div class="ins-row" classList={{ stack: def.type === 'color' || (def.type === 'text' && !!def.config?.multiline), keyed: animatable && kf().keyed, animated: animatable && kf().animated }} onContextMenu={rowMenu}>
+      <div class="ins-label" data-tip={def.label}>
         {def.label}
       </div>
       <Show when={type()} keyed fallback={<div class="ins-missing">Unknown parameter type “{def.type}”</div>}>

@@ -205,6 +205,8 @@ export function Menu(props: { anchor: Anchor; items: MenuItem[]; onClose: () => 
 /** Imperative context menu helper. */
 const [ctxMenu, setCtxMenu] = createSignal<{ anchor: Anchor; items: MenuItem[] } | null>(null)
 export const openMenu = (anchor: Anchor, items: MenuItem[]) => setCtxMenu({ anchor, items })
+/** Anchor of the open menu, if any (menu bars switch menus on hover while one is open). */
+export const openMenuAnchor = () => ctxMenu()?.anchor
 export const openContextMenu = (e: MouseEvent, items: MenuItem[]) => {
   e.preventDefault()
   e.stopPropagation()

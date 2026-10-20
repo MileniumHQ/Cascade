@@ -7,21 +7,6 @@ import type { Flicks, FrameRate } from './time'
 import type { AnalysisBridge } from './analysis'
 import type { AgentsBridge } from './agents'
 
-/** Serializable native menu (built in the renderer from the command/menu registries). */
-export interface NativeMenuItem {
-  /** Sent back to the renderer when clicked. */
-  id?: string
-  label?: string
-  type?: 'normal' | 'separator' | 'checkbox' | 'submenu'
-  /** Electron accelerator, display only: shortcuts are handled by the renderer's keymap. */
-  accelerator?: string
-  enabled?: boolean
-  checked?: boolean
-  /** A few native roles: togglefullscreen, toggleDevTools, reload. */
-  role?: 'togglefullscreen' | 'toggleDevTools' | 'reload'
-  submenu?: NativeMenuItem[]
-}
-
 /** All transcript times are integer flicks in the original source media. */
 export interface TranscriptWord {
   text: string
@@ -198,9 +183,6 @@ export interface HostBridge {
     close(): void
     onMaximizeChange(fn: (maximized: boolean) => void): () => void
     setTitle(title: string): void
-    /** Replace the native application menu. Clicks come back through `onMenu` with the item id. */
-    setMenu(menu: NativeMenuItem[]): void
-    onMenu(fn: (id: string) => void): () => void
   }
 
   dialog: {

@@ -240,7 +240,7 @@
   display: block;
   height: 100%;
   border-radius: 2px;
-  background: var(--accent);
+  background: linear-gradient(90deg, rgba(var(--sky-rgb), 0.8), var(--accent));
   transition: width 0.25s var(--ease-out);
 }
 .ex-job-meta {

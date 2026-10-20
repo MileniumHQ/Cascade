@@ -197,19 +197,24 @@ body.ins-reordering * {
 /* ── property cards ── */
 .ins-list {
   position: relative;
-  padding: 0 0 4px;
+  padding: 8px 8px 4px;
   display: flex;
   flex-direction: column;
+  gap: 6px;
 }
 .ins-card {
-  border-bottom: 1px solid var(--line);
-  transition: opacity 0.15s, box-shadow 0.4s;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  transition: border-color 0.15s, background 0.15s, opacity 0.15s, box-shadow 0.4s;
 }
 .ins-card.selected {
-  box-shadow: inset 2px 0 0 var(--line-3);
+  border-color: var(--line-2);
+  background: color-mix(in srgb, var(--panel-2) 82%, var(--panel-3));
 }
 .ins-card.just-added {
-  box-shadow: inset 2px 0 0 var(--accent-line);
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .ins-card.dragging {
   opacity: 0.4;
@@ -219,8 +224,12 @@ body.ins-reordering * {
   align-items: center;
   gap: 7px;
   height: 32px;
-  padding: 0 6px 0 10px;
+  padding: 0 6px 0 8px;
   cursor: grab;
+  border-radius: var(--r-lg);
+}
+.ins-card-head:hover {
+  background: rgba(255, 255, 255, 0.025);
 }
 .ins-chev {
   color: var(--dim);
@@ -284,6 +293,7 @@ body.ins-reordering * {
   margin-top: 1px;
   border-radius: 1px;
   background: var(--accent);
+  box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.6);
   pointer-events: none;
   z-index: 3;
 }

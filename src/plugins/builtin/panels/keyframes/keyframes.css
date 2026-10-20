@@ -534,6 +534,7 @@
   margin-left: -0.5px;
   /* Same look as the timeline playhead. */
   background: var(--accent);
+  box-shadow: 0 0 6px rgba(var(--accent-rgb), 0.45);
   pointer-events: none;
   z-index: 4;
   will-change: transform;

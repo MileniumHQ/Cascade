@@ -1,7 +1,7 @@
 import { createMemo, Show } from 'solid-js'
 import { definePlugin } from '@core/plugin-api'
 import type { CascadeAPI } from '@core/app'
-import { formatTimecode, fpsValue } from '@shared/time'
+import { formatTimecode } from '@shared/time'
 import { Icon } from '@ui/icon'
 import { useProject, useValue } from '@ui/reactive'
 import { solidMount } from './solid'
@@ -42,20 +42,6 @@ function PreviewInfo(props: { ctx: { app: CascadeAPI } }) {
   )
 }
 
-function ProjectFormat(props: { ctx: { app: CascadeAPI } }) {
-  const app = props.ctx.app
-  const project = useProject(app)
-  const fps = () => {
-    const v = fpsValue(project().settings.fps)
-    return Number.isInteger(v) ? String(v) : v.toFixed(3).replace(/0+$/, '')
-  }
-  return (
-    <button class="status-item status-button tnum" data-tip="Project settings" onClick={() => app.run('project.settings')}>
-      {project().settings.width} × {project().settings.height} · {fps()} fps
-    </button>
-  )
-}
-
 /** Status bar items: edit summary on the left, preview health on the right. */
 export const statusBarPlugin = definePlugin({
   id: 'cascade.statusbar',
@@ -63,6 +49,5 @@ export const statusBarPlugin = definePlugin({
   activate(ctx) {
     ctx.statusItems.register({ id: 'edit-info', align: 'left', order: 0, mount: solidMount(EditInfo) })
     ctx.statusItems.register({ id: 'preview-info', align: 'right', order: 0, mount: solidMount(PreviewInfo) })
-    ctx.statusItems.register({ id: 'project-format', align: 'right', order: 10, mount: solidMount(ProjectFormat) })
   }
 })
