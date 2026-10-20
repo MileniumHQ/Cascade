@@ -16,6 +16,7 @@
 import type { Disposable } from './disposable'
 import type { Contribution } from './registry'
 import type { Clip, EasingRef, Id, MediaItem, MediaMeta, Project, PropertyInstance, Timeline, Track } from '@shared/project'
+import type { FFmpegExportPlan } from '@shared/ipc'
 import type { Flicks, FrameRate } from '@shared/time'
 import type { CascadeAPI } from './app'
 
@@ -458,6 +459,10 @@ export interface ExporterContribution extends Contribution {
   options: ParamDef[]
   video: boolean
   audio: boolean
+  /** Renderer computes the serializable encoding plan sent as ExportRequest.encoding. */
+  ffmpeg(options: Record<string, unknown>, info: {
+    width: number; height: number; fps: FrameRate; hasAudio: boolean; hwEncoders: string[]
+  }): FFmpegExportPlan
 }
 
 // ───────────────────────────── helpers re-exported for plugin authors ─────────────────────────────

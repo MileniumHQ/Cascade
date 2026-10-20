@@ -1,0 +1,12 @@
+{
+  "samples": 960000,
+  "duration": 20.0,
+  "animatedGainRatio": 3.9810736622026828,
+  "expectedGainRatio": 3.9810717055349722,
+  "chunkBoundaryRmsBefore": 0.08836856912529001,
+  "chunkBoundaryRmsAfter": 0.08836856912529001,
+  "speed2FrequencyHz": 880.0,
+  "silenceBeforeClip": 0.0,
+  "silenceAfterClip": 0.0,
+  "mutedTrackRms": 0.0
+}

@@ -25,6 +25,24 @@ export interface WaveformData {
   length: number
 }
 
+/** Serializable exporter plan. Arguments are output option/value pairs, never inputs or paths. */
+export interface FFmpegExportPlan {
+  videoArgs: string[]
+  audioArgs: string[]
+  extension: string
+  container?: string
+  /** Defaults to the final container. All segments use exactly the same settings. */
+  segmentContainer?: string
+  concatSafe?: boolean
+  kind?: 'video' | 'audio' | 'sequence'
+  /** Encode a lossless intermediate, then generate and apply a GIF palette. */
+  twoPass?: 'palette'
+  /** Device initialization before the rawvideo input (e.g. VAAPI). */
+  inputArgs?: string[]
+  /** Retry all segments with this software plan if hardware initialization/encoding fails. */
+  fallback?: { videoArgs: string[]; inputArgs?: string[] }
+}
+
 export interface ExportRequest {
   project: Project
   timelineId: string
@@ -36,19 +54,24 @@ export interface ExportRequest {
   /** Exporter id: 'mp4-h264' | 'mp4-hevc' | 'webm-vp9' | 'mov-prores' | 'png-sequence' | 'gif' | 'wav' ... */
   exporter: string
   options: Record<string, unknown>
+  /** Computed in the renderer by ExporterContribution.ffmpeg; main never switches on exporter id. */
+  encoding: FFmpegExportPlan
   /** Parallel render workers (0 = auto). */
   workers?: number
 }
 
 export interface ExportProgress {
   jobId: string
-  state: 'preparing' | 'rendering' | 'audio' | 'finalizing' | 'done' | 'error' | 'cancelled'
+  state: 'preparing' | 'rendering' | 'audio' | 'finalizing' | 'encoding' | 'muxing' | 'done' | 'error' | 'cancelled'
   framesDone: number
   framesTotal: number
   fps: number
   etaSeconds?: number
   message?: string
   output?: string
+  /** Capture diagnostics, useful for verifying that stale compositor paints were rejected. */
+  stalePaints?: number
+  workers?: number
 }
 
 export interface PluginFile {
@@ -185,6 +208,8 @@ export interface RenderWorkerJob {
   mode: 'video' | 'audio' | 'frame'
   /** Height of the frame-stamp strip appended below the frame (cropped by the orchestrator). */
   stampHeight: number
+  /** ffmpeg-decoded stereo f32le ranges. URLs are accessed through mediaUrl with byte ranges. */
+  pcmSources?: Record<string, { path: string; start: number; sampleRate: number; frames: number }>
 }
 
 declare global {
