@@ -56,5 +56,6 @@ export const exporters: ExporterContribution[] = [
 
 export const exportersPlugin = definePlugin({
   id: 'cascade.exporters', name: 'Export formats',
-  activate(ctx) { for (const exporter of exporters) ctx.exporters.register(exporter) }
+  // Keep the listed order (H.264 first) rather than the registry's alphabetical fallback.
+  activate(ctx) { exporters.forEach((exporter, i) => ctx.exporters.register({ priority: 500 + i, ...exporter })) }
 })

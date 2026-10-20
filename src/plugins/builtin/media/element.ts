@@ -43,7 +43,15 @@ export const elementPlugin = definePlugin({
         const draw = () => {
           const clip = c.clip()
           const text = clip.properties.find((p) => p.type === 'text')?.params.text?.value
-          d.textContent = typeof text === 'string' ? text : ''
+          // Fills show their color as a swatch, so solids and shapes are recognisable at a glance.
+          const fill = clip.properties.find((p) => p.type === 'fill' && p.enabled)?.params.color?.value
+          d.replaceChildren()
+          if (typeof fill === 'string') {
+            const swatch = document.createElement('span')
+            swatch.style.cssText = `display:inline-block;width:10px;height:10px;margin-right:6px;vertical-align:-1px;border-radius:3px;background:${fill};box-shadow:inset 0 0 0 1px rgba(255,255,255,.25)`
+            d.append(swatch, fill.toUpperCase())
+          }
+          if (typeof text === 'string') d.append(text)
         }
         draw()
         el.appendChild(d)

@@ -514,8 +514,9 @@
   bottom: 0;
   width: 1px;
   margin-left: -0.5px;
+  /* Same look as the timeline playhead. */
   background: var(--lime);
-  opacity: 0.9;
+  box-shadow: 0 0 6px rgba(var(--lime-rgb), 0.45);
   pointer-events: none;
   z-index: 4;
   will-change: transform;
