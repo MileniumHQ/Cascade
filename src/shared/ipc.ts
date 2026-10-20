@@ -5,6 +5,45 @@
 import type { MediaMeta, Project } from './project'
 import type { Flicks, FrameRate } from './time'
 
+/** All transcript times are integer flicks in the original source media. */
+export interface TranscriptWord {
+  text: string
+  start: Flicks
+  end: Flicks
+  p: number
+}
+export interface TranscriptSegment {
+  text: string
+  start: Flicks
+  end: Flicks
+  words: TranscriptWord[]
+}
+export interface Transcript {
+  path: string
+  model: string
+  language: string
+  segments: TranscriptSegment[]
+}
+export interface TranscribeOptions {
+  range?: { start: Flicks; end: Flicks }
+  language?: string
+  model?: string
+}
+export interface TranscribeProgress {
+  phase: 'download' | 'extract' | 'transcribe' | 'done' | 'cancelled' | 'error'
+  progress: number
+  message: string
+  model?: string
+  bytes?: number
+  totalBytes?: number
+}
+export interface TranscribeStatus {
+  binary: boolean
+  /** A GPU device was detected by the bundled Vulkan backend. */
+  gpu: boolean
+  models: { id: string; name: string; sizeBytes: number; installed: boolean }[]
+}
+
 export interface ThumbnailStrip {
   /** URL pattern; replace `{i}` with the thumbnail index (0-based). */
   urlPattern: string
@@ -145,6 +184,14 @@ export interface HostBridge {
     proxy(path: string): Promise<string | null>
     /** Single still frame as a URL (for image thumbnails / posters). */
     poster(path: string, atSeconds?: number): Promise<string | null>
+  }
+
+  transcribe: {
+    status(): Promise<TranscribeStatus>
+    installModel(id: string): Promise<void>
+    run(path: string, opts?: TranscribeOptions): Promise<Transcript>
+    cancel(): Promise<void>
+    onProgress(fn: (progress: TranscribeProgress) => void): () => void
   }
 
   export: {

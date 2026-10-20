@@ -378,12 +378,12 @@ export class Editing {
 
   // ───────────────────────── tracks ─────────────────────────
 
-  addTrack(kind: TrackKind): Id {
+  addTrack(kind: TrackKind, opts: { name?: string; clips?: Clip[]; label?: string } = {}): Id {
     const id = uid('tr_')
-    this.doc.transact('Add track', (d) => {
+    this.doc.transact(opts.label ?? 'Add track', (d) => {
       const tl = this.tl(d)
       const n = tl.tracks.filter((t) => t.kind === kind).length + 1
-      const track: Track = { id, kind, name: `${kind === 'visual' ? 'V' : 'A'}${n}`, hidden: false, muted: false, locked: false, clips: [] }
+      const track: Track = { id, kind, name: opts.name ?? `${kind === 'visual' ? 'V' : 'A'}${n}`, hidden: false, muted: false, locked: false, clips: structuredClone(opts.clips ?? []) }
       if (kind === 'visual') {
         const lastVisual = tl.tracks.map((t) => t.kind).lastIndexOf('visual')
         tl.tracks.splice(lastVisual + 1, 0, track)

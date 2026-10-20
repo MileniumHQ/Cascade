@@ -10,11 +10,15 @@ import { tools } from '../../../main/mcp/catalog'
 import { Ids, applyEdits, staging, commit } from './edits'
 import { frame, imageResult, sheet } from './images'
 import { pluginDocs } from './plugin-docs'
+import type { CaptionsService } from '../captions'
+
+interface CaptionJob { jobId: string; state: 'running' | 'done' | 'error'; phase: string; progress: number; message: string; clips?: number }
 
 const text = (value: unknown): CallToolResult => ({ content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }] })
 export class AgentTools {
   readonly ids = new Ids()
   readonly jobs = new Map<string, ExportProgress>()
+  readonly captionJobs = new Map<string, CaptionJob>()
   readonly history: { label: string; source: string }[] = []
   constructor(readonly app: CascadeAPI) {}
   private session() {
@@ -44,7 +48,7 @@ export class AgentTools {
       if (!def) throw new Error(`Unknown tool ${call.tool}`)
       const a = def.schema.parse(call.args) as Record<string, any>
       const app = this.app, host = app.host!, ids = this.ids
-      if (!['project_new', 'project_open', 'registry_list', 'plugin_api_docs', 'plugin_list', 'plugin_write', 'plugin_remove', 'captions_generate'].includes(call.tool)) this.projectRequired()
+      if (!['project_new', 'project_open', 'registry_list', 'plugin_api_docs', 'plugin_list', 'plugin_write', 'plugin_remove'].includes(call.tool)) this.projectRequired()
       switch (call.tool) {
         case 'project_get': return text(a.detail === 'detailed' ? app.project() : { name: app.project().name, path: this.session().path(), settings: app.project().settings, duration: app.duration(), timecode: formatTimecode(app.duration(), app.fps()), media: app.project().mediaOrder.length, tracks: app.timeline().tracks.map(t => ({ id: ids.show(t.id, 't'), name: t.name, kind: t.kind, locked: t.locked })) })
         case 'project_new': await this.session().newProject(a.name, a.settings ?? {}); return text(`Created ${app.project().name}; saved ${this.session().path()}`)
@@ -105,9 +109,25 @@ export class AgentTools {
           if (!this.jobs.has(jobId)) this.jobs.set(jobId, { jobId, state: 'preparing', framesDone: 0, framesTotal: 0, fps: 0 })
           return text({ jobId, next: 'Poll job_get' })
         }
-        case 'job_get': { const job = this.jobs.get(a.jobId); if (!job) throw new Error('Unknown job; use a jobId from export_start in this editor session'); return text(job) }
+        case 'job_get': { const job = this.jobs.get(a.jobId) ?? this.captionJobs.get(a.jobId); if (!job) throw new Error('Unknown job; use a jobId from export_start in this editor session'); return text(job) }
         case 'export_cancel': if (!this.jobs.has(a.jobId)) throw new Error('Unknown job'); await host.export.cancel(a.jobId); return text('Cancellation requested')
-        case 'captions_generate': return { isError: true, content: [{ type: 'text', text: 'Caption transcription is not yet available. Recovery: add manual text clips with timeline_apply_edits/add_text, or retry once the transcription service is installed.' }] }
+        case 'captions_generate': {
+          const captions = app.services.get('captions') as CaptionsService | undefined
+          if (!captions) throw new Error('The captions plugin is not active')
+          if (!a.clipId === !a.mediaId) throw new Error('Give exactly one of clipId (from timeline_get) or mediaId (from media_list)')
+          if ([...this.captionJobs.values()].some(j => j.state === 'running')) throw new Error('A captions job is already running; poll job_get')
+          const jobId = `captions-${this.captionJobs.size + 1}`
+          const job: CaptionJob = { jobId, state: 'running', phase: 'starting', progress: 0, message: 'Starting' }
+          this.captionJobs.set(jobId, job)
+          const off = host.transcribe.onProgress(p => { if (job.state === 'running') Object.assign(job, { phase: p.phase, progress: Math.round(p.progress * 100) / 100, message: p.message }) })
+          captions.generate({ clipId: a.clipId && ids.resolve(a.clipId), mediaId: a.mediaId && ids.resolve(a.mediaId), language: a.language })
+            .then(clipIds => Object.assign(job, clipIds.length
+              ? { state: 'done', progress: 1, message: `Created ${clipIds.length} caption clips on a new Captions track; inspect timeline_get`, clips: clipIds.length }
+              : { state: 'done', progress: 1, message: 'No captions created (no speech found, or the user declined the model download)', clips: 0 }))
+            .catch(error => Object.assign(job, { state: 'error', message: error instanceof Error ? error.message : String(error) }))
+            .finally(off)
+          return text({ jobId, next: 'Poll job_get. The first run may wait on a model download prompt in the editor.' })
+        }
       }
       throw new Error('Tool not implemented')
     } catch (error) { return { isError: true, content: [{ type: 'text', text: `${error instanceof Error ? error.message : String(error)}\nRecovery: inspect project_get, timeline_get or registry_list, correct the arguments, then retry.` }] } }
