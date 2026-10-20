@@ -146,7 +146,10 @@ export interface PropertyApplyContext {
   mode: 'preview' | 'render'
   playing: boolean
   project: Project
-  /** Escape hatch for advanced properties. Prefer returning PropertyOutput. */
+  /**
+   * Escape hatch for advanced properties. Prefer returning PropertyOutput. Tag any element you add
+   * to the wrapper with `data-cs-owner="<property id>"` so the stage removes it when the property goes away.
+   */
   elements: { wrapper: HTMLElement; content: HTMLElement | null; document: Document }
 }
 

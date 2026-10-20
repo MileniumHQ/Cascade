@@ -326,6 +326,7 @@ export class Stage {
       svg: string[]
     } = { transform: [], filter: [], backdropFilter: [], style: {}, contentStyle: {}, svg: [] }
     const audioValues = new Map<Id, Record<string, unknown>>()
+    const applied = new Set<string>()
     for (const p of clip.properties) {
       if (!p.enabled) continue
       const contrib: PropertyContribution | undefined = this.opts.registries.properties.get(p.type)
@@ -340,6 +341,7 @@ export class Stage {
       if (contrib.audio) audioValues.set(p.id, values)
       if (!contrib.apply || track.kind !== 'visual') continue
       let r: PropertyOutput | void
+      applied.add(p.type)
       try {
         r = contrib.apply(values, {
           u: this.units,
@@ -368,6 +370,9 @@ export class Stage {
     if (track.kind === 'visual') {
       const w = m.wrapper
       w.style.display = visible ? '' : 'none'
+      // Escape-hatch DOM added by properties is tagged data-cs-owner="<type>"; drop it once that property stops applying.
+      if (w.childElementCount > 1)
+        for (const el of w.querySelectorAll<HTMLElement>(':scope > [data-cs-owner]')) if (!applied.has(el.dataset.csOwner!)) el.remove()
       if (out.svg.length) {
         const key = out.svg.join('')
         const id = `f_${clip.id}`

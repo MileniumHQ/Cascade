@@ -116,6 +116,7 @@ export const effectsPlugin = definePlugin({
           if (!o) {
             o = elements.document.createElement('div')
             o.className = 'cs-vignette'
+            o.dataset.csOwner = 'vignette'
             o.style.cssText = 'position:absolute;inset:0;pointer-events:none;'
             elements.wrapper.appendChild(o)
           }
