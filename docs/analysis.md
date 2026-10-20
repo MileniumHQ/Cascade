@@ -7,16 +7,16 @@ Nothing here changes the document or creates captions.
 
 ```ts
 const bridge = window.cascade.analysis
-await bridge.installModels(['speech', 'events', 'tone'])
+await bridge.installModels(['speech', 'events'])
 const result = await bridge.run(path, {
   range: { start: 600 * 705600000, end: 900 * 705600000 },
   language: 'en',
-  parts: ['speech', 'events', 'tone', 'shots']
+  parts: ['speech', 'events', 'prosody', 'shots']
 })
 ```
 
 `status()` lists usable parts and missing models. Defaults run installed parts; requesting
-tone also requests speech because sentences are its input. Downloads run only on explicit
+prosody also requests speech because words and sentences are its input. Downloads run only on explicit
 `installModels`, except the existing transcription service's automatic Whisper downloads.
 Linux x64 is supported. `tar` is required for installation; ffmpeg is required for decoding.
 `cancel()` aborts downloads, kills active ffmpeg/Whisper children, and terminates the inference
@@ -34,8 +34,9 @@ Whisper jobs. An inference call may finish its current native operation before w
   word index ranges. `rate` is words per second across the sentence span, including fillers.
 - **Loudness:** ffmpeg mono 16 kHz Float32 PCM supplies each word's RMS. `speechDb` is the median
   of finite, nonzero word RMS levels in dBFS; `word.db` is relative to it. This is a reference for
-  the **analyzed range**, not a separately computed full-file median. It is not perceptual LUFS,
-  pitch, emphasis detection, or evidence of emotion. Silent words omit `db`.
+  the **analyzed range**, not a separately computed full-file median. It is not perceptual LUFS.
+  Silent words omit `db`. Sentence-final words are often 10 dB below the median (speakers trail off),
+  so the agent transcript only marks words at ≤ -16 dB as `_quiet_`.
 - **Silences:** the same PCM decode runs silencedetect at -35 dBFS for at least 0.18 s, clamped to
   the requested range. Quiet speech may be classified as silence; background music may hide pauses.
 - **Events:** CED-Mini int8 AudioTagging uses 2 s windows at a 1 s hop. Curated AudioSet labels map
@@ -46,12 +47,27 @@ Whisper jobs. An inference call may finish its current native operation before w
   `underSpeech` means unioned word spans cover more than half of the event. Without successful
   speech analysis this flag is false because speech overlap is unknown. Window boundaries have
   approximately 1–2 s uncertainty and must not be treated as sample-accurate editing boundaries.
-- **Tone:** SenseVoiceSmall reads each sentence plus 150 ms context. Neutral hard labels receive
-  confidence 0.5. A non-neutral label must agree with a second decode of the unpadded sentence;
-  it then receives confidence 0.65. These numbers express a conservative policy, **not model
-  posteriors or calibrated probabilities**. Disagreement, unknown labels, and sentences shorter
-  than 0.7 s omit tone. Tone is an acoustic model label, not a claim about intent or actual feelings.
-  The SenseVoice event label is not promoted into a precisely timed event.
+- **Prosody (measured, no model):** a YIN pitch tracker (60–400 Hz, 40 ms window, 10 ms hop,
+  computed at 8 kHz) runs in the analysis worker over word spans only. From it:
+  - `word.st`: the word's median pitch in semitones relative to the median of the surrounding ±10
+    sentences. Using a local baseline means a change of presenter does not make everyone "high".
+    Words with fewer than 3 voiced frames omit it.
+  - `word.emphasis`: pitch at least +2 st **and** loudness at least +1.5 dB above the sentence's own
+    linear trend (speech declines in pitch and level over a sentence, so sentence-initial words are
+    otherwise always "high"). The word also needs ≥ 80 ms of voicing and must not be spoken faster
+    than the sentence's typical per-letter pace. There is at most one per sentence. This is
+    deliberately conservative and **not validated against human stress labels**.
+  - `sentence.pitch.range`: the 10th–90th percentile pitch spread in semitones. The agent transcript
+    shows `[lively]` at ≥ max(8, 1.5× the source's median spread) and `[flat]` at ≤ min(3, 0.6×)
+    for sentences of at least 1.5 s.
+  - `sentence.pitch.end`: pitch movement over the last voiced word, comparing the median of its first
+    and last 40% of frames. `rise` (≥ +2 st) shows as `↗`; it often marks questions, uncertainty or a
+    list that continues.
+  `speechHz` is the source's median voiced pitch.
+  Emotion labels were evaluated and dropped. SenseVoiceSmall returned `EMO_UNKNOWN` for 7 of 8
+  English keynote clips and `NEUTRAL` for the eighth, under every language/ITN setting. sherpa
+  exposes no posteriors to recover a usable score. Acoustic emotion labels would also be a guess
+  presented as a fact, whereas pitch, loudness, rate and pauses are measurements an agent can reason over.
 - **Shots:** CPU-only ffmpeg decodes every frame, scales to width 320, and selects scene score
   >0.30. Cuts within 150 ms collapse. This targets conspicuous hard cuts; fades, animated slides,
   and similar-looking camera changes can be missed. A rapid motion/lighting change can false-trigger.
@@ -84,10 +100,9 @@ No upstream Python training implementation is included.
 | --- | --- | ---: | ---: |
 | Speech | Existing Whisper Large v3 Turbo Q8 + Silero v6.2 | See `src/main/transcribe.ts` | 874,188,075 + 885,098 |
 | Events | [CED-Mini 2024-04-19 release](https://github.com/k2-fsa/sherpa-onnx/releases/tag/audio-tagging-models) | 47,658,399 | 10,451,715 ONNX + 14,675 labels |
-| Tone | [SenseVoiceSmall int8 2024-07-17 release](https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models) | 163,002,883 | 239,233,841 ONNX + 315,894 tokens |
 
-The CED archive includes an unused float model and test WAVs; installation extracts only the
-int8 model and class labels. Both archives stay in the model directory for reuse. Downloads
+Prosody needs no model. The CED archive includes an unused float model and test WAVs; installation extracts only the
+int8 model and class labels. The archive stays in the model directory for reuse. Downloads
 stream to `.partial`, resume with HTTP Range validation, and verify size and SHA-256 before
 rename/extraction. Installation writes a `NOTICE.txt` beside each model. Status checks expected
 installed file sizes; it does not rehash hundreds of megabytes on every status request.
@@ -96,11 +111,10 @@ Archive SHA-256:
 
 ```text
 CED-Mini: bec8bfa0af2c20ec3a9e7c6dd6c92d0fb6e96d6b25370ebe7a48e7283a60a02c
-SenseVoiceSmall: 7d1efa2138a65b0b488df37f8b89e3d91a60676e416f515b952358d83dfd347e
 ```
 
 CED was hashed after downloading the official release; that older release asset does not expose
-a GitHub digest. SenseVoice's hash also matches the GitHub release asset's published SHA-256.
+a GitHub digest.
 The manifest pins these exact archives rather than following a mutable model name.
 
 **CED-Mini attribution:** CED-Mini by Xiaomi Corporation / Heinrich Dinkel et al.;
@@ -109,19 +123,10 @@ The [training repository](https://github.com/RicherMans/CED) is GPL-3.0; that co
 redistributed here. AudioSet ontology/class labels are by Google, [CC BY 4.0](https://research.google.com/audioset/).
 Retain weight authorship and license notices when redistributing models.
 
-**SenseVoiceSmall attribution:** “SenseVoiceSmall by FunASR/FunAudioLLM, Alibaba Group;
-ONNX conversion by k2-fsa/sherpa-onnx.” Retain that source/author information and model name,
-and link the [model card](https://huggingface.co/FunAudioLLM/SenseVoiceSmall) and
-[FunASR Model Open Source License Agreement v1.1](https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE).
-Section 2 grants use/copy/modification/sharing and requires attribution. Section 3 says the
-models are provided for reference/learning and disclaims responsibility. An earlier maintainer
-comment interpreted this as permitting commercial use with attribution, but
-[issue #334](https://github.com/QwenAudio/SenseVoice/issues/334) was reopened and explicitly says
-that comment is **not final license-owner confirmation**. As checked on 2026-10-20, the issue
-remains open. Commercial-use certainty therefore remains a release/legal review item; do not
-represent these weights as Apache-2.0 or unconditionally cleared for commercial redistribution.
-
 ## Verification on this machine
+
+> The run below predates the prosody part, which replaced SenseVoice tone. For prosody, see
+> "Prosody on real speech" at the end.
 
 Measured results and spot-checks are recorded below after running the real Electron IPC bridge.
 Hardware: AMD Ryzen 5 7600 (6 cores / 12 logical CPUs), 32 GB RAM, Linux x64.
@@ -177,8 +182,7 @@ with the isolated `.profile` / `.projects` directories. Every test Electron proc
   positive windows have more non-mono energy than the 800 s negative control. This is
   consistent with a quiet stereo bed but **does not prove music**; weak ranges remain
   unconfirmed and may be speech/room/codec false positives. No claim of verified event recall.
-- Speaker diarization remains unimplemented. No full-file benchmark was run. Commercial
-  distribution of SenseVoice needs the license clarification described above.
+- Speaker diarization remains unimplemented. No full-file benchmark was run.
 
 ### Compact real IPC result excerpt
 
@@ -211,3 +215,20 @@ Full local verification artifacts (ignored, not committed): `.scratch/analysis-6
 `.scratch/packaged-check.log`. The first JSON preserves cold timing; the packaged one uses
 warm transcription. Reproduction hooks are `.scratch/ipc-steps.mjs`,
 `.scratch/packaged-check.mjs`, and `.scratch/compare.mjs`.
+
+### Prosody on real speech
+
+The same 600–900 s range (924 words, 73 sentences) ran through the built app over MCP. The YIN
+pass over word spans took 0.8 s, with a median pitch of 178 Hz.
+
+- **Stress:** 29 words marked, about 0.4 per sentence. Most fall on plausible contrastive stress:
+  "page *two*", "*we* wanted to", "grab *this* widget", "can actually *do* this". Some sentence-
+  initial discourse words remain ("*So* let's…").
+- **Before declination correction:** a plain sentence-median baseline flagged 53 words, mostly
+  sentence-initial function words ("*And* *the* new designs").
+- **`[lively]`:** 12 sentences, clustered at 10:41–11:24, where the presenter becomes animated ("Well,
+  let's add a second one", "It's a really special one", "what's really cool").
+- **`↗`:** 7 sentences. "So in the morning, I can get my news briefing ↗" is followed by "Throughout
+  the day… And in the evening…", a correctly detected list continuation.
+- **Not validated:** none of this has been checked against human prosody annotation. Treat the
+  marks as measured hints, not ground truth.

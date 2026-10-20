@@ -3,16 +3,16 @@ import { join, resolve } from 'node:path'
 import { Worker } from 'node:worker_threads'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
-import { ANALYSIS_VERSION, type AnalysisBridge, type AnalysisOptions, type AnalysisPart, type AnalysisProgress, type SourceAnalysis, type AnalysisSentence } from '../../shared/analysis'
+import { ANALYSIS_VERSION, type AnalysisBridge, type AnalysisOptions, type AnalysisPart, type AnalysisProgress, type SourceAnalysis } from '../../shared/analysis'
 import { FLICKS } from '../../shared/time'
 import { createTranscriptionService } from '../transcribe'
 import { createMediaService } from '../media'
 import { getFFmpegTools, spawnTracked } from '../ffmpeg'
 import { downloadModel, size } from '../model-download'
 import { MODELS } from './models'
-import { applyLoudness, cacheKey, completePart, EventMerger, isFiller, sentences } from './logic'
+import { applyLoudness, applyProsody, cacheKey, completePart, EventMerger, isFiller, PITCH_HOP_SAMPLES, sentences } from './logic'
 
-const PARTS: AnalysisPart[] = ['speech', 'events', 'tone', 'shots', 'speakers']
+const PARTS: AnalysisPart[] = ['speech', 'events', 'prosody', 'shots', 'speakers']
 const RATE = 16000
 const message = (e: unknown) => e instanceof Error ? e.message : String(e)
 type TranscriptionService = ReturnType<typeof createTranscriptionService>
@@ -41,7 +41,7 @@ async function execute(command: string, args: string[], signal: AbortSignal, lin
   } finally { signal.removeEventListener('abort', kill) }
 }
 
-function inference(part: 'events' | 'tone', modelsDir: string, language: string, signal: AbortSignal) {
+function inference(part: 'events' | 'prosody', modelsDir: string, language: string, signal: AbortSignal) {
   signal.throwIfAborted()
   const worker = new Worker(fileURLToPath(new URL('./analysis-worker.js', import.meta.url)))
   const cancel = () => { void worker.terminate() }
@@ -82,7 +82,8 @@ export function createAnalysisService(userData: string, resourcesPath = process.
   async function status() {
     const speech = await transcription.status()
     const available: AnalysisPart[] = []
-    if (await getFFmpegTools().then(() => true, () => false)) available.push('shots')
+    // Shots need only ffmpeg; prosody needs only decoded audio and a speech result.
+    if (await getFFmpegTools().then(() => true, () => false)) available.push('prosody', 'shots')
     const missing = speech.models.filter(m => !m.installed).map(m => ({ part: 'speech' as AnalysisPart, id: m.id, name: m.name, sizeBytes: m.sizeBytes }))
     if (speech.binary && !missing.length) available.unshift('speech')
     // The pinned Linux addon is packaged as a dependency; model presence is checked independently.
@@ -107,7 +108,7 @@ export function createAnalysisService(userData: string, resourcesPath = process.
     catch (error) { if (controller.signal.aborted) emit('extract', 0, 'Analysis cancelled', 'cancelled'); throw error }
     finally { current = undefined; activePath = '' }
   }
-  async function installModels(parts: AnalysisPart[] = ['speech', 'events', 'tone']) {
+  async function installModels(parts: AnalysisPart[] = ['speech', 'events']) {
     const requested = validateParts(parts)
     return exclusive('', async signal => {
       await mkdir(modelsDir, { recursive: true })
@@ -164,8 +165,8 @@ export function createAnalysisService(userData: string, resourcesPath = process.
       const language = opts.language ?? 'auto'
       if (!/^(auto|[a-z]{2,3})$/.test(language)) throw new Error('Invalid analysis language')
       const requested = validateParts(opts.parts ?? (await status()).available)
-      // Tone needs sentence boundaries, so speech is an explicit completed dependency.
-      if (requested.includes('tone') && !requested.includes('speech')) requested.unshift('speech')
+      // Prosody is measured per word and sentence, so speech is an explicit completed dependency.
+      if (requested.includes('prosody') && !requested.includes('speech')) requested.unshift('speech')
       const key = cacheKey(absolute, info, range, language, requested)
       await mkdir(cacheDir, { recursive: true })
       const cache = join(cacheDir, `${key}.json`)
@@ -254,26 +255,28 @@ export function createAnalysisService(userData: string, resourcesPath = process.
             result.events = merger.finish(result.words); result.models.events = model.id
           } finally { await worker.close() }
         },
-        tone: async () => {
-          if (!result.parts.includes('speech')) throw new Error('Tone requires successful speech analysis')
-          const model = MODELS.find(m => m.part === 'tone')!
-          if (!await installed(model)) throw new Error('SenseVoiceSmall model missing; call installModels(["tone"])')
-          const worker = inference('tone', modelsDir, language, signal)
-          const tones = new Map<number, AnalysisSentence['tone']>()
+        prosody: async () => {
+          if (!result.parts.includes('speech')) throw new Error('Prosody requires successful speech analysis')
+          const worker = inference('prosody', modelsDir, language, signal)
+          const f0: number[][] = result.words.map(() => [])
           try {
             await worker.ready()
             await audio(async read => {
-              for (let i = 0; i < result.sentences.length; i++) {
-                const sentence = result.sentences[i]
-                if (sentence.end - sentence.start < .7 * FLICKS) continue
-                const start = Math.max(range.start, sentence.start - .15 * FLICKS), end = Math.min(range.end, sentence.end + .15 * FLICKS)
-                const tone = await worker.request({ kind: 'tone', samples: await read(start, end), alternate: await read(sentence.start, sentence.end) }) as AnalysisSentence['tone'] | null
-                if (tone) tones.set(i, tone)
-                emit('tone', (i + 1) / result.sentences.length, 'Checking sentence tone')
+              const hop = FLICKS * PITCH_HOP_SAMPLES / RATE
+              for (let start = range.start; start < range.end; start += 30 * FLICKS) {
+                const end = Math.min(range.end, start + 30 * FLICKS)
+                const inside = result.words.map((w, i) => [w, i] as const).filter(([w]) => w.end > start && w.start < end)
+                if (!inside.length) continue
+                const spans = inside.map(([w]) => [Math.floor((w.start - start) / hop), Math.ceil((w.end - start) / hop)] as [number, number])
+                const track = await worker.request({ kind: 'pitch', samples: await read(start, end), spans }) as Float32Array
+                inside.forEach(([w, i]) => {
+                  for (let h = Math.max(0, Math.ceil((w.start - start) / hop)); h < Math.min(track.length, Math.floor((w.end - start) / hop)); h++) if (track[h]) f0[i].push(track[h])
+                })
+                emit('prosody', (end - range.start) / (range.end - range.start), 'Measuring pitch and emphasis')
               }
             })
-            for (const [i, tone] of tones) result.sentences[i].tone = tone
-            result.models.tone = model.id
+            result.speechHz = applyProsody(result.words, result.sentences, f0)
+            result.models.prosody = 'yin-8k-60-400hz-v1'
           } finally { await worker.close() }
         },
         shots: async () => {

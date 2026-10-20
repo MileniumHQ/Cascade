@@ -5,9 +5,9 @@
  */
 import type { Flicks } from './time'
 
-export const ANALYSIS_VERSION = 1
+export const ANALYSIS_VERSION = 2
 
-export type AnalysisPart = 'speech' | 'events' | 'tone' | 'shots' | 'speakers'
+export type AnalysisPart = 'speech' | 'events' | 'prosody' | 'shots' | 'speakers'
 
 export interface AnalysisWord {
   /** Verbatim text, including disfluencies ("um", "uh") when whisper keeps them. */
@@ -20,9 +20,11 @@ export interface AnalysisWord {
   filler?: boolean
   /** Word loudness in dB relative to this source's median speech loudness (+6 ≈ emphasized, -10 ≈ quiet). */
   db?: number
+  /** Median pitch in semitones relative to the source's median speaking pitch (prosody part). */
+  st?: number
+  /** Pitch and loudness both peak within the sentence (at most two per sentence). */
+  emphasis?: true
 }
-
-export type ToneLabel = 'neutral' | 'happy' | 'sad' | 'angry' | 'fearful' | 'disgusted' | 'surprised'
 
 export interface AnalysisSentence {
   start: Flicks
@@ -30,8 +32,11 @@ export interface AnalysisSentence {
   /** Half-open index range into `words`. */
   words: [number, number]
   text: string
-  /** Model-estimated vocal tone. Only present when the tone part ran; `confidence` is 0..1. */
-  tone?: { label: ToneLabel; confidence: number }
+  /**
+   * Measured intonation (prosody part): `range` = 10th–90th percentile pitch spread in semitones
+   * (monotone ≈ 3, lively ≈ 8+); `end` = pitch direction over the last voiced word.
+   */
+  pitch?: { range: number; end: 'rise' | 'fall' | 'level' }
   /** Speaking rate in words per second. */
   rate?: number
   /** 0-based speaker index when the speakers part ran. */
@@ -73,6 +78,8 @@ export interface SourceAnalysis {
   shots: Flicks[]
   /** Median speech loudness in dBFS, the reference for `AnalysisWord.db`. */
   speechDb?: number
+  /** Median speaking pitch in Hz, the reference for `AnalysisWord.st`. */
+  speechHz?: number
 }
 
 export interface AnalysisOptions {

@@ -58,7 +58,7 @@ Tools are listed in deterministic order and accept `detail: "concise" | "detaile
 | `frame_get`, `contact_sheet`, `timeline_preview_sheet`, `media_contact_sheet` | Visual inspection |
 | `plugin_write`, `plugin_list`, `plugin_remove`, `plugin_api_docs` | Property plugin authoring and hot reload |
 | `export_start`, `job_get`, `export_cancel` | Asynchronous export jobs |
-| `media_analyze`, `transcript_get`, `transcript_search` | Edit by content: words, fillers, pauses, loudness, tone, sound events and shot cuts. See [Editing by transcript](#editing-by-transcript) |
+| `media_analyze`, `transcript_get`, `transcript_search` | Edit by content: words, fillers, pauses, loudness, pitch and stress, sound events and shot cuts. See [Editing by transcript](#editing-by-transcript) |
 | `captions_generate`, `job_get` | Local Whisper captions for a clip (`clipId`) or source (`mediaId`); asynchronous, poll `job_get`. See [captions.md](captions.md) |
 
 ## Batch example
@@ -107,30 +107,33 @@ Recovery: inspect project_get, timeline_get or registry_list, correct the argume
 
 ## Editing by transcript
 
-The analysis is the map for content edits. Agents can see exactly where words, sentences, pauses, fillers, sound events, tone shifts and shot cuts sit on the timeline.
+The analysis is the map for content edits. Agents can see exactly where words, sentences, pauses, fillers, stressed words, intonation, sound events and shot cuts sit on the timeline.
 
 1. `media_analyze(mediaId)`, then poll `job_get`. Analysis runs once per source file and is cached. Every clip of that source benefits, whatever its trim or speed. See [analysis.md](analysis.md) for models and accuracy.
 2. `transcript_get` returns timeline-time lines, interleaved chronologically:
 
 ```
 s1 00:00:01.00–00:00:02.21 w1–w5 So, {um,} this is great.
-  ⏸ 1.50s
+  ⏸ 1.50s w5.end → w6.start
 ✂ 00:00:03.15
-s2 00:00:04.06–00:00:05.03 w6–w7 [happy .80] *Really* great!
+s2 00:00:04.06–00:00:05.03 w6–w7 [lively] ↗ *Really* great!
 [APPLAUSE 00:00:05.09–00:00:07.00 .90]
 ```
 
    Legend:
    - `{um}` marks a filler.
-   - `*word*` is at least 6 dB louder than the speaker's median, and `_word_` at least 10 dB quieter.
+   - `*word*` is stressed: pitch and loudness peak above the sentence's trend, at most one per sentence. It also marks words at least 6 dB louder than the median.
+   - `_word_` is at least 16 dB quieter and may be hard to hear.
    - `word?` marks low recognizer confidence.
-   - A tone tag appears only when the tone is non-neutral with confidence ≥ 0.5.
+   - `[lively]` / `[flat]` mark unusually wide or narrow pitch variation for this speaker. `↗` marks a rising ending: a question, uncertainty, or a list that continues. These are measurements, not emotion labels.
+   - A pause line names the anchors on either side, so `w5.end+80ms` → `w6.start-80ms` tightens it.
    - `(part)` means the sentence is partly trimmed out of the clip.
-   - `view: "words"` lists every word with its id and timecode.
+   - `view: "words"` lists every word with its id, timecode, pitch (semitones vs. the speaker's norm) and loudness (dB vs. the median).
 3. Edit with the ordinary ops. Any time field can be an **anchor**, including `start`, `end`, `time`, keyframe times and `frame_get`:
-   - **Forms:** `w12`, `w12.end`, `s3.start`, and offsets such as `w12.end+80ms` or `s3-0.5s`.
+   - **Forms:** `w12`, `w12.end`, `s3.start`, and offsets such as `w12.end+80ms`, `s3-0.5s` or `s3.end+2f` (frames).
    - **Resolution:** anchors resolve to exact word times, not frame-rounded timecodes. They resolve against the timeline as edited so far in the batch, so several word cuts in one batch stay correct.
    - **Keyframe times:** an anchor in a keyframe/parameter time is converted to clip-local time.
+   - **Pieces:** if a clip was cut into pieces, earlier in the batch or before, a `split`, `add_keyframe` or `set_param` with an anchor time goes to the piece of the same source on the same track that holds that moment. The result line names the piece. So "cut the pauses, then punch in on w227" works in one batch with the original clip id.
    - **Cut ids:** an anchor whose word has already been cut is rejected, and nothing in the batch is applied.
 
    There are deliberately no special "remove fillers" or "tighten pauses" operations. You decide what to cut, how much padding to keep, and whether to punch in or cover a jump cut with b-roll. Then you compose it from `ripple_delete`, `split`, `trim`, `move`, properties and keyframes. Examples:

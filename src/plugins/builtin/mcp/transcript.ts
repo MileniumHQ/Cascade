@@ -2,7 +2,7 @@
  * Agent-facing transcript: source analyses mapped through timeline clips, rendered as compact
  * text with stable word/sentence ids, plus cut planning (words → ripple ranges).
  */
-import type { AnalysisPart, SourceAnalysis, ToneLabel } from '@shared/analysis'
+import type { AnalysisPart, AnalysisSentence, SourceAnalysis } from '@shared/analysis'
 import { clipEnd, type Clip, type Id, type Project, type Track } from '@shared/project'
 import { FLICKS, formatTimecode, type Flicks, type FrameRate } from '@shared/time'
 
@@ -19,6 +19,8 @@ export interface TWord {
   end: Flicks
   filler: boolean
   db?: number
+  st?: number
+  emphasis: boolean
   p: number
 }
 export interface TSentence {
@@ -29,7 +31,7 @@ export interface TSentence {
   words: TWord[]
   /** Some of the source sentence's words are outside the clip (trimmed or cut). */
   partial: boolean
-  tone?: { label: ToneLabel; confidence: number }
+  pitch?: AnalysisSentence['pitch']
   speaker?: number
 }
 export interface TEvent { cue: string; start: Flicks; end: Flicks; score: number; underSpeech: boolean; clipId: Id }
@@ -45,8 +47,7 @@ export interface TIndex {
 }
 
 const LOUD_DB = 6
-const QUIET_DB = -10
-const TONE_MIN = 0.5
+const QUIET_DB = -16
 const PAUSE_SHOWN = 0.5 * FLICKS
 
 /** Analyses usable for a source range, widest first; later ones only fill gaps. */
@@ -83,12 +84,12 @@ export function buildIndex(project: Project, analyses: Analyses): TIndex {
             for (let i = s.words[0]; i < s.words[1]; i++) {
               const w = a.words[i]
               if (!w || !fresh((w.start + w.end) / 2)) continue
-              words.push({ key: `${clip.mediaId}|${track.id}|${w.start}`, clipId: clip.id, trackId: track.id, text: w.text, start: toTimeline(w.start), end: toTimeline(w.end), filler: !!w.filler, db: w.db, p: w.p })
+              words.push({ key: `${clip.mediaId}|${track.id}|${w.start}`, clipId: clip.id, trackId: track.id, text: w.text, start: toTimeline(w.start), end: toTimeline(w.end), filler: !!w.filler, db: w.db, st: w.st, emphasis: !!w.emphasis, p: w.p })
             }
             if (!words.length) continue
             out.words.push(...words)
             out.sentences.push({ key: `${clip.mediaId}|${track.id}|s${s.start}`, clipId: clip.id, start: words[0].start, end: words.at(-1)!.end, words,
-              partial: words.length < s.words[1] - s.words[0], tone: s.tone, speaker: s.speaker })
+              partial: words.length < s.words[1] - s.words[0], pitch: s.pitch, speaker: s.speaker })
           }
           for (const e of a.events) {
             const from = Math.max(e.start, srcStart), to = Math.min(e.end, srcEnd)
@@ -107,16 +108,23 @@ export function buildIndex(project: Project, analyses: Analyses): TIndex {
   return out
 }
 
-/** Word markup: {um} filler, *word* louder, _word_ quieter, word? low confidence. */
+/** Word markup: {um} filler, *word* stressed or much louder, _word_ very quiet, word? low confidence. */
 function markup(w: TWord) {
   let t = w.text
   if (w.filler) return `{${t}}`
-  if (w.db !== undefined && w.db >= LOUD_DB) t = `*${t}*`
+  if (w.emphasis || w.db !== undefined && w.db >= LOUD_DB) t = `*${t}*`
   else if (w.db !== undefined && w.db <= QUIET_DB) t = `_${t}_`
   if (w.p < 0.4) t += '?'
   return t
 }
-const showTone = (s: TSentence) => s.tone && s.tone.label !== 'neutral' && s.tone.confidence >= TONE_MIN ? ` [${s.tone.label} ${s.tone.confidence.toFixed(2).slice(1)}]` : ''
+const signed = (v: number, unit: string) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}${unit}`
+/** Intonation tags, relative to how this source's speaker usually varies pitch. Only notable cases are shown. */
+function showPitch(s: TSentence, typical: number) {
+  if (!s.pitch) return ''
+  const long = s.end - s.start >= 1.5 * FLICKS
+  const tag = s.pitch.range >= Math.max(8, typical * 1.5) ? ' [lively]' : long && s.pitch.range <= Math.min(3, typical * 0.6) ? ' [flat]' : ''
+  return tag + (s.pitch.end === 'rise' ? ' ↗' : '')
+}
 
 export interface FormatOptions {
   fps: FrameRate
@@ -131,7 +139,7 @@ export interface FormatOptions {
   trackLabel: (t: Track) => string
 }
 
-export const TRANSCRIPT_LEGEND = 'Timeline time. w#/s# ids are anchors for any time in timeline_apply_edits/frame_get (w12, w12.end, s3.start, w12.end+80ms). {um}=filler, *word*=louder (+6 dB), _word_=quieter (-10 dB), word?=low confidence, [tone .conf] only when non-neutral, (part)=sentence partly outside the clip. ⏸ pause, ✂ shot cut, [CUE] sound event.'
+export const TRANSCRIPT_LEGEND = 'Timeline time. w#/s# ids are anchors for any time in timeline_apply_edits/frame_get (w12, w12.end, s3.start, w12.end+80ms). {um}=filler, *word*=stressed (pitch and loudness peak above the sentence trend; conservative, ≤1 per sentence; or ≥ +6 dB louder), _word_=very quiet (≤ -16 dB, may be hard to hear), word?=low confidence, [lively]/[flat]=pitch variation vs the speaker’s norm, ↗=rising ending (question, uncertainty, list continuing), (part)=sentence partly outside the clip. ⏸ pause, ✂ shot cut, [CUE] sound event.'
 
 export function formatTranscript(index: TIndex, o: FormatOptions): string {
   const tc = (t: Flicks) => formatTimecode(t, o.fps)
@@ -149,19 +157,21 @@ export function formatTranscript(index: TIndex, o: FormatOptions): string {
   const sentences = index.sentences.filter((s) => clipOk(s.clipId) && inRange(s.start, s.end))
   // Allocate ids in time order up front so a sentence's w#–w# range is contiguous and readable.
   for (const s of sentences) { o.sentenceId(s); for (const w of s.words) o.wordId(w) }
+  const ranges = index.sentences.flatMap((s) => s.pitch ? [s.pitch.range] : []).sort((a, b) => a - b)
+  const typical = ranges[(ranges.length - 1) >> 1] ?? 0
   for (const s of sentences) {
     const first = o.wordId(s.words[0]), last = o.wordId(s.words.at(-1)!)
     items.push({ t: s.start, line: () => {
-      const head = `${o.sentenceId(s)} ${tc(s.start)}–${tc(s.end)} ${first}${s.words.length > 1 ? `–${last}` : ''}${s.speaker !== undefined ? ` S${s.speaker + 1}` : ''}${showTone(s)}${s.partial ? ' (part)' : ''} `
+      const head = `${o.sentenceId(s)} ${tc(s.start)}–${tc(s.end)} ${first}${s.words.length > 1 ? `–${last}` : ''}${s.speaker !== undefined ? ` S${s.speaker + 1}` : ''}${showPitch(s, typical)}${s.partial ? ' (part)' : ''} `
       if (o.view === 'sentences') return [head + s.words.map(markup).join(' ')]
-      return [head, ...s.words.map((w) => `  ${o.wordId(w)} ${tc(w.start)} ${markup(w)}`)]
+      return [head, ...s.words.map((w) => `  ${o.wordId(w)} ${tc(w.start)} ${markup(w)}${w.st !== undefined ? ` ${signed(w.st, 'st')}` : ''}${w.db !== undefined ? ` ${signed(w.db, 'dB')}` : ''}`)]
     } })
   }
   // Pauses between consecutive shown words (only notable ones).
   const words = sentences.flatMap((s) => s.words)
   for (let i = 1; i < words.length; i++) {
     const gap = words[i].start - words[i - 1].end
-    if (gap >= PAUSE_SHOWN) items.push({ t: words[i - 1].end + 1, line: () => [`  ⏸ ${(gap / FLICKS).toFixed(2)}s`] })
+    if (gap >= PAUSE_SHOWN) items.push({ t: words[i - 1].end + 1, line: () => [`  ⏸ ${(gap / FLICKS).toFixed(2)}s ${o.wordId(words[i - 1])}.end → ${o.wordId(words[i])}.start`] })
   }
   for (const e of index.events) if (clipOk(e.clipId) && inRange(e.start, e.end)) items.push({ t: e.start, line: () => [`[${e.cue} ${tc(e.start)}–${tc(e.end)} ${e.score.toFixed(2).slice(1)}${e.underSpeech ? ' under speech' : ''}]`] })
   for (const s of index.shots) if (clipOk(s.clipId) && s.t >= lo && s.t < hi) items.push({ t: s.t, line: () => [`✂ ${tc(s.t)}`] })

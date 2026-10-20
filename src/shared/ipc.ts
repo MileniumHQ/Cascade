@@ -198,7 +198,7 @@ export interface HostBridge {
     onProgress(fn: (progress: TranscribeProgress) => void): () => void
   }
 
-  /** Local source analysis (words, tone, sound events, shots). */
+  /** Local source analysis (words, prosody, sound events, shots). */
   analysis: AnalysisBridge
 
   export: {

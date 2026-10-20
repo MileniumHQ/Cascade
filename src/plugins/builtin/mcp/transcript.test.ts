@@ -11,14 +11,14 @@ const PATH = '/footage/talk.mp4'
 // Source 100s..: "So, um, this is great. [1.5 s pause] Really great!"  plus applause and a shot cut.
 const raw: [string, number, number, Partial<AnalysisWord>?][] = [
   ['So,', 100.0, 100.3], ['um,', 100.4, 100.7, { filler: true }], ['this', 100.8, 101.0], ['is', 101.05, 101.2], ['great.', 101.25, 101.7],
-  ['Really', 103.2, 103.6, { db: 7.5 }], ['great!', 103.65, 104.1]
+  ['Really', 103.2, 103.6, { db: 3, st: 4, emphasis: true }], ['great!', 103.65, 104.1, { db: -1, st: 1.2 }]
 ]
 const analysis: SourceAnalysis = {
-  version: 1, path: PATH, range: { start: S(90), end: S(120) }, language: 'en', parts: ['speech', 'events', 'tone', 'shots'], models: {},
+  version: 1, path: PATH, range: { start: S(90), end: S(120) }, language: 'en', parts: ['speech', 'events', 'prosody', 'shots'], models: {},
   words: raw.map(([text, a, b, extra]) => ({ text, start: S(a), end: S(b), p: 0.9, ...extra })),
   sentences: [
-    { start: S(100), end: S(101.7), words: [0, 5], text: 'So, um, this is great.' },
-    { start: S(103.2), end: S(104.1), words: [5, 7], text: 'Really great!', tone: { label: 'happy', confidence: 0.8 } }
+    { start: S(100), end: S(101.7), words: [0, 5], text: 'So, um, this is great.', pitch: { range: 4, end: 'fall' } },
+    { start: S(103.2), end: S(104.1), words: [5, 7], text: 'Really great!', pitch: { range: 9, end: 'rise' } },
   ],
   events: [{ cue: 'APPLAUSE', label: 'Applause', start: S(104.3), end: S(106), score: 0.9 }],
   silences: [], shots: [S(102.5)]
@@ -57,13 +57,20 @@ test('formats an interleaved, id-addressable transcript', () => {
   const ids = new Ids()
   const out = formatTranscript(buildIndex(app.project(), analyses), { fps: app.fps(), view: 'sentences', maxLines: 100, ...labels(ids) })
   expect(out).toContain('s1 00:00:01.00–00:00:02.21 w1–w5 So, {um,} this is great.')
-  expect(out).toContain('⏸ 1.50s')
+  expect(out).toContain('⏸ 1.50s w5.end → w6.start')
   expect(out).toContain('✂ 00:00:03.15')
-  expect(out).toContain('s2 00:00:04.06–00:00:05.03 w6–w7 [happy .80] *Really* great!')
+  expect(out).toContain('s2 00:00:04.06–00:00:05.03 w6–w7 [lively] ↗ *Really* great!')
   expect(out).toContain('[APPLAUSE 00:00:05.09–00:00:07.00 .90]')
   // Chronological: pause, then the shot cut, then the next sentence.
   expect(out.indexOf('⏸')).toBeLessThan(out.indexOf('✂'))
   expect(out.indexOf('✂')).toBeLessThan(out.indexOf('s2 '))
+})
+
+test('the words view gives exact pitch and loudness per word', () => {
+  const { app, analyses } = editor()
+  const out = formatTranscript(buildIndex(app.project(), analyses), { fps: app.fps(), view: 'words', maxLines: 100, ...labels(new Ids()) })
+  expect(out).toContain('w6 00:00:04.06 *Really* +4.0st +3.0dB')
+  expect(out).toContain('w7 00:00:04.19 great! +1.2st -1.0dB')
 })
 
 test('search finds phrases across punctuation and returns word ranges', () => {
@@ -103,9 +110,26 @@ test('ripple_delete by anchors composes word cuts; anchors re-resolve after earl
 test('anchors work for any time field: markers and splits land on words', () => {
   const { app, analyses } = editor()
   const ids = transcriptIds(app, analyses)
-  applyEdits(app, { ops: [{ op: 'add_marker', time: 's2.start', name: 'Reaction' }, { op: 'split', clipId: 'ca', time: 'w5.end+100ms' }] }, ids, analyses)
-  expect(app.timeline().markers[0].t).toBe(S(4.2))
+  applyEdits(app, { ops: [{ op: 'add_marker', time: 's2.start', name: 'Reaction' }, { op: 'split', clipId: 'ca', time: 'w5.end+100ms' }, { op: 'add_marker', time: 's2.start+3f', name: 'Frames' }] }, ids, analyses)
+  expect(app.timeline().markers.map(m => m.t)).toEqual([S(4.2), S(4.2) + 3 * Math.round(FLICKS / 30)])
   expect(app.timeline().tracks.find(t => t.kind === 'audio')!.clips.map(c => c.start)).toContain(S(2.8))
+})
+
+test('cut then act in one batch: an anchor on a cut clip lands on the piece holding the word', () => {
+  const { app, analyses } = editor()
+  const ids = transcriptIds(app, analyses)
+  ids.show('ca', 'c')
+  const result = applyEdits(app, { ops: [
+    { op: 'ripple_delete', start: 'w5.end+80ms', end: 'w6.start-80ms' },
+    { op: 'split', clipId: 'c1', time: 'w6.end' }
+  ] }, ids, analyses)
+  expect(result).toMatch(/2\. split: ok c\d+, on c1 → c\d+ \(piece holding w6.end\)/)
+  const audio = app.timeline().tracks.find(t => t.kind === 'audio')!.clips
+  const w6 = buildIndex(app.project(), analyses).words[5]
+  expect(audio.map(c => c.start)).toContain(w6.end)
+  expect(audio).toHaveLength(3)
+  // A time outside every piece of that source is still an error.
+  expect(() => applyEdits(app, { ops: [{ op: 'split', clipId: 'c1', time: 'w7.end+20s' }] }, ids, analyses)).toThrow(/outside clip c1/)
 })
 
 test('anchors that were cut are rejected and nothing is applied', () => {

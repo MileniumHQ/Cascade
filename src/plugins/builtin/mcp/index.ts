@@ -102,7 +102,7 @@ export class AgentTools {
         case 'timeline_get': {
           const index = buildIndex(app.project(), await this.loadAnalyses())
           const hint = index.words.length ? `transcript: ${index.words.length} words, ${index.events.length} sound events, ${index.shots.length} shot cuts on the timeline; read with transcript_get`
-            : index.unanalyzed.length ? `transcript: none; media_analyze ${[...new Set(index.unanalyzed.map(u => ids.show(u.clip.mediaId!, 'm')))].join(', ')} to edit by words, tone, sound events and shots` : ''
+            : index.unanalyzed.length ? `transcript: none; media_analyze ${[...new Set(index.unanalyzed.map(u => ids.show(u.clip.mediaId!, 'm')))].join(', ')} to edit by words, intonation, sound events and shots` : ''
           const body = a.detail === 'detailed' ? `${this.timeline()}\n${JSON.stringify(app.timeline())}` : this.timeline()
           return text(hint ? `${body}\n${hint}` : body)
         }

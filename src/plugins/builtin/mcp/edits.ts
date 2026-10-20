@@ -23,7 +23,7 @@ export class Ids {
 /** An edit with every anchor resolved to integer flicks. */
 type Resolved = Edit extends infer E ? E extends unknown ? { [K in keyof E]: K extends 'start' | 'end' | 'time' ? Extract<E[K], number | undefined> : E[K] } : never : never
 
-/** Timeline flicks for a transcript anchor (w12, w12.end, s3.start, w12.end+80ms) in `project`. */
+/** Timeline flicks for a transcript anchor (w12, w12.end, s3.start, w12.end+80ms, s3.end+2f) in `project`. */
 export function resolveAnchor(project: Project, analyses: Analyses | undefined, ids: Ids, value: string): number {
   const match = ANCHOR.exec(value)
   if (!match) throw new Error(`Invalid anchor ${value}`)
@@ -32,7 +32,9 @@ export function resolveAnchor(project: Project, analyses: Analyses | undefined, 
   const index = buildIndex(project, analyses ?? new Map())
   const item = index.sentences.find(x => x.key === key) ?? index.words.find(x => x.key === key)
   if (!item) throw new Error(`${id} is not on the timeline (cut already, or not an id from transcript_get/transcript_search)`)
-  const offset = amount ? Math.round(Number(amount) * (unit === 'ms' ? FLICKS / 1000 : FLICKS)) * (sign === '-' ? -1 : 1) : 0
+  const fps = project.settings.fps
+  const per = unit === 'ms' ? FLICKS / 1000 : unit === 'f' ? FLICKS * fps.den / fps.num : FLICKS
+  const offset = amount ? Math.round(Number(amount) * per) * (sign === '-' ? -1 : 1) : 0
   return Math.max(0, (edge === 'end' ? item.end : item.start) + offset)
 }
 
@@ -87,11 +89,24 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
   }
   // Transcript anchors (w12.end+80ms) resolve against the staged timeline as edited so far.
   const anchor = (value: string) => resolveAnchor(copy.project(), analyses, ids, value)
+  let retargeted = ''
   const resolveTimes = (raw: Edit): Resolved => {
+    retargeted = ''
     const op = { ...raw } as Record<string, unknown>
     for (const key of ['start', 'end', 'time'] as const) if (typeof op[key] === 'string') op[key] = anchor(op[key] as string)
+    // An anchor names a moment in a source. If the addressed clip was cut into pieces (earlier in this
+    // batch or before), use the piece of the same source on the same track that holds that moment.
+    if ((raw.op === 'split' || raw.op === 'add_keyframe' || raw.op === 'set_param') && typeof raw.time === 'string') {
+      const at = raw.time, { clip, track: tr } = editable(raw.clipId), t = op.time as number
+      if (t < clip.start || t > clipEnd(clip)) {
+        const piece = tr.clips.find(c => c.mediaId === clip.mediaId && c.start <= t && t <= clipEnd(c))
+        if (!piece) throw new Error(`${at} is outside clip ${raw.clipId} and no clip of the same source on its track holds it`)
+        op.clipId = piece.id
+        retargeted = `${raw.clipId} → ${ids.show(piece.id, 'c')} (piece holding ${at})`
+      }
+    }
     // Keyframe/parameter times are clip-local; anchors are timeline times.
-    if ((raw.op === 'add_keyframe' || raw.op === 'set_param') && typeof raw.time === 'string') op.time = (op.time as number) - editable(raw.clipId).clip.start
+    if ((raw.op === 'add_keyframe' || raw.op === 'set_param') && typeof raw.time === 'string') op.time = (op.time as number) - editable(op.clipId as string).clip.start
     if (typeof op.time === 'number' && op.time < 0) throw new Error(`${raw.op} time resolves before the clip start`)
     return op as Resolved
   }
@@ -176,7 +191,7 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
         }
       }
       if ('ref' in op && op.ref && created) refs.set(op.ref, created)
-      results.push(`${index + 1}. ${op.op}: ok${created ? ` ${ids.show(created, op.op === 'add_property' ? 'p' : 'c')}${'ref' in op && op.ref ? ` (${op.ref})` : ''}` : ''}`)
+      results.push(`${index + 1}. ${op.op}: ok${created ? ` ${ids.show(created, op.op === 'add_property' ? 'p' : 'c')}${'ref' in op && op.ref ? ` (${op.ref})` : ''}` : ''}${retargeted ? `, on ${retargeted}` : ''}`)
     } catch (e) { throw new Error(`Operation ${index + 1} (${raw.op}): ${e instanceof Error ? e.message : e}. No edits applied.`) }
   }
   for (const tr of copy.timeline().tracks) for (const clip of tr.clips) {
