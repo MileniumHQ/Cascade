@@ -1,5 +1,4 @@
 import type { PluginDefinition } from '@core/plugin-api'
-import { definePlugin } from '@core/plugin-api'
 import { exportersPlugin } from './exporters'
 import { paramsPlugin } from './params'
 import { easingsPlugin } from './easings'
@@ -13,7 +12,6 @@ import { visualPropertiesPlugin } from './properties/visual'
 import { effectsPlugin } from './properties/effects'
 import { textPropertiesPlugin } from './properties/text'
 import { audioPropertiesPlugin } from './properties/audio'
-import { placeholderPanel } from './panels/placeholder'
 import { timelinePlugin } from './panels/timeline'
 import { mcpPlugin } from './mcp'
 import { previewPlugin } from './panels/preview'
@@ -21,14 +19,7 @@ import { inspectorPlugin } from './panels/inspector'
 import { sourcesPlugin } from './panels/sources'
 import { statusBarPlugin } from './statusbar'
 import { keyframesPlugin } from './panels/keyframes'
-
-const panelsPlugin = definePlugin({
-  id: 'cascade.panels',
-  name: 'Panels',
-  activate(ctx) {
-    ctx.panels.register(placeholderPanel({ id: 'export', title: 'Export', icon: 'clapperboard', region: 'bottom', order: 2 }))
-  }
-})
+import { exportPanelPlugin } from './panels/export'
 
 /**
  * Everything Cascade can do comes from these plugins. They load first (built-in priority)
@@ -48,14 +39,14 @@ export const builtinPlugins: PluginDefinition[] = [
   effectsPlugin,
   textPropertiesPlugin,
   audioPropertiesPlugin,
-  panelsPlugin,
   previewPlugin,
   timelinePlugin,
   inspectorPlugin,
   sourcesPlugin,
   statusBarPlugin,
   mcpPlugin,
-  keyframesPlugin
+  keyframesPlugin,
+  exportPanelPlugin
 ]
 
 /** Plugins that are safe to load in headless export workers (no UI). */

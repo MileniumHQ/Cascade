@@ -1,0 +1,275 @@
+/* ───────── Export panel ───────── */
+.ex {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 270px minmax(320px, 1fr) 300px;
+  background: var(--panel);
+}
+.ex > section {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--panel-4) transparent;
+}
+
+/* format list */
+.ex-formats {
+  padding: 8px;
+  border-right: 1px solid var(--line);
+}
+.ex-group {
+  padding: 10px 8px 5px;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.ex-group:first-child {
+  padding-top: 4px;
+}
+.ex-format {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border-radius: var(--r);
+  color: var(--text-2);
+  text-align: left;
+}
+.ex-format:hover {
+  background: var(--panel-2);
+}
+.ex-format.on {
+  background: var(--panel-3);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  color: var(--text);
+}
+.ex-format.on > .icon,
+.ex-format.on > svg {
+  color: var(--lime);
+}
+.ex-format-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ex-format-name {
+  font-size: 12px;
+  font-weight: 600;
+}
+.ex-format-desc {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ex-ext {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* settings form */
+.ex-settings {
+  padding: 14px 18px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-content: start;
+  gap: 8px 24px;
+}
+.ex-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 30px;
+}
+.ex-row-wide {
+  grid-column: 1 / -1;
+  margin-bottom: 4px;
+}
+.ex-row > label {
+  flex: none;
+  width: 108px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ex-inline {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.ex-output {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.ex-path {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border-radius: var(--r);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.ex-path > svg {
+  flex: none;
+  color: var(--muted);
+}
+.ex-path-dir {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  direction: rtl;
+  text-align: left;
+}
+.ex-path-name {
+  flex: none;
+  font-weight: 600;
+}
+.ex-dim {
+  color: var(--dim);
+}
+
+/* right column */
+.ex-side {
+  padding: 14px;
+  border-left: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ex-summary {
+  padding: 12px;
+  border-radius: var(--r-lg);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+.ex-summary-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 650;
+}
+.ex-summary-title > svg {
+  color: var(--lime);
+}
+.ex-facts {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.ex-facts span {
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--panel-3);
+}
+.ex-go {
+  height: 36px !important;
+  justify-content: center;
+  font-size: 13px !important;
+}
+.ex-jobs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ex-job {
+  padding: 10px 11px;
+  border-radius: var(--r);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  font-size: 11.5px;
+}
+.ex-job-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.ex-job-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--text);
+}
+.ex-job-state {
+  flex: none;
+  color: var(--sky);
+}
+.ex-job.state-done .ex-job-state {
+  color: var(--lime);
+}
+.ex-job.state-error .ex-job-state {
+  color: var(--danger);
+}
+.ex-job.state-cancelled .ex-job-state {
+  color: var(--muted);
+}
+.ex-bar {
+  margin-top: 8px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--panel-4);
+  overflow: hidden;
+}
+.ex-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(var(--sky-rgb), 0.8), var(--lime));
+  transition: width 0.25s var(--ease-out);
+}
+.ex-job-meta {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+}
+.ex-cancel,
+.ex-reveal {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+}
+.ex-cancel:hover,
+.ex-reveal:hover {
+  background: var(--panel-3);
+  color: var(--text);
+}
+.ex-job-error {
+  margin-top: 6px;
+  color: var(--danger);
+  white-space: pre-wrap;
+  max-height: 80px;
+  overflow: auto;
+}
