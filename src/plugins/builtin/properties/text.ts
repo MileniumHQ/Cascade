@@ -2,6 +2,9 @@ import { definePlugin } from '@core/plugin-api'
 
 const n = (v: unknown) => Number(v) || 0
 const r = (v: number, d = 4) => +v.toFixed(d)
+const GENERIC = new Set(['serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'system-ui', 'ui-serif', 'ui-sans-serif', 'ui-monospace', 'ui-rounded'])
+/** CSS family token: generic families must stay unquoted, names are quoted. */
+const family = (f: string) => (GENERIC.has(f) ? f : `'${f.replace(/'/g, '')}'`)
 
 /** Text content and typography for element clips. */
 export const textPropertiesPlugin = definePlugin({
@@ -42,7 +45,7 @@ export const textPropertiesPlugin = definePlugin({
       ],
       apply(v, { u }) {
         const style: Record<string, string> = {
-          'font-family': `'${String(v.font).replace(/'/g, '')}', system-ui, sans-serif`,
+          'font-family': `${family(String(v.font))}, system-ui, sans-serif`,
           'font-size': u.len(n(v.size)),
           'font-weight': String(Math.round(n(v.weight))),
           color: String(v.color),

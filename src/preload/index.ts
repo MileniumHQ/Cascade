@@ -9,6 +9,7 @@ function on<T>(channel: string, callback: (value: T) => void): () => void {
 
 const bridge: HostBridge = {
   info: () => ipcRenderer.invoke('host:info'),
+  fonts: () => ipcRenderer.invoke('host:fonts'),
   mediaUrl: (path) => `media://local/${encodeURIComponent(path)}`,
   window: {
     minimize: () => ipcRenderer.send('window:minimize'),

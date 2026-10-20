@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, Menu, protocol, shell } from 'electron'
 import type { NativeMenuItem } from '../shared/ipc'
 import { join } from 'node:path'
+import { execFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import type { HostBridge } from '../shared/ipc'
 import { registerExportIpc } from './export'
@@ -172,6 +173,7 @@ async function initialize(): Promise<void> {
   await registerAnalysisIpc(paths.userData, transcription)
   const media = createMediaService(join(paths.userData, 'cache'))
   // Spell out the wrappers so the public bridge and service signatures stay checked together.
+  ipcMain.handle('host:fonts', () => systemFonts())
   ipcMain.handle('media:probe', (_event, path: string) => media.probe(path))
   ipcMain.handle('media:thumbnails', (_event, path: string, opts: Parameters<HostBridge['media']['thumbnails']>[1]) => media.thumbnails(path, opts))
   ipcMain.handle('media:waveform', (_event, path: string) => media.waveform(path))
@@ -217,4 +219,17 @@ if (process.argv.includes('--mcp-stdio')) {
     plugins?.dispose()
     stopMediaProcesses()
   })
+}
+
+let fontList: Promise<string[]> | null = null
+/** Installed font families via fontconfig (Linux). Cached for the session. */
+function systemFonts(): Promise<string[]> {
+  fontList ??= new Promise((resolve) => {
+    execFile('fc-list', ['--format', '%{family[0]}\\n'], { maxBuffer: 16 * 1024 * 1024 }, (error, stdout) => {
+      if (error) return resolve([])
+      const names = new Set(stdout.split('\n').map((s) => s.trim()).filter((s) => s && !s.startsWith('.')))
+      resolve([...names].sort((a, b) => a.localeCompare(b)))
+    })
+  })
+  return fontList
 }

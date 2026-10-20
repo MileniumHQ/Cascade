@@ -3,6 +3,7 @@ import { definePlugin, type ParamDef, type ParamEditorContext, type ParamTypeCon
 import { lerpColor } from '@shared/color'
 import { ColorField, NumberField, Select, Segmented, TextField, Toggle } from '@ui/kit'
 import { solidMount, useSub } from '../solid'
+import { FontPicker } from './FontPicker'
 
 const lerp = (a: number, b: number, p: number) => a + (b - a) * p
 const clampDef = (v: number, d: ParamDef) => Math.min(d.max ?? Infinity, Math.max(d.min ?? -Infinity, v))
@@ -75,36 +76,10 @@ function TextEditor(props: { ctx: ParamEditorContext<string> }) {
   return <TextField value={v()} multiline={!!ctx.def.config?.multiline} onChange={(x) => ctx.set(x)} onInput={(x) => ctx.set(x, { gesture: 'update' })} />
 }
 
-export const FONTS = [
-  'Inter',
-  'Inter',
-  'Roboto',
-  'Montserrat',
-  'Poppins',
-  'Oswald',
-  'Bebas Neue',
-  'Playfair Display',
-  'Merriweather',
-  'JetBrains Mono',
-  'Noto Sans',
-  'Noto Serif',
-  'DejaVu Sans',
-  'Liberation Sans',
-  'Liberation Serif',
-  'system-ui',
-  'serif',
-  'sans-serif',
-  'monospace'
-]
-
 function FontEditor(props: { ctx: ParamEditorContext<string> }) {
   const { ctx } = props
   const v = useSub(ctx.subscribe, () => String(ctx.get() ?? 'Inter'))
-  const options = () => {
-    const list = FONTS.includes(v()) ? FONTS : [v(), ...FONTS]
-    return list.map((f) => ({ value: f, label: f }))
-  }
-  return <Select value={v()} options={options()} onChange={(x) => ctx.set(x)} />
+  return <FontPicker app={ctx.app} value={v()} onChange={(x) => ctx.set(x)} />
 }
 
 const num: ParamTypeContribution<number> = {

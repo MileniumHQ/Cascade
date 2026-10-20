@@ -166,6 +166,8 @@ export interface HostInfo {
 export interface HostBridge {
   info(): Promise<HostInfo>
   mediaUrl(path: string): string
+  /** Font families installed on the system, sorted. */
+  fonts(): Promise<string[]>
 
   window: {
     minimize(): void
