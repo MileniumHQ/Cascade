@@ -13,6 +13,7 @@ import { effectsPlugin } from './properties/effects'
 import { textPropertiesPlugin } from './properties/text'
 import { audioPropertiesPlugin } from './properties/audio'
 import { placeholderPanel } from './panels/placeholder'
+import { mcpPlugin } from './mcp'
 import { previewPlugin } from './panels/preview'
 
 const panelsPlugin = definePlugin({
@@ -45,7 +46,8 @@ export const builtinPlugins: PluginDefinition[] = [
   textPropertiesPlugin,
   audioPropertiesPlugin,
   panelsPlugin,
-  previewPlugin
+  previewPlugin,
+  mcpPlugin
 ]
 
 /** Plugins that are safe to load in headless export workers (no UI). */

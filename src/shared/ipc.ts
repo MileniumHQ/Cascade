@@ -78,7 +78,7 @@ export interface HostInfo {
   versions: Record<string, string>
   paths: { userData: string; documents: string; home: string; plugins: string; projects: string }
   ffmpeg: { path: string; version: string; hwEncoders: string[] }
-  mcp: { url: string; enabled: boolean }
+  mcp: { url: string; enabled: boolean; token?: string; command?: string }
 }
 
 export interface HostBridge {

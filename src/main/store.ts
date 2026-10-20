@@ -3,6 +3,7 @@ import { access, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promis
 import { dirname, join } from 'node:path'
 import type { HostBridge, HostInfo, RecentProject } from '../shared/ipc'
 import { getFFmpegInfo } from './ffmpeg'
+import { mcpInfo } from './mcp'
 
 async function readJson<T>(path: string, fallback: T): Promise<T> {
   try { return JSON.parse(await readFile(path, 'utf8')) as T } catch { return fallback }
@@ -74,7 +75,7 @@ export function registerStoreIpc(): void {
     return {
       platform: process.platform,
       versions: Object.fromEntries(Object.entries(process.versions).filter((entry): entry is [string, string] => typeof entry[1] === 'string')),
-      paths, ffmpeg: await getFFmpegInfo(), mcp: { url: 'http://127.0.0.1:47823/mcp', enabled: false }
+      paths, ffmpeg: await getFFmpegInfo(), mcp: { ...mcpInfo, enabled: (await store.loadSettings())['mcp.enabled'] !== false }
     }
   })
   ipcMain.handle('settings:load', () => store.loadSettings())
