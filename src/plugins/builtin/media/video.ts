@@ -106,6 +106,7 @@ function mountThumbnails(el: HTMLElement, c: ClipBodyContext) {
   layer.className = 'clip-thumbs'
   layer.style.cssText = 'position:absolute;inset:0;overflow:hidden;opacity:.85'
   el.appendChild(layer)
+  let drawn = ''
   const draw = () => {
     if (!strip || disposed || strip.count === 0) return
     const v = c.view()
@@ -117,6 +118,10 @@ function mountThumbnails(el: HTMLElement, c: ClipBodyContext) {
     const endPx = (v.visibleEnd / FLICKS) * v.pxPerSecond
     const first = Math.floor(startPx / tileW)
     const last = Math.ceil(endPx / tileW)
+    // Clip changes that don't move the tiles (most param edits) must not rebuild them.
+    const key = `${first}:${last}:${tileW}:${clip.sourceIn}:${speed}:${strip.count}:${v.pxPerSecond}`
+    if (key === drawn) return
+    drawn = key
     const frag = document.createDocumentFragment()
     for (let i = first; i < last && i - first < 400; i++) {
       const localSec = (i * tileW) / v.pxPerSecond

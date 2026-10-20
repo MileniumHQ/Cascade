@@ -2,7 +2,7 @@ import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMo
 import type { CascadeAPI } from '@core/app'
 import type { ClipBodyContext, PanelContext } from '@core/plugin-api'
 import { Emitter } from '@core/events'
-import { Value } from '@core/value'
+import { shallowArrayEqual, Value } from '@core/value'
 import { clipKeyframeTimes } from '@core/evaluate'
 import { clipsInRange, expandLinked, snapPoints, type MoveRequest } from '@core/timeline-ops'
 import { clipEnd, findClip, type Clip, type Id, type Track } from '@shared/project'
@@ -82,6 +82,8 @@ export function Timeline(props: { ctx: PanelContext }) {
     aud.forEach(push)
     return out
   })
+  const rowIds = createMemo(() => rows().map((r) => r.track.id), [] as Id[], { equals: shallowArrayEqual })
+  const rowById = createMemo(() => new Map(rows().map((r) => [r.track.id, r])))
   const totalH = () => {
     const r = rows()
     const last = r[r.length - 1]
@@ -568,30 +570,42 @@ export function Timeline(props: { ctx: PanelContext }) {
             if (c) clipMenu(e, c.dataset.id!)
           }}
         >
-          <For each={rows()}>
-            {(row) => (
-              <div class={`tl-row kind-${row.track.kind} ${row.track.locked ? 'locked' : ''} ${row.track.hidden || row.track.muted ? 'off' : ''}`} style={{ top: `${row.y}px`, height: `${row.h}px` }}>
-                <TrackHeader app={app} row={row} onMenu={(e) => trackMenu(e, row.track)} onResize={(e) => resizeStart(e, row)} />
-                <div class="tl-lane">
-                  <For each={clipsInRange(row.track, t0(), t1())}>
-                    {(clip) => (
-                      <ClipView
-                        app={app}
-                        clip={clip}
-                        track={row.track}
-                        h={row.h}
-                        x={x}
-                        pps={pps()}
-                        width={width()}
-                        selected={selSet().has(clip.id)}
-                        primary={selected()[selected().length - 1] === clip.id}
-                        dragging={!!drag()?.ids.has(clip.id)}
-                      />
-                    )}
-                  </For>
-                </div>
-              </div>
-            )}
+          {/* Rows and clips are keyed by id (documents are immutable, so objects change on every edit):
+              editing one parameter must not remount tracks, clips or their thumbnails. */}
+          <For each={rowIds()}>
+            {(id) => {
+              const row = () => rowById().get(id)!
+              const clips = createMemo(() => (row() ? clipsInRange(row().track, t0(), t1()) : []))
+              const clipIds = createMemo(() => clips().map((c) => c.id), [] as Id[], { equals: shallowArrayEqual })
+              const clipById = createMemo(() => new Map(clips().map((c) => [c.id, c])))
+              return (
+                <Show when={row()}>
+                  <div class={`tl-row kind-${row().track.kind} ${row().track.locked ? 'locked' : ''} ${row().track.hidden || row().track.muted ? 'off' : ''}`} style={{ top: `${row().y}px`, height: `${row().h}px` }}>
+                    <TrackHeader app={app} row={row()} onMenu={(e) => trackMenu(e, row().track)} onResize={(e) => resizeStart(e, row())} />
+                    <div class="tl-lane">
+                      <For each={clipIds()}>
+                        {(cid) => (
+                          <Show when={clipById().get(cid)}>
+                            <ClipView
+                              app={app}
+                              clip={clipById().get(cid)!}
+                              track={row().track}
+                              h={row().h}
+                              x={x}
+                              pps={pps()}
+                              width={width()}
+                              selected={selSet().has(cid)}
+                              primary={selected()[selected().length - 1] === cid}
+                              dragging={!!drag()?.ids.has(cid)}
+                            />
+                          </Show>
+                        )}
+                      </For>
+                    </div>
+                  </div>
+                </Show>
+              )
+            }}
           </For>
           <div class="tl-divider" style={{ top: `${(rows().find((r) => r.track.kind === 'audio')?.y ?? 0) - 6}px` }} />
           <div class="tl-overlay" style={{ left: `${HEADER_W}px` }}>
