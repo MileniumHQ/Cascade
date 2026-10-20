@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { FLICKS, frameToFlicks } from '@shared/time'
 import { cubicBezier } from '@core/evaluate'
-import { curvePath, displayValue, fitBezier, groupByTime, plotRange, sampleEasing, snapTime, type KfItem } from './model'
+import { buildRows, curvePath, displayValue, fitBezier, groupByTime, plotRange, ROW_H, sampleEasing, snapTime, type KfItem } from './model'
 
 const fps = { num: 30, den: 1 }
 
@@ -81,5 +81,65 @@ describe('displayValue', () => {
     expect(displayValue({ id: 'x', label: 'x', type: 'number', default: 0, unit: 'frameX' }, undefined, 0.5, project)).toBe('960px')
     expect(displayValue({ id: 'x', label: 'x', type: 'number', default: 0, unit: 'percent' }, undefined, 1.5, project)).toBe('150%')
     expect(displayValue({ id: 'p', label: 'p', type: 'vec2', default: [0, 0], unit: 'frameXY' }, undefined, [0.25, -0.1], project)).toBe('480, -108')
+  })
+})
+
+describe('buildRows', () => {
+  const contrib = {
+    id: 'transform',
+    params: [
+      { id: 'position', label: 'Position', type: 'vec2', default: [0, 0] },
+      { id: 'scale', label: 'Scale', type: 'number', default: 1 },
+      { id: 'hidden', label: 'Hidden', type: 'number', default: 0, hidden: true },
+      { id: 'locked', label: 'Locked', type: 'number', default: 0, animatable: false }
+    ]
+  }
+  const regs = {
+    properties: { get: (id: string) => (id === 'transform' ? contrib : undefined) },
+    paramTypes: { get: () => undefined },
+    easings: { get: (id: string) => (id === 'hold' ? { glyph: 'square' } : { glyph: 'circle' }) }
+  } as never
+  const kf = (id: string, t: number, easing = 'linear') => ({ id, t, value: 0, easing: { id: easing } })
+  const clip = {
+    id: 'c1',
+    properties: [
+      {
+        id: 'p1',
+        type: 'transform',
+        enabled: true,
+        params: {
+          position: { value: [0, 0], keyframes: [kf('a', 0, 'hold'), kf('b', 30_000_000)] },
+          scale: { value: 1 }
+        }
+      }
+    ]
+  } as never
+  const opts = (expansion: 'collapsed' | 'animated' | 'all', showAll = false) => ({ showAll, expansion: () => expansion })
+
+  it('lists animated params first, with a "show all" row for the rest', () => {
+    const rows = buildRows(clip, regs, opts('animated'))
+    expect(rows.map((r) => r.kind)).toEqual(['clip', 'prop', 'param', 'more'])
+    expect(rows.map((r) => r.y)).toEqual([0, 1, 2, 3].map((i) => i * ROW_H))
+    const param = rows[2]
+    expect(param.kind === 'param' && param.animated).toBe(true)
+    expect(param.kfs.map((k) => k.glyph)).toEqual(['square', 'circle'])
+    expect(param.segs).toHaveLength(1)
+    expect(param.segs[0].hold).toBe(true)
+  })
+  it('expands to every animatable param (not hidden / non-animatable) after the animated ones', () => {
+    const rows = buildRows(clip, regs, opts('all'))
+    const params = rows.filter((r) => r.kind === 'param').map((r) => (r.kind === 'param' ? r.def.id : ''))
+    expect(params).toEqual(['position', 'scale'])
+  })
+  it('collapsed shows only the header, but summaries still carry the keyframes', () => {
+    const rows = buildRows(clip, regs, opts('collapsed'))
+    expect(rows.map((r) => r.kind)).toEqual(['clip', 'prop'])
+    expect(rows[1].kfs).toHaveLength(2)
+    expect(rows[0].kfs).toHaveLength(2)
+    expect(rows[0].kfs[0].refs[0]).toMatchObject({ clipId: 'c1', propertyId: 'p1', paramId: 'position', keyframeId: 'a' })
+  })
+  it('showAll lists everything and drops the toggle row', () => {
+    const rows = buildRows(clip, regs, opts('collapsed', true))
+    expect(rows.map((r) => r.kind)).toEqual(['clip', 'prop', 'param', 'param'])
   })
 })

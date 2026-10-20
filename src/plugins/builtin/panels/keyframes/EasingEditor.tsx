@@ -10,11 +10,11 @@ import type { PanelState } from './context'
 
 // Big plot geometry (SVG user units; the element scales uniformly).
 const VW = 256
-const VH = 212
+const VH = 168
 const L = 28
 const R = 242
-const T = 14
-const B = 192
+const T = 12
+const B = 150
 
 const BEZIER = 'cubic-bezier'
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
@@ -179,6 +179,7 @@ export function EasingEditor(props: { s: PanelState }) {
           </div>
         }
       >
+        <div class="kf-side-top">
         <header class="kf-side-head">
           <div class="kf-side-title">
             <span class="kf-side-ename">{uniform() ? (def()?.name ?? ref()?.id) : 'Mixed easings'}</span>
@@ -287,6 +288,8 @@ export function EasingEditor(props: { s: PanelState }) {
             </div>
           )}
         </Show>
+
+        </div>
 
         <div class="kf-presets">
           <For each={groups()}>

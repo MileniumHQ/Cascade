@@ -60,12 +60,14 @@ function KeyframesActions(props: { ctx: PanelContext }) {
   const app = props.ctx.app
   const ui = keyframesUi(app)
   const sidebar = useValue(ui.sidebar)
+  const graph = useValue(ui.graph)
   return (
     <div class="kf-actions">
       <IconButton size="sm" icon="chevron-left" tip="Previous keyframe" kbd="[" onClick={() => app.run('keyframes.prev')} />
       <IconButton size="sm" icon="chevron-right" tip="Next keyframe" kbd="]" onClick={() => app.run('keyframes.next')} />
       <span class="kf-actions-sep" />
       <IconButton size="sm" icon="maximize" tip="Fit to clip" onClick={() => ui.fit.current?.()} />
+      <IconButton size="sm" icon="chart-spline" active={graph()} tip="Graph view" onClick={() => ui.graph.set(!ui.graph.get())} />
       <IconButton size="sm" icon="panel-right" active={sidebar()} tip="Easing editor" onClick={() => ui.sidebar.set(!ui.sidebar.get())} />
     </div>
   )

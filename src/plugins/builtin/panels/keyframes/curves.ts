@@ -1,10 +1,11 @@
 import type { CascadeAPI } from '@core/app'
+import type { EasingContribution } from '@core/plugin-api'
 import type { EasingRef } from '@shared/project'
-import { plotRange, sampleEasing, type EasingLike } from './model'
+import { plotRange, sampleEasing } from './model'
 
 type Regs = CascadeAPI['registries']
 
-export const easingOf = (regs: Regs, ref: EasingRef | undefined): EasingLike | undefined => regs.easings.get(ref?.id ?? 'linear')
+export const easingOf = (regs: Regs, ref: EasingRef | undefined): EasingContribution | undefined => regs.easings.get(ref?.id ?? 'linear')
 
 const cache = new Map<string, { d: string; lo: number; hi: number }>()
 let cacheRev = -1

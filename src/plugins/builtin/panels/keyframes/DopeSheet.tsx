@@ -5,10 +5,23 @@ import { FLICKS, flicksToFrame, formatRulerLabel, formatTimecode, rulerStep, sna
 import { Icon } from '@ui/icon'
 import { IconButton, Empty } from '@ui/kit'
 import { useValue } from '@ui/reactive'
+import { GraphLayer } from './Graph'
 import { Glyph } from './Glyph'
 import { easingOf, miniCurve } from './curves'
 import { buildRows, defaultExpansion, displayValue, refKey, resolveRefs, ROW_H, snapTime, valueAt, type Expansion, type KfItem, type KfRef, type ParamRow, type Row, type SegItem } from './model'
 import type { PanelState } from './context'
+
+export interface DragPrep {
+  item: KfItem
+  row: Row
+  clip: Clip
+  sel: KfRef[]
+  collapseOnUp: boolean
+  startX: number
+  minT: Flicks
+  maxT: Flicks
+  targets: Flicks[]
+}
 
 const RULER_H = 30
 const TREE_W = 220
@@ -27,6 +40,7 @@ export function DopeSheet(props: { s: PanelState }) {
   const scrollX = useValue(app.view.scrollX)
   const expansion = useValue(ui.expansion)
   const showAll = useValue(ui.showAll)
+  const graph = useValue(ui.graph)
 
   const clip = createMemo<Clip | null>(() => {
     const p = project()
@@ -55,16 +69,19 @@ export function DopeSheet(props: { s: PanelState }) {
   let playhead!: HTMLDivElement
   let rulerHead!: HTMLDivElement
   const [laneW, setLaneW] = createSignal(800)
+  const [viewH, setViewH] = createSignal(300)
 
   // ───────────── horizontal view plumbing (shared with the timeline) ─────────────
   onMount(() => {
-    const ro = new ResizeObserver(() => setLaneW(lanes.clientWidth))
+    const ro = new ResizeObserver(() => (setLaneW(lanes.clientWidth), setViewH(scroller.clientHeight - RULER_H)))
     ro.observe(lanes)
+    ro.observe(scroller)
     setLaneW(lanes.clientWidth)
+    setViewH(scroller.clientHeight - RULER_H)
     onCleanup(() => ro.disconnect())
   })
   createEffect(() => {
-    if (props.s.visible()) app.view.viewportWidth.set(laneW())
+    if (props.s.visible() && laneW() > 0) app.view.viewportWidth.set(laneW())
   })
   createEffect(() => {
     world.style.transform = `translate3d(${-scrollX()}px,0,0)`
@@ -201,10 +218,11 @@ export function DopeSheet(props: { s: PanelState }) {
     return out
   }
 
-  const kfDown = (e: PointerEvent, item: KfItem, row: Row) => {
-    if (e.button !== 0 && e.button !== 2) return
+  /** Selection side of a keyframe press (click / shift-click / start of a drag). Null = nothing to drag. */
+  const prepareDrag = (e: PointerEvent, item: KfItem, row: Row): DragPrep | null => {
+    if (e.button !== 0 && e.button !== 2) return null
     const c = clip()
-    if (!c) return
+    if (!c) return null
     e.stopPropagation()
     const cur = app.selection.keyframes.get()
     const curKeys = new Set(cur.map(refKey))
@@ -212,7 +230,7 @@ export function DopeSheet(props: { s: PanelState }) {
     focus(instOf(row), row.kind === 'param' ? row.def.id : undefined)
     if (e.button === 2) {
       if (!itemSel) app.selection.keyframes.set(item.refs)
-      return
+      return null
     }
     e.preventDefault()
     const additive = e.shiftKey || e.ctrlKey || e.metaKey
@@ -221,7 +239,7 @@ export function DopeSheet(props: { s: PanelState }) {
       if (itemSel) {
         const drop = new Set(item.refs.map(refKey))
         app.selection.keyframes.set(cur.filter((r) => !drop.has(refKey(r))))
-        return
+        return null
       }
       app.selection.keyframes.set([...cur, ...item.refs.filter((r) => !curKeys.has(refKey(r)))])
     } else if (!itemSel) app.selection.keyframes.set(item.refs)
@@ -229,37 +247,59 @@ export function DopeSheet(props: { s: PanelState }) {
 
     const sel = app.selection.keyframes.get()
     const snap = resolveRefs(project(), project().activeTimeline, sel)
-    if (!snap.length) return
-    const minT = Math.min(...snap.map((s) => s.kf.t))
-    const maxT = Math.max(...snap.map((s) => s.kf.t))
-    const targets = snapTargets(c, new Set(sel.map(refKey)))
-    const startX = e.clientX
+    if (!snap.length) return null
+    return {
+      item,
+      row,
+      clip: c,
+      sel,
+      collapseOnUp,
+      startX: e.clientX,
+      minT: Math.min(...snap.map((s) => s.kf.t)),
+      maxT: Math.max(...snap.map((s) => s.kf.t)),
+      targets: snapTargets(c, new Set(sel.map(refKey)))
+    }
+  }
+
+  /** Horizontal drag of the prepared selection: frame snapping, snapping to the playhead / other keyframes, Alt = free. */
+  const timeDrag = (d: DragPrep) => {
     let started = false
     let applied = 0
-    const move = (ev: PointerEvent) => {
-      const dx = ev.clientX - startX
-      if (!started && Math.abs(dx) < 3) return
-      const want = c.start + item.t + app.view.pxToTime(dx)
-      const s = snapTime({ t: want, fps: fps(), pxPerSecond: app.view.pxPerSecond.get(), targets, free: ev.altKey })
-      let delta = s.t - c.start - item.t
-      delta = Math.max(-minT, Math.min(c.duration - maxT, delta))
-      const step = delta - applied
-      if (!started || step !== 0) app.edit.moveKeyframes(sel, step, { gesture: started ? 'update' : 'start' })
-      started = true
-      applied = delta
-      setGuide(s.target !== null && delta === s.t - c.start - item.t ? s.target : null)
-      setDragTip({ t: c.start + item.t + delta, y: row.y })
+    return {
+      move(ev: PointerEvent) {
+        const dx = ev.clientX - d.startX
+        if (!started && Math.abs(dx) < 3) return
+        const want = d.clip.start + d.item.t + app.view.pxToTime(dx)
+        const s = snapTime({ t: want, fps: fps(), pxPerSecond: app.view.pxPerSecond.get(), targets: d.targets, free: ev.altKey })
+        const raw = s.t - d.clip.start - d.item.t
+        const delta = Math.max(-d.minT, Math.min(d.clip.duration - d.maxT, raw))
+        const step = delta - applied
+        if (!started || step !== 0) app.edit.moveKeyframes(d.sel, step, { gesture: started ? 'update' : 'start' })
+        started = true
+        applied = delta
+        setGuide(s.target !== null && delta === raw ? s.target : null)
+        setDragTip({ t: d.clip.start + d.item.t + delta, y: d.row.y })
+      },
+      end() {
+        setGuide(null)
+        setDragTip(null)
+        if (started) app.edit.moveKeyframes(d.sel, 0, { gesture: 'end' })
+        else if (d.collapseOnUp) app.selection.keyframes.set(d.item.refs)
+      }
     }
+  }
+
+  const kfDown = (e: PointerEvent, item: KfItem, row: Row) => {
+    const d = prepareDrag(e, item, row)
+    if (!d) return
+    const td = timeDrag(d)
     const up = () => {
-      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointermove', td.move)
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', up)
-      setGuide(null)
-      setDragTip(null)
-      if (started) app.edit.moveKeyframes(sel, 0, { gesture: 'end' })
-      else if (collapseOnUp) app.selection.keyframes.set(item.refs)
+      td.end()
     }
-    window.addEventListener('pointermove', move)
+    window.addEventListener('pointermove', td.move)
     window.addEventListener('pointerup', up)
     window.addEventListener('pointercancel', up)
   }
@@ -275,7 +315,7 @@ export function DopeSheet(props: { s: PanelState }) {
 
   /** Box-select (marquee) on empty lane space; a plain click clears the keyframe selection. */
   const lanesDown = (e: PointerEvent) => {
-    if (e.button !== 0 || (e.target as Element).closest('.kf-kf')) return
+    if (e.button !== 0 || graph() || (e.target as Element).closest('.kf-kf')) return
     const c = clip()
     if (!c) return
     e.preventDefault()
@@ -324,7 +364,7 @@ export function DopeSheet(props: { s: PanelState }) {
 
   const lanesDouble = (e: MouseEvent) => {
     const c = clip()
-    if (!c || (e.target as Element).closest('.kf-kf')) return
+    if (!c || graph() || (e.target as Element).closest('.kf-kf')) return
     const rect = lanes.getBoundingClientRect()
     const row = rows()[Math.floor((e.clientY - rect.top) / ROW_H)]
     if (!row || row.kind !== 'param') return
@@ -545,7 +585,7 @@ export function DopeSheet(props: { s: PanelState }) {
               <Index each={rows()}>{(row) => <TreeRow row={row} />}</Index>
             </div>
 
-            <div class="kf-lanes" ref={lanes} onPointerDown={lanesDown} onDblClick={lanesDouble}>
+            <div class={`kf-lanes ${graph() ? 'graph-mode' : ''}`} ref={lanes} onPointerDown={lanesDown} onDblClick={lanesDouble}>
               <div
                 class="kf-bg"
                 style={{
@@ -581,10 +621,15 @@ export function DopeSheet(props: { s: PanelState }) {
                 </Show>
                 <div class="kf-playhead" ref={playhead} />
               </div>
+              <Show when={graph() && clip()}>
+                <GraphLayer
+                  api={{ s: props.s, clip, scrollX, pps, laneW, height: viewH, selKeys, prepareDrag, timeDrag }}
+                />
+              </Show>
               <Show when={marquee()}>
                 {(m) => <div class="kf-marquee" style={{ left: `${m().x}px`, top: `${m().y}px`, width: `${m().w}px`, height: `${m().h}px` }} />}
               </Show>
-              <Show when={totalKfs() === 0}>
+              <Show when={totalKfs() === 0 && !graph()}>
                 <div class="kf-hint">
                   <Glyph kind="diamond" size={12} />
                   Press <b>◆</b> beside a parameter, or double-click its lane, to add a keyframe
