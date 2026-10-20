@@ -2,4 +2,4 @@
 .captions-progress > span:first-of-type { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .captions-progress progress { width: 70px; height: 3px; border: 0; border-radius: var(--r-sm); overflow: hidden; }
 .captions-progress progress::-webkit-progress-bar { background: var(--panel-4); }
-.captions-progress progress::-webkit-progress-value { background: var(--lime); opacity: .65; }
+.captions-progress progress::-webkit-progress-value { background: var(--accent); opacity: .65; }

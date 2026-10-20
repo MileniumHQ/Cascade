@@ -1,4 +1,4 @@
-@import '@fontsource-variable/commissioner/full.css';
+@import '@fontsource-variable/inter/index.css';
 
 :root {
   /* surfaces — neutral, slightly warm-free greys */
@@ -20,11 +20,11 @@
   --muted: #8d8d96;
   --dim: #5a5a63;
 
-  /* accents (used at reduced opacity) */
-  --lime: #c6f24e;
-  --lime-rgb: 198, 242, 78;
-  --lime-soft: rgba(198, 242, 78, 0.14);
-  --lime-line: rgba(198, 242, 78, 0.35);
+  /* accents: neutral white primary, light blue secondary (used at reduced opacity) */
+  --accent: #f2f2f4;
+  --accent-rgb: 242, 242, 244;
+  --accent-soft: rgba(255, 255, 255, 0.1);
+  --accent-line: rgba(255, 255, 255, 0.3);
   --sky: #82cbff;
   --sky-rgb: 130, 203, 255;
   --sky-soft: rgba(130, 203, 255, 0.14);
@@ -40,12 +40,12 @@
   --clip-element: #ad9cf2;
   --clip-audio: #52c48e;
 
-  --r-sm: 5px;
-  --r: 7px;
-  --r-lg: 10px;
-  --r-xl: 14px;
+  --r-sm: 4px;
+  --r: 5px;
+  --r-lg: 7px;
+  --r-xl: 10px;
 
-  --font: 'Commissioner Variable', 'Commissioner', system-ui, sans-serif;
+  --font: 'Inter Variable', 'Inter', system-ui, sans-serif;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   color-scheme: dark;
 }
@@ -61,7 +61,6 @@ body {
   background: var(--bg);
   color: var(--text);
   font: 12px/1.35 var(--font);
-  font-variation-settings: 'FLAR' 0, 'VOLM' 0;
   -webkit-font-smoothing: antialiased;
   user-select: none;
   overflow: hidden;

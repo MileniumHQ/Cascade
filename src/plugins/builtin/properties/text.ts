@@ -18,7 +18,7 @@ export const textPropertiesPlugin = definePlugin({
       appliesTo: ['element'],
       params: [
         { id: 'text', label: 'Text', type: 'text', default: 'Your text', config: { multiline: true } },
-        { id: 'font', label: 'Font', type: 'font', default: 'Commissioner' },
+        { id: 'font', label: 'Font', type: 'font', default: 'Inter' },
         { id: 'size', label: 'Size', type: 'number', unit: 'frameLen', default: 0.08, min: 0, step: 1 },
         { id: 'weight', label: 'Weight', type: 'number', default: 700, min: 100, max: 1000, step: 10 },
         { id: 'color', label: 'Color', type: 'color', default: '#ffffff' },

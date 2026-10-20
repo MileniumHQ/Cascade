@@ -12,5 +12,6 @@ export const exportPanelPlugin = definePlugin({
     // Shortcut only opens the tab: the panel's Export button stays the single export action.
     ctx.commands.register({ id: 'export.open', title: 'Export…', category: 'File', icon: 'clapperboard', run: (app) => app.layout.activeBottom.set('export') })
     ctx.keybindings.register({ id: 'export.open:Mod+E', command: 'export.open', key: 'Mod+E' })
+    ctx.menus.register({ id: 'menu:export.open', location: 'app/file', group: 'media', command: 'export.open', label: 'Export…', order: 25 })
   }
 })

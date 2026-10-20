@@ -68,9 +68,9 @@
   margin: 0 8px 4px;
   padding: 6px 9px;
   border-radius: var(--r);
-  background: var(--lime-soft);
-  border: 1px solid var(--lime-line);
-  color: var(--lime);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
   font-size: 11.5px;
   overflow: hidden;
 }
@@ -80,7 +80,7 @@
   bottom: 0;
   height: 2px;
   width: 40%;
-  background: linear-gradient(90deg, transparent, var(--lime), transparent);
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
   animation: sc-slide 1.3s var(--ease-out) infinite;
 }
 .sc-spin {
@@ -215,7 +215,7 @@ button.sc-section-head:hover {
 }
 .sc-gen:hover .sc-gen-add {
   opacity: 1;
-  color: var(--lime);
+  color: var(--accent);
 }
 
 /* ───────── items ───────── */
@@ -356,10 +356,10 @@ button.sc-section-head:hover {
   border-radius: 5px;
   font-size: 10px;
   font-weight: 600;
-  color: var(--lime);
+  color: var(--accent);
   background: rgba(10, 10, 12, 0.66);
   backdrop-filter: blur(6px);
-  box-shadow: inset 0 0 0 1px var(--lime-line);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
 }
 .sc-aside {
   display: none;
@@ -543,11 +543,10 @@ button.sc-section-head:hover {
   text-align: center;
   border-radius: var(--r-lg);
   border: 1.5px dashed var(--line-2);
-  background: radial-gradient(90% 70% at 50% 0%, rgba(255, 255, 255, 0.035), transparent 70%);
   transition: border-color 0.15s, background 0.15s;
 }
 .sc-dropzone:hover {
-  border-color: var(--lime-line);
+  border-color: var(--accent-line);
 }
 .sc-dropzone-art {
   position: relative;
@@ -588,10 +587,10 @@ button.sc-section-head:hover {
   height: 52px !important;
   padding: 13px;
   margin-left: -26px;
-  color: var(--lime);
+  color: var(--accent);
   background: var(--panel-4);
   z-index: 1;
-  box-shadow: inset 0 0 0 1px var(--lime-line), 0 10px 24px rgba(0, 0, 0, 0.5);
+  box-shadow: inset 0 0 0 1px var(--accent-line), 0 10px 24px rgba(0, 0, 0, 0.5);
 }
 .sc-dropzone-title {
   color: var(--text);
@@ -628,8 +627,8 @@ button.sc-section-head:hover {
   position: absolute;
   inset: 8px;
   border-radius: var(--r-lg);
-  border: 1.5px dashed var(--lime-line);
-  background: var(--lime-soft);
+  border: 1.5px dashed var(--accent-line);
+  background: var(--accent-soft);
 }
 .sc-drop-card {
   position: relative;
@@ -637,7 +636,7 @@ button.sc-section-head:hover {
   flex-direction: column;
   align-items: center;
   gap: 5px;
-  color: var(--lime);
+  color: var(--accent);
 }
 .sc-drop-card b {
   font-size: 14px;

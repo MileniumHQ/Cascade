@@ -415,7 +415,12 @@ export interface KeybindingContribution extends Contribution {
   when?: string
 }
 
-export type MenuLocation = 'clip/context' | 'timeline/context' | 'track/context' | 'source/context' | 'app/main' | 'keyframe/context'
+/** `app/*` locations make up the native application menu (File, Edit, Timeline, Playback, View, Help). */
+export type MenuLocation =
+  | 'clip/context' | 'timeline/context' | 'track/context' | 'source/context' | 'keyframe/context'
+  | 'app/file' | 'app/edit' | 'app/timeline' | 'app/playback' | 'app/view' | 'app/help'
+  /** @deprecated use 'app/file' */
+  | 'app/main'
 
 export interface MenuItemContribution extends Contribution {
   location: MenuLocation
@@ -425,7 +430,11 @@ export interface MenuItemContribution extends Contribution {
   group?: string
   order?: number
   shortcut?: string
+  /** Arguments passed to the command. */
+  args?: unknown[]
   when?(app: CascadeAPI, target: unknown): boolean
+  /** Shown as a checkbox (native menu). */
+  checked?(app: CascadeAPI): boolean
 }
 
 export interface StatusItemContribution extends Contribution {

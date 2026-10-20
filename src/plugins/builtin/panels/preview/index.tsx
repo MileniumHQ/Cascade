@@ -9,6 +9,13 @@ import { PreviewEngine } from './engine'
 import { safeAreasOverlay, transformOverlay } from './overlays'
 import './preview.css'
 
+/** The mounted preview panel root, fullscreened by `preview.fullscreen`. */
+let previewRoot: HTMLElement | null = null
+const toggleFullscreen = () => {
+  if (document.fullscreenElement) void document.exitFullscreen()
+  else void previewRoot?.requestFullscreen()
+}
+
 function Preview(props: { ctx: PanelContext }) {
   const app = props.ctx.app
   const project = useProject(app)
@@ -25,8 +32,17 @@ function Preview(props: { ctx: PanelContext }) {
   let overlayLayer!: HTMLDivElement
   const [engine, setEngine] = createSignal<PreviewEngine | null>(null)
   const [qual, setQual] = createSignal(1)
+  const [full, setFull] = createSignal(false)
+  let root!: HTMLDivElement
 
   onMount(() => {
+    previewRoot = root
+    const onFull = () => setFull(document.fullscreenElement === root)
+    document.addEventListener('fullscreenchange', onFull)
+    onCleanup(() => {
+      document.removeEventListener('fullscreenchange', onFull)
+      if (previewRoot === root) previewRoot = null
+    })
     const e = new PreviewEngine(app, stageHost)
     setEngine(e)
     const dq = e.quality.subscribe(setQual)
@@ -87,7 +103,7 @@ function Preview(props: { ctx: PanelContext }) {
     ])
 
   return (
-    <div class="pv">
+    <div class="pv" ref={root}>
       <div class="pv-viewport" ref={viewport} onWheel={(e) => e.ctrlKey && (e.preventDefault(), setZoom(Math.max(0.1, Math.min(4, (zoom() === 'fit' ? frameEl.clientWidth / project().settings.width : (zoom() as number)) * (e.deltaY < 0 ? 1.1 : 0.9)))))}>
         <div class="pv-frame" ref={frameEl}>
           <div class="pv-stage" ref={stageHost} />
@@ -126,6 +142,7 @@ function Preview(props: { ctx: PanelContext }) {
             {zoom() === 'fit' ? 'Fit' : `${Math.round((zoom() as number) * 100)}%`}
             <Icon name="chevron-down" size={12} />
           </button>
+          <IconButton icon={full() ? 'minimize' : 'maximize'} size="sm" tip={full() ? 'Exit full screen' : 'Full screen'} kbd="F" onClick={toggleFullscreen} />
         </div>
       </div>
     </div>
@@ -146,6 +163,9 @@ export const previewPlugin = definePlugin({
   name: 'Preview',
   activate(ctx) {
     ctx.panels.register({ id: 'preview', title: 'Preview', icon: 'monitor-play', region: 'top', order: 0, mount: solidMount(Preview) })
+    ctx.commands.register({ id: 'preview.fullscreen', title: 'Full Screen Preview', category: 'View', icon: 'maximize', run: toggleFullscreen })
+    ctx.keybindings.register({ id: 'preview.fullscreen:F', command: 'preview.fullscreen', key: 'F' })
+    ctx.menus.register({ id: 'menu:preview.fullscreen', location: 'app/view', group: 'preview', command: 'preview.fullscreen', label: 'Full Screen Preview', order: 10000 })
     ctx.overlays.register(transformOverlay)
     ctx.overlays.register(safeAreasOverlay)
   }

@@ -186,24 +186,19 @@ body.ins-reordering * {
 /* ── property cards ── */
 .ins-list {
   position: relative;
-  padding: 8px 8px 4px;
+  padding: 0 0 4px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
 }
 .ins-card {
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  transition: border-color 0.15s, background 0.15s, opacity 0.15s, box-shadow 0.4s;
+  border-bottom: 1px solid var(--line);
+  transition: opacity 0.15s, box-shadow 0.4s;
 }
 .ins-card.selected {
-  border-color: var(--line-2);
-  background: color-mix(in srgb, var(--panel-2) 82%, var(--panel-3));
+  box-shadow: inset 2px 0 0 var(--line-3);
 }
 .ins-card.just-added {
-  border-color: var(--lime-line);
-  box-shadow: 0 0 0 3px var(--lime-soft);
+  box-shadow: inset 2px 0 0 var(--accent-line);
 }
 .ins-card.dragging {
   opacity: 0.4;
@@ -213,12 +208,8 @@ body.ins-reordering * {
   align-items: center;
   gap: 7px;
   height: 32px;
-  padding: 0 6px 0 8px;
+  padding: 0 6px 0 10px;
   cursor: grab;
-  border-radius: var(--r-lg);
-}
-.ins-card-head:hover {
-  background: rgba(255, 255, 255, 0.025);
 }
 .ins-chev {
   color: var(--dim);
@@ -281,8 +272,7 @@ body.ins-reordering * {
   height: 2px;
   margin-top: 1px;
   border-radius: 1px;
-  background: var(--lime);
-  box-shadow: 0 0 8px rgba(var(--lime-rgb), 0.6);
+  background: var(--accent);
   pointer-events: none;
   z-index: 3;
 }
@@ -326,7 +316,7 @@ body.ins-reordering * {
   color: rgba(var(--sky-rgb), 0.85);
 }
 .ins-row.keyed .ins-label {
-  color: var(--lime);
+  color: var(--accent);
 }
 .ins-editor {
   min-width: 0;
@@ -357,7 +347,7 @@ body.ins-reordering * {
   background: rgba(255, 255, 255, 0.04);
 }
 .ins-kf.keyed {
-  background: var(--lime-soft);
+  background: var(--accent-soft);
 }
 .ins-kf button {
   display: grid;
@@ -375,7 +365,7 @@ body.ins-reordering * {
   color: var(--sky);
 }
 .ins-kf.keyed .ins-kf-nav:not(:disabled) {
-  color: var(--lime);
+  color: var(--accent);
 }
 .ins-kf-nav:not(:disabled):hover {
   background: rgba(255, 255, 255, 0.1);
@@ -404,11 +394,11 @@ body.ins-reordering * {
   fill: rgba(var(--sky-rgb), 0.12);
 }
 .ins-kf-key.keyed svg path {
-  fill: var(--lime);
-  stroke: var(--lime);
+  fill: var(--accent);
+  stroke: var(--accent);
 }
 .ins-kf-key.keyed svg {
-  filter: drop-shadow(0 0 4px rgba(var(--lime-rgb), 0.6));
+  filter: drop-shadow(0 0 4px rgba(var(--accent-rgb), 0.6));
 }
 .ins-kf-key.keyed:hover svg path {
   fill: #fff;
@@ -438,10 +428,10 @@ body.ins-reordering * {
 }
 .ins-add-btn:hover,
 .ins-add-btn.open {
-  color: var(--lime);
-  border-color: var(--lime-line);
+  color: var(--accent);
+  border-color: var(--accent-line);
   border-style: solid;
-  background: var(--lime-soft);
+  background: var(--accent-soft);
 }
 
 /* ── add-property popover ── */
@@ -524,9 +514,9 @@ body.ins-reordering * {
   color: var(--text-2);
 }
 .ins-add-item.active .ins-add-icon {
-  color: var(--lime);
-  border-color: var(--lime-line);
-  background: var(--lime-soft);
+  color: var(--accent);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
 }
 .ins-add-text {
   flex: 1;
@@ -572,9 +562,9 @@ body.ins-reordering * {
   place-items: center;
   font-size: 17px;
   font-weight: 700;
-  color: var(--lime);
-  background: var(--lime-soft);
-  border: 1px solid var(--lime-line);
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
   margin-bottom: 4px;
 }
 .ins-multi-title {

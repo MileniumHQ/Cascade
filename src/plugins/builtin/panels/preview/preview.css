@@ -4,6 +4,9 @@
   display: flex;
   flex-direction: column;
 }
+.pv:fullscreen {
+  background: #000;
+}
 .pv-viewport {
   flex: 1;
   min-height: 0;
@@ -88,9 +91,9 @@
   background: var(--panel-4);
 }
 .pv-play.on {
-  background: var(--lime-soft);
-  border-color: var(--lime-line);
-  color: var(--lime);
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent);
 }
 .pv-right {
   display: flex;
@@ -158,7 +161,7 @@
   cursor: grab;
 }
 .gz-guide {
-  stroke: var(--lime);
+  stroke: var(--accent);
   stroke-width: 1;
   stroke-dasharray: 4 3;
   pointer-events: none;

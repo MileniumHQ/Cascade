@@ -7,7 +7,7 @@ import { solidMount, useSub } from '../solid'
 const lerp = (a: number, b: number, p: number) => a + (b - a) * p
 const clampDef = (v: number, d: ParamDef) => Math.min(d.max ?? Infinity, Math.max(d.min ?? -Infinity, v))
 
-/** Inspector row state: lime when keyed at the playhead, sky when animated. */
+/** Inspector row state: accent when keyed at the playhead, sky when animated. */
 const stateOf = (ctx: ParamEditorContext<any>): 'keyed' | 'animated' | null => (ctx.keyed() ? 'keyed' : ctx.animated ? 'animated' : null)
 
 function NumberEditor(props: { ctx: ParamEditorContext<number> }) {
@@ -76,7 +76,7 @@ function TextEditor(props: { ctx: ParamEditorContext<string> }) {
 }
 
 export const FONTS = [
-  'Commissioner',
+  'Inter',
   'Inter',
   'Roboto',
   'Montserrat',
@@ -99,7 +99,7 @@ export const FONTS = [
 
 function FontEditor(props: { ctx: ParamEditorContext<string> }) {
   const { ctx } = props
-  const v = useSub(ctx.subscribe, () => String(ctx.get() ?? 'Commissioner'))
+  const v = useSub(ctx.subscribe, () => String(ctx.get() ?? 'Inter'))
   const options = () => {
     const list = FONTS.includes(v()) ? FONTS : [v(), ...FONTS]
     return list.map((f) => ({ value: f, label: f }))

@@ -1,4 +1,4 @@
-import '@fontsource-variable/commissioner/full.css'
+import '@fontsource-variable/inter/index.css'
 import { CascadeApp } from '@core/app'
 import { PluginHost, importPluginModule } from '@core/plugin-host'
 import type { StageAudio } from '@core/plugin-api'
@@ -19,7 +19,7 @@ function fontCss() {
   const rules: string[] = []
   for (const sheet of Array.from(document.styleSheets)) {
     for (const rule of Array.from(sheet.cssRules)) {
-      if (rule instanceof CSSFontFaceRule) rules.push(rule.cssText.replace(/Commissioner Variable/g, 'Commissioner').replace(/url\(["']?([^"')]+)["']?\)/g, (_match, url) => `url("${new URL(url, sheet.href ?? location.href).href}")`))
+      if (rule instanceof CSSFontFaceRule) rules.push(rule.cssText.replace(/Inter Variable/g, 'Inter').replace(/url\(["']?([^"')]+)["']?\)/g, (_match, url) => `url("${new URL(url, sheet.href ?? location.href).href}")`))
     }
   }
   return rules.join('\n')
@@ -98,7 +98,7 @@ async function initialize() {
     stamp.height = job.stampHeight
     stamp.style.cssText = `position:absolute;left:0;top:${job.height}px;width:${job.width}px;height:${job.stampHeight}px`
     document.body.appendChild(stamp)
-    await document.fonts.load('16px Commissioner')
+    await document.fonts.load('16px Inter')
   }
   bridge.onCommand(command => {
     chain = chain.then(async () => {

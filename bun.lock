@@ -8,7 +8,7 @@
         "@agentclientprotocol/claude-agent-acp": "^0.94.0",
         "@agentclientprotocol/codex-acp": "^2.2.2",
         "@agentclientprotocol/sdk": "^2.0.0",
-        "@fontsource-variable/commissioner": "^5.3.0",
+        "@fontsource-variable/inter": "^5.3.0",
         "@modelcontextprotocol/sdk": "^1.32.1",
         "esbuild": "^0.28.2",
         "ffmpeg-static": "^5.3.0",
@@ -177,7 +177,7 @@
 
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.28.2", "", { "os": "win32", "cpu": "x64" }, "sha512-5ebpxr3nWMzrL/rnUI755Jkuee0bHL/Gq0WTF9lvcpv73wAp5eu8MfBUgWK9bhWvZjj7yX8etf/8tI8Ney695g=="],
 
-    "@fontsource-variable/commissioner": ["@fontsource-variable/commissioner@5.3.0", "", {}, "sha512-0IEvi8SO1slc5Pc9tA4OtA01I8UiCcEq/uh12oNjfHuABU9Lnz61l2V8o2cMPUUo3BAo5MbISVK2I/DSpBRw7Q=="],
+    "@fontsource-variable/inter": ["@fontsource-variable/inter@5.3.0", "", {}, "sha512-OupL48va4JNofb97w6NYeF9S7W/kHNKM0Er8Dem5nqi4jeOLrVJDoE8tZEpnMJmtkvNbB1EIPPwHcdkF6b1oUA=="],
 
     "@hono/node-server": ["@hono/node-server@2.1.5", "", { "peerDependencies": { "hono": "^4 || ^5.0.0-0" } }, "sha512-MgP/I06GdvsilDspMk/qmRzpk8LOUStP6jFAbSRi40W09DhoyUn+Mj7eyKICPqeYKybOjVFLVIAQzvu1bfIa7Q=="],
 

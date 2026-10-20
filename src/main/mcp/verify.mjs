@@ -53,7 +53,7 @@ export default async ({ win, shot, sleep }) => {
       Object.defineProperty(app, 'host', { value: { ...host, export: { ...host.export, frame: async ({ time, width, height }) => {
         const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height
         const c = canvas.getContext('2d'); c.fillStyle = '#111113'; c.fillRect(0, 0, width, height)
-        c.fillStyle = '#c6f24e'; c.font = `${Math.round(width / 18)}px sans-serif`; c.fillText('Frame service mock', 20, height / 2)
+        c.fillStyle = '#e6e6ea'; c.font = `${Math.round(width / 18)}px sans-serif`; c.fillText('Frame service mock', 20, height / 2)
         c.fillStyle = '#eeeeee'; c.fillText(`${(time / 705600000).toFixed(2)} seconds`, 20, height / 2 + 35)
         return canvas.toDataURL('image/png')
       } } }, configurable: true })

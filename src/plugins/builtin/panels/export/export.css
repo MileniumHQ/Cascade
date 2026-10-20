@@ -49,7 +49,7 @@
 }
 .ex-format.on > .icon,
 .ex-format.on > svg {
-  color: var(--lime);
+  color: var(--accent);
 }
 .ex-format-text {
   flex: 1;
@@ -170,7 +170,7 @@
   font-weight: 650;
 }
 .ex-summary-title > svg {
-  color: var(--lime);
+  color: var(--accent);
 }
 .ex-facts {
   margin-top: 8px;
@@ -221,7 +221,7 @@
   color: var(--sky);
 }
 .ex-job.state-done .ex-job-state {
-  color: var(--lime);
+  color: var(--accent);
 }
 .ex-job.state-error .ex-job-state {
   color: var(--danger);
@@ -240,7 +240,7 @@
   display: block;
   height: 100%;
   border-radius: 2px;
-  background: linear-gradient(90deg, rgba(var(--sky-rgb), 0.8), var(--lime));
+  background: var(--accent);
   transition: width 0.25s var(--ease-out);
 }
 .ex-job-meta {

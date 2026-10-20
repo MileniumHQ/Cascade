@@ -123,7 +123,7 @@
   top: 18px;
   bottom: 0;
   width: 1px;
-  background: var(--lime);
+  background: var(--accent);
 }
 .kf-rhead-tc {
   position: absolute;
@@ -132,7 +132,7 @@
   transform: translateX(-50%);
   padding: 2px 6px;
   border-radius: 5px;
-  background: var(--lime);
+  background: var(--accent);
   color: #11140a;
   font-size: 10px;
   font-weight: 650;
@@ -179,7 +179,7 @@
   top: 0;
   bottom: 0;
   width: 2px;
-  background: var(--lime);
+  background: var(--accent);
   opacity: 0.55;
 }
 .kf-trow.off {
@@ -277,7 +277,7 @@
   opacity: 0.85;
 }
 .kf-param.pfocus {
-  background: rgba(var(--lime-rgb), 0.045);
+  background: rgba(var(--accent-rgb), 0.045);
 }
 .kf-val {
   max-width: 96px;
@@ -322,7 +322,7 @@
   color: var(--sky);
 }
 .kf-add.keyed {
-  color: var(--lime);
+  color: var(--accent);
 }
 .kf-add.keyed .kf-glyph-svg path {
   fill: currentColor;
@@ -373,7 +373,7 @@
   background: rgba(255, 255, 255, 0.022);
 }
 .kf-stripe.focus {
-  background-image: linear-gradient(rgba(var(--lime-rgb), 0.03), rgba(var(--lime-rgb), 0.03));
+  background-image: linear-gradient(rgba(var(--accent-rgb), 0.03), rgba(var(--accent-rgb), 0.03));
 }
 .kf-world {
   position: absolute;
@@ -425,11 +425,11 @@
   stroke-linecap: round;
 }
 .kf-seg.sel {
-  background: rgba(var(--lime-rgb), 0.17);
-  border-color: rgba(var(--lime-rgb), 0.42);
+  background: rgba(var(--accent-rgb), 0.17);
+  border-color: rgba(var(--accent-rgb), 0.42);
 }
 .kf-seg.sel path {
-  stroke: rgba(var(--lime-rgb), 0.9);
+  stroke: rgba(var(--accent-rgb), 0.9);
 }
 .kf-seg.flat {
   height: 4px;
@@ -446,7 +446,7 @@
   background: none;
 }
 .kf-seg.hold.sel {
-  border-top-color: var(--lime);
+  border-top-color: var(--accent);
 }
 .kf-seg.sum {
   height: 4px;
@@ -456,7 +456,7 @@
   background: rgba(255, 255, 255, 0.07);
 }
 .kf-seg.sum.sel {
-  background: rgba(var(--lime-rgb), 0.22);
+  background: rgba(var(--accent-rgb), 0.22);
 }
 
 /* keyframe glyphs */
@@ -497,11 +497,11 @@
   fill: #bfd77a;
 }
 .kf-kf.sel .kf-glyph-svg path {
-  fill: var(--lime);
+  fill: var(--accent);
   stroke: rgba(22, 30, 4, 0.95);
 }
 .kf-kf.sel .kf-glyph-svg {
-  filter: drop-shadow(0 0 5px rgba(var(--lime-rgb), 0.6));
+  filter: drop-shadow(0 0 5px rgba(var(--accent-rgb), 0.6));
 }
 .kf-kf.head:not(.sel) .kf-glyph-svg path {
   stroke: var(--sky);
@@ -515,8 +515,7 @@
   width: 1px;
   margin-left: -0.5px;
   /* Same look as the timeline playhead. */
-  background: var(--lime);
-  box-shadow: 0 0 6px rgba(var(--lime-rgb), 0.45);
+  background: var(--accent);
   pointer-events: none;
   z-index: 4;
   will-change: transform;
@@ -552,8 +551,8 @@
   position: absolute;
   z-index: 6;
   pointer-events: none;
-  border: 1px solid var(--lime-line);
-  background: rgba(var(--lime-rgb), 0.08);
+  border: 1px solid var(--accent-line);
+  background: rgba(var(--accent-rgb), 0.08);
   border-radius: 3px;
 }
 .kf-hint {
@@ -680,11 +679,11 @@
 }
 .kf-curve {
   fill: none;
-  stroke: var(--lime);
+  stroke: var(--accent);
   stroke-width: 2.4;
   stroke-linecap: round;
   stroke-linejoin: round;
-  filter: drop-shadow(0 0 6px rgba(var(--lime-rgb), 0.35));
+  filter: drop-shadow(0 0 6px rgba(var(--accent-rgb), 0.35));
 }
 .kf-end {
   fill: var(--panel-4);
@@ -693,7 +692,7 @@
 }
 .kf-ride {
   fill: #fff;
-  stroke: var(--lime);
+  stroke: var(--accent);
   stroke-width: 2;
 }
 .kf-rail-dot {
@@ -790,8 +789,8 @@
   color: var(--text);
 }
 .kf-preset.on {
-  background: var(--lime-soft);
-  border-color: var(--lime-line);
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
   color: var(--text);
 }
 .kf-mini {
@@ -811,7 +810,7 @@
   stroke-linejoin: round;
 }
 .kf-preset.on .kf-mini path {
-  stroke: var(--lime);
+  stroke: var(--accent);
 }
 
 /* context menu */
@@ -856,7 +855,7 @@
 }
 .kf-menu .menu-item:hover .kf-mini path,
 .kf-menu .menu-item.active .kf-mini path {
-  stroke: var(--lime);
+  stroke: var(--accent);
 }
 .kf-menu-hint {
   margin-left: auto;
@@ -938,7 +937,7 @@
   stroke: rgba(8, 8, 10, 0.9);
 }
 .kf-gpt.sel .kf-glyph-svg path {
-  fill: var(--lime);
+  fill: var(--accent);
 }
 .kf-gpt {
   height: 28px;

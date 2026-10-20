@@ -89,7 +89,7 @@ export const elementPlugin = definePlugin({
         name: 'Shape',
         clipData: { kind: 'shape' },
         // Square: 30% of the frame height on both axes, whatever the aspect ratio.
-        properties: [{ type: 'transform' }, { type: 'size', values: { size: [0.3 * (project.settings.height / project.settings.width), 0.3] } }, { type: 'fill', values: { color: '#c6f24e' } }, { type: 'corners' }]
+        properties: [{ type: 'transform' }, { type: 'size', values: { size: [0.3 * (project.settings.height / project.settings.width), 0.3] } }, { type: 'fill', values: { color: '#e6e6ea' } }, { type: 'corners' }]
       })
     })
   }

@@ -1,4 +1,4 @@
-import { definePlugin, type CommandContribution, type KeybindingContribution } from '@core/plugin-api'
+import { definePlugin, type CommandContribution, type KeybindingContribution, type MenuItemContribution, type MenuLocation } from '@core/plugin-api'
 import type { CascadeAPI } from '@core/app'
 import { clipEnd, findClip } from '@shared/project'
 
@@ -203,6 +203,45 @@ export const commandsPlugin = definePlugin({
       { key: 'Backspace', command: 'keyframes.delete', when: 'keyframes' }
     ]
     for (const k of keys) ctx.keybindings.register({ id: `${k.command}:${k.key}`, ...k })
+
+    // Native application menu. Groups become separator-delimited sections, in order of their first item.
+    const menu: [MenuLocation, string, string, string, Partial<MenuItemContribution>?][] = [
+      ['app/file', 'project', 'project.save', 'Save'],
+      ['app/file', 'project', 'project.saveAs', 'Save As…'],
+      ['app/file', 'media', 'media.import', 'Import Media…'],
+      ['app/edit', 'history', 'edit.undo', 'Undo'],
+      ['app/edit', 'history', 'edit.redo', 'Redo'],
+      ['app/edit', 'clips', 'timeline.split', 'Split at Playhead'],
+      ['app/edit', 'clips', 'timeline.duplicate', 'Duplicate'],
+      ['app/edit', 'clips', 'timeline.delete', 'Delete'],
+      ['app/edit', 'clips', 'timeline.rippleDelete', 'Ripple Delete'],
+      ['app/edit', 'trim', 'timeline.trimStart', 'Trim Start to Playhead'],
+      ['app/edit', 'trim', 'timeline.trimEnd', 'Trim End to Playhead'],
+      ['app/edit', 'select', 'timeline.selectAll', 'Select All Clips'],
+      ['app/edit', 'select', 'timeline.deselect', 'Deselect'],
+      ['app/edit', 'link', 'timeline.link', 'Link Clips'],
+      ['app/edit', 'link', 'timeline.unlink', 'Unlink Clips'],
+      ['app/timeline', 'marks', 'timeline.marker', 'Add Marker'],
+      ['app/timeline', 'marks', 'timeline.setIn', 'Mark In'],
+      ['app/timeline', 'marks', 'timeline.setOut', 'Mark Out'],
+      ['app/timeline', 'marks', 'timeline.clearInOut', 'Clear In/Out'],
+      ['app/timeline', 'nav', 'playback.prevEdit', 'Previous Edit Point'],
+      ['app/timeline', 'nav', 'playback.nextEdit', 'Next Edit Point'],
+      ['app/timeline', 'nav', 'keyframes.prev', 'Previous Keyframe'],
+      ['app/timeline', 'nav', 'keyframes.next', 'Next Keyframe'],
+      ['app/timeline', 'opts', 'timeline.snapping', 'Snapping', { checked: (a) => a.view.snapping.get() }],
+      ['app/playback', 'transport', 'playback.toggle', 'Play / Pause'],
+      ['app/playback', 'transport', 'playback.stepBack', 'Previous Frame'],
+      ['app/playback', 'transport', 'playback.stepForward', 'Next Frame'],
+      ['app/playback', 'jump', 'playback.start', 'Go to Start'],
+      ['app/playback', 'jump', 'playback.end', 'Go to End'],
+      ['app/playback', 'opts', 'playback.loop', 'Loop', { checked: (a) => a.playback.loop.get() }],
+      ['app/view', 'zoom', 'timeline.zoomIn', 'Zoom In'],
+      ['app/view', 'zoom', 'timeline.zoomOut', 'Zoom Out'],
+      ['app/view', 'zoom', 'timeline.zoomFit', 'Zoom to Fit']
+    ]
+    menu.forEach(([location, group, command, label, extra], order) =>
+      ctx.menus.register({ id: `menu:${command}`, location, group, command, label, order: order * 10, ...extra }))
   }
 })
 

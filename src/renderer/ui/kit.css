@@ -58,14 +58,14 @@
 }
 .btn-primary,
 .btn-accent {
-  background: var(--lime-soft);
-  border-color: var(--lime-line);
-  color: var(--lime);
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent);
 }
 .btn-primary:hover,
 .btn-accent:hover {
-  background: rgba(var(--lime-rgb), 0.22);
-  border-color: rgba(var(--lime-rgb), 0.5);
+  background: rgba(var(--accent-rgb), 0.22);
+  border-color: rgba(var(--accent-rgb), 0.5);
 }
 .btn-ghost {
   background: transparent;
@@ -110,8 +110,8 @@
   color: var(--text);
 }
 .iconbtn.active {
-  color: var(--lime);
-  background: var(--lime-soft);
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 .iconbtn:disabled {
   opacity: 0.35;
@@ -243,9 +243,9 @@
   color: #d4ecff;
 }
 .numfield.keyed {
-  background: var(--lime-soft);
-  border-color: rgba(var(--lime-rgb), 0.28);
-  color: var(--lime);
+  background: var(--accent-soft);
+  border-color: rgba(var(--accent-rgb), 0.28);
+  color: var(--accent);
 }
 .nf-value {
   flex: 1;
@@ -266,7 +266,7 @@
   font-size: 10.5px;
 }
 .numfield.keyed .nf-affix {
-  color: rgba(var(--lime-rgb), 0.6);
+  color: rgba(var(--accent-rgb), 0.6);
 }
 
 .textfield {
@@ -341,11 +341,11 @@
   transition: transform 0.18s var(--ease-out), background 0.15s;
 }
 .toggle.on {
-  background: rgba(var(--lime-rgb), 0.28);
+  background: rgba(var(--accent-rgb), 0.28);
 }
 .toggle.on i {
   transform: translateX(12px);
-  background: var(--lime);
+  background: var(--accent);
 }
 .toggle-sm {
   width: 24px;
@@ -392,8 +392,8 @@
   background: transparent;
 }
 .colorfield.keyed .cf-hex {
-  background: var(--lime-soft);
-  color: var(--lime);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 .colorfield.animated .cf-hex {
   background: var(--sky-soft);

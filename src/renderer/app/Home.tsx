@@ -26,22 +26,17 @@ export function Home(props: { app: CascadeApp; session: Session }) {
       <div class="home-inner">
         <section class="home-hero">
           <img src={logo} alt="" class="home-logo" draggable={false} />
-          <div>
-            <h1>Cascade</h1>
-            <p>Every frame is a web page. Every effect is a plugin.</p>
-          </div>
+          <h1>Cascade</h1>
         </section>
 
         <section class="home-actions">
           <button class="home-card primary" onClick={() => setCreating(true)}>
-            <Icon name="plus" size={20} />
-            <b>New project</b>
-            <span>Start from a blank timeline</span>
+            <Icon name="plus" size={16} />
+            <b>New project…</b>
           </button>
           <button class="home-card" onClick={() => void session.openDialog()}>
-            <Icon name="folder-open" size={20} />
-            <b>Open project</b>
-            <span>Browse for a .cascade file</span>
+            <Icon name="folder-open" size={16} />
+            <b>Open project…</b>
           </button>
         </section>
 
@@ -49,7 +44,7 @@ export function Home(props: { app: CascadeApp; session: Session }) {
           <header>
             <h2>Recent</h2>
           </header>
-          <Show when={recent()?.length} fallback={<div class="home-empty">Projects you open will show up here.</div>}>
+          <Show when={recent()?.length} fallback={<div class="home-empty">No recent projects</div>}>
             <div class="recent-list">
               <For each={recent()}>
                 {(r) => (

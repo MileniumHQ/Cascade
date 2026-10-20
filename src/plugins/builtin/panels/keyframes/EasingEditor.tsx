@@ -199,8 +199,8 @@ export function EasingEditor(props: { s: PanelState }) {
           <svg ref={plot} class="kf-plot" viewBox={`0 0 ${VW} ${VH}`}>
             <defs>
               <linearGradient id="kf-area" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stop-color="var(--lime)" stop-opacity="0.18" />
-                <stop offset="1" stop-color="var(--lime)" stop-opacity="0" />
+                <stop offset="0" stop-color="var(--accent)" stop-opacity="0.18" />
+                <stop offset="1" stop-color="var(--accent)" stop-opacity="0" />
               </linearGradient>
               <pattern id="kf-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
                 <line x1="0" y1="0" x2="0" y2="6" stroke="rgba(130,203,255,0.16)" stroke-width="2" />

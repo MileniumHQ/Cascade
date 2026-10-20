@@ -38,7 +38,7 @@ export function GeneratorTile(props: { media: MediaItem; generator: GeneratorCon
       </Show>
       <Show when={kind() === 'shape'}>
         <div class="sc-tile-shape-bg">
-          <div class="sc-tile-shape" style={{ background: presetColor(props.app, props.media, 'fill', '#c6f24e') }} />
+          <div class="sc-tile-shape" style={{ background: presetColor(props.app, props.media, 'fill', '#e6e6ea') }} />
         </div>
       </Show>
       <Show when={kind() === 'text'}>

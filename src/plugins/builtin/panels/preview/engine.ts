@@ -18,8 +18,8 @@ function fontCss(): string {
     }
     for (const r of Array.from(rules)) if (r instanceof CSSFontFaceRule) out.push(r.cssText.replace(/url\("?(?!data:|https?:|media:|blob:)([^")]+)"?\)/g, (_, u) => `url("${new URL(u, sheet.href ?? location.href).href}")`))
   }
-  // The stage's default family name is plain 'Commissioner'; alias the variable build to it.
-  return out.join('\n') + '\n' + out.filter((r) => r.includes('Commissioner Variable')).map((r) => r.replace(/'Commissioner Variable'|"Commissioner Variable"/, "'Commissioner'")).join('\n')
+  // The stage's default family name is plain 'Inter'; alias the variable build to it.
+  return out.join('\n') + '\n' + out.filter((r) => r.includes('Inter Variable')).map((r) => r.replace(/'Inter Variable'|"Inter Variable"/, "'Inter'")).join('\n')
 }
 
 /**
@@ -67,7 +67,7 @@ export class PreviewEngine {
           mode: 'preview',
           mediaUrl: (p) => app.host!.mediaUrl(p),
           audio: { context: this.audio, destination: this.master },
-          css: fontCss() + '\n#cascade-stage{font-family:"Commissioner",system-ui,sans-serif}'
+          css: fontCss() + '\n#cascade-stage{font-family:"Inter",system-ui,sans-serif}'
         })
         this.stage.onFrame.on(() => this.onFrame.emit())
         resolve()

@@ -78,7 +78,7 @@ export class Stage {
     style.textContent = `
       html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
       #cascade-stage { position: absolute; inset: 0; overflow: hidden; container-type: size; contain: strict;
-        font-family: 'Commissioner', system-ui, sans-serif; color: white; -webkit-font-smoothing: antialiased; }
+        font-family: 'Inter', system-ui, sans-serif; color: white; -webkit-font-smoothing: antialiased; }
       .cs-track { position: absolute; inset: 0; pointer-events: none; }
       .cs-clip { position: absolute; left: 50%; top: 50%; transform-origin: 50% 50%; will-change: transform; }
       ${opts.css ?? ''}
