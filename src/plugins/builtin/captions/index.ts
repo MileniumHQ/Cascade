@@ -85,7 +85,9 @@ export const captionsPlugin = definePlugin({
             properties: [
               property('transform', { position: [0, 0.34], scale: 1, rotation: 0, anchor: [0.5, 0.5] }),
               property('size', { size: [0.88, 0.16], padding: 0 }),
-              property('text', { text: c.text, font: 'Commissioner', size: 0.046, weight: 750, color: '#ffffff', align: 'center', italic: false, tracking: 0, leading: 1.2, stroke: 0.003, strokeColor: '#111111' })
+              property('text', { text: c.text, font: 'Commissioner', size: 0.046, weight: 750, color: '#ffffff', align: 'center', italic: false, tracking: 0, leading: 1.2, stroke: 0.006, strokeColor: '#111111' }),
+              // Soft shadow keeps captions legible over bright footage.
+              property('shadow', { offset: [0, 0.002], blur: 0.006, color: '#000000cc' })
             ] }))
           app.edit.addTrack('visual', { name: 'Captions', clips, label: 'Generate captions' })
           app.selection.setClips([clips[0].id])

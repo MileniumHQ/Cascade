@@ -58,7 +58,7 @@ Tools are listed in deterministic order and accept `detail: "concise" | "detaile
 | `frame_get`, `contact_sheet`, `timeline_preview_sheet`, `media_contact_sheet` | Visual inspection |
 | `plugin_write`, `plugin_list`, `plugin_remove`, `plugin_api_docs` | Property plugin authoring and hot reload |
 | `export_start`, `job_get`, `export_cancel` | Asynchronous export jobs |
-| `captions_generate` | Explicit unavailable response until transcription ships |
+| `captions_generate`, `job_get` | Local Whisper captions for a clip (`clipId`) or source (`mediaId`); asynchronous, poll `job_get`. See [captions.md](captions.md) |
 
 ## Batch example
 
@@ -131,4 +131,4 @@ The driver connects using the installed SDK, lists 26 tools, creates a project, 
 
 Artifacts: `/tmp/cascade-mcp-verification.txt`, `/tmp/cascade-mcp-shots/agent-edit.png`, `/tmp/cascade-mcp-source-sheet.jpg`, and `/tmp/cascade-mcp-contact-sheet-mock.jpg` when the real frame service is unavailable.
 
-At implementation time this worktree's `export:frame`, `export:start` and `export:cancel` handlers are placeholders, and no exporter contributions or transcription API are present. Frame/sheet calls fail with a recovery hint; the verification script then tests grid composition using a frame mock. Raw source sheets use real ffmpeg posters. Export tools are wired to the existing bridge and retain progress events, but actual exports require the parallel export implementation to land. `captions_generate` explicitly returns “not yet available.” `history_get` provides current undo/redo labels and the last observed change events, rather than exposing private core history stacks. This worktree's Sources, Timeline and Clip panels are also placeholders; agent changes still appear in the live stage preview.
+Export, frame/sheet and caption tools are all backed by real services now. `history_get` provides current undo/redo labels and the last observed change events, rather than exposing private core history stacks.

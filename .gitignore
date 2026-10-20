@@ -7,3 +7,4 @@ release
 /tmp
 resources/whisper/
 vendor/
+.scratch/

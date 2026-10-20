@@ -123,9 +123,12 @@ export function Timeline(props: { ctx: PanelContext }) {
     const subs = [
       app.playback.time.subscribe((t) => {
         placePlayhead()
-        if (app.playback.playing.get() && app.settings.get<boolean>('timeline.followPlayhead') !== false) {
-          const px = app.view.timeToPx(t) - app.view.scrollX.get()
-          if (px > width() - 40 || px < 0) setScroll(app.view.timeToPx(t) - width() * 0.1)
+        const px = app.view.timeToPx(t) - app.view.scrollX.get()
+        if (app.playback.playing.get()) {
+          if (app.settings.get<boolean>('timeline.followPlayhead') !== false && (px > width() - 40 || px < 0)) setScroll(app.view.timeToPx(t) - width() * 0.1)
+        } else if (px > width() || px < 0) {
+          // A paused jump off-screen (timecode entry, Home/End, agents) centres the playhead.
+          setScroll(app.view.timeToPx(t) - width() * 0.5)
         }
       }),
       app.view.pxPerSecond.subscribe(() => (redrawRuler(), placePlayhead())),
