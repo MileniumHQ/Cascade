@@ -35,13 +35,16 @@ export interface Chat {
   queue: Queued[]
   /** The queue stops after a manual Stop until the user sends again. */
   paused: boolean
+  /** A fresh session replacing one that couldn't be reloaded; adopted (with its notice) on the next message,
+   *  so merely opening the chat never overwrites a reloadable session id with an empty one. */
+  fresh?: { sessionId: string; notice: string }
 }
 
 const STORE = 'cascade.agent.chats'
 const restore = (): Chat[] => {
   try {
     const saved = JSON.parse(localStorage.getItem(STORE) ?? '[]') as Chat[]
-    return saved.map(c => ({ ...c, running: false, permissions: [], queue: [], paused: false, ended: true }))
+    return saved.map(c => ({ ...c, running: false, permissions: [], queue: [], paused: false, ended: true, fresh: undefined }))
   } catch { return [] }
 }
 const [chats, setChats] = createStore<Chat[]>(restore())
@@ -76,7 +79,24 @@ const [draftProvider, setDraftProvider] = createSignal(localStorage.getItem('cas
 const [starting, setStarting] = createSignal(false)
 /** Off by default: permission requests are answered with the agent's allow option. Edits are undoable in Cascade. */
 const [askFirst, setAskFirstSignal] = createSignal(localStorage.getItem('cascade.agent.askFirst') === '1')
-export { chats, activeId, setActiveId, providers, draftProvider, starting, askFirst }
+/** Last failure starting an agent (shown above the composer; the picker may have closed). */
+const [startError, setStartError] = createSignal('')
+export { startError, setStartError }
+/** Start-up message from the host (e.g. waiting for browser sign-in). */
+const [status, setStatus] = createSignal('')
+/** Download progress per provider while installing from the ACP registry. */
+const [installs, setInstalls] = createStore<Record<string, { received: number; total: number; error?: string } | undefined>>({})
+export { chats, activeId, setActiveId, providers, draftProvider, starting, askFirst, status, installs }
+
+export async function installProvider(id: string) {
+  if (!bridge || installs[id] && !installs[id]!.error) return
+  setInstalls(id, { received: 0, total: 0 })
+  try {
+    await bridge.install(id)
+    setInstalls(id, undefined)
+    await refreshProviders()
+  } catch (error) { setInstalls(id, { received: 0, total: 0, error: message(error) }) }
+}
 export function setAskFirst(on: boolean) {
   setAskFirstSignal(on)
   localStorage.setItem('cascade.agent.askFirst', on ? '1' : '0')
@@ -116,8 +136,9 @@ export async function startChat(providerId = draftProvider()): Promise<Chat | nu
   const previous = active()
   if (previous && !previous.entries.length && previous.providerId === providerId && !previous.ended) return previous
   setStarting(true)
+  setStartError('')
   try {
-    const session = await bridge.start(providerId)
+    const session = await bridge.start(providerId).catch((error: unknown) => { setStartError(message(error)); throw error })
     const chat: Chat = { id: session.id, providerId, agent: session.agent, title: 'New chat', entries: [], options: session.options, running: false, startedAt: 0, permissions: [], cascadeTools: session.cascadeTools, ended: false, sessionId: session.sessionId, cwd: session.cwd, images: session.images, queue: [], paused: false }
     if (previous && !previous.entries.length) closeChat(previous.id)
     setChats(chats.length, chat)
@@ -127,7 +148,7 @@ export async function startChat(providerId = draftProvider()): Promise<Chat | nu
     // Re-apply the user's last choices for this agent when they're still offered.
     await applyRemembered(chat.id, providerId, chat.options)
     return active()
-  } finally { setStarting(false) }
+  } finally { setStarting(false); setStatus('') }
 }
 
 async function applyRemembered(chatId: string, providerId: string, options: SessionConfigOption[]) {
@@ -146,17 +167,18 @@ async function resumeChat(chat: Chat): Promise<string | null> {
   try {
     let session: AgentSession
     try { session = await bridge.start(chat.providerId, { resume: chat.sessionId || undefined, cwd: chat.cwd || undefined }) }
-    catch (error) { edit(chat.id, c => { c.entries.push({ kind: 'notice', tone: 'error', text: message(error) }) }); return null }
+    catch (error) { setStartError(message(error)); return null }
     const old = chat.id
     edit(old, c => {
-      c.id = session.id; c.ended = false; c.sessionId = session.sessionId; c.cwd = session.cwd; c.images = session.images
+      c.id = session.id; c.ended = false; c.cwd = session.cwd; c.images = session.images
       c.options = session.options; c.agent = session.agent; c.cascadeTools = session.cascadeTools
-      if (!session.resumed) c.entries.push({ kind: 'notice', tone: 'info', text: 'Started a fresh session; the agent doesn’t remember the messages above.' })
+      if (session.resumed) { c.sessionId = session.sessionId; c.fresh = undefined }
+      else c.fresh = { sessionId: session.sessionId, notice: `Started a fresh session; the agent doesn’t remember the messages above${session.resumeError ? ` (${session.resumeError})` : ''}.` }
     })
     if (activeId() === old) setActiveId(session.id)
     if (!session.resumed) await applyRemembered(session.id, chat.providerId, session.options)
     return session.id
-  } finally { setStarting(false) }
+  } finally { setStarting(false); setStatus('') }
 }
 
 /** Resume the active chat if its agent has stopped (used by the picker to list models). */
@@ -198,6 +220,7 @@ async function turn(startId: string, text: string, attachments: AgentAttachment[
   if (!bridge) return
   let id = startId
   edit(id, c => {
+    if (c.fresh) { c.sessionId = c.fresh.sessionId; c.entries.push({ kind: 'notice', tone: 'info', text: c.fresh.notice }); c.fresh = undefined }
     c.entries.push({ kind: 'user', text, ...(attachments.length ? { attachments: attachments.map(shown) } : {}) })
     if (c.title === 'New chat') c.title = (text || attachments[0]?.name || 'Chat').replace(/\s+/g, ' ').slice(0, 60)
     c.running = true; c.startedAt = Date.now()
@@ -314,6 +337,8 @@ function apply(c: Chat, u: SessionUpdate) {
 }
 
 function onEvent(e: AgentEvent) {
+  if (e.type === 'status') { setStatus(e.message); return }
+  if (e.type === 'install') { if (installs[e.providerId]) setInstalls(e.providerId, { received: e.received, total: e.total }); return }
   if (e.type === 'update') edit(e.chatId, c => apply(c, e.update))
   else if (e.type === 'permission' && !askFirst()) {
     const allow = e.options.find(o => o.kind === 'allow_once') ?? e.options.find(o => o.kind === 'allow_always')

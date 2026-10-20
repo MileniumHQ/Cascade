@@ -6,12 +6,13 @@ import type { AgentAttachment, SessionConfigOption } from '@shared/agents'
 import { markdown } from './markdown'
 import {
   active, activeId, askFirst, cancel, chats, chooseProvider, closeChat, connect, draftProvider, flatOptions, newChat, providers, refreshProviders,
-  dropQueued, respond, resumeActive, send, sendQueued, setActiveId, setAskFirst, setOption, startChat, starting, type Chat, type Entry
+  dropQueued, installProvider, startError, setStartError, installs, respond, status, resumeActive, send, sendQueued, setActiveId, setAskFirst, setOption, startChat, starting, type Chat, type Entry
 } from './state'
 
 // Simplified brand marks (inline SVG keeps them crisp at 12–24px).
 const MARKS: Record<string, string> = {
   claude: '<svg viewBox="0 0 24 24"><g stroke="#d97757" stroke-width="2.6" stroke-linecap="round"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></g></svg>',
+  cursor: '<svg viewBox="0 0 24 24" fill="none" stroke="#ececef" stroke-width="1.6" stroke-linejoin="round"><path d="M12 2.8 20 7.4v9.2L12 21.2 4 16.6V7.4z"/><path d="M4 7.4 12 12l8-4.6M12 12v9.2" opacity=".55"/></svg>',
   codex: '<svg viewBox="0 0 24 24" fill="none" stroke="#ececef" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.8 20 7.4v9.2L12 21.2 4 16.6V7.4z"/><path d="m8.5 10 2.5 2-2.5 2M12.5 14.5h3"/></svg>',
   opencode: '<svg viewBox="0 0 24 24" fill="none" stroke="#ececef" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z" fill="#ececef"/></svg>',
   agent: 'bot'
@@ -216,7 +217,13 @@ function Composer() {
           </div>
         </div>
       )}</Show>
-      <Show when={error()}><div class="ag-notice ag-notice-error ag-composer-error">{error()}</div></Show>
+      <Show when={error() || startError()}>
+        <div class="ag-notice ag-notice-error ag-composer-error ag-dismiss">
+          <span>{linkify(error() || startError())}</span>
+          <IconButton size="sm" icon="x" tip="Dismiss" onClick={() => { setError(''); setStartError('') }} />
+        </div>
+      </Show>
+      <Show when={status()}><div class="ag-notice ag-composer-error"><Icon name="log-in" size={12} /> {status()}</div></Show>
       <div class="ag-composer"
         onDragOver={(e) => { if (e.dataTransfer?.types.includes('Files')) { e.preventDefault(); e.stopPropagation() } }}
         onDrop={(e) => { if (e.dataTransfer?.files.length) { e.preventDefault(); e.stopPropagation(); void attach(e.dataTransfer.files) } }}>
@@ -265,6 +272,9 @@ function Composer() {
     </div>
   )
 }
+
+/** Plain text with clickable http(s) links (login URLs in start-up errors). */
+const linkify = (text: string) => text.split(/(https?:\/\/\S+)/).map((part, i) => i % 2 ? <a href={part} target="_blank" rel="noreferrer">{part.length > 60 ? `${part.slice(0, 57)}…` : part}</a> : part)
 
 const optionName = (o: SessionConfigOption) => o.type === 'select' ? flatOptions(o).find(x => x.value === o.currentValue)?.name ?? String(o.currentValue) : o.currentValue ? 'On' : 'Off'
 
@@ -364,14 +374,36 @@ function ModelPicker() {
             </Show>
             <div class="ag-models">
               <Switch>
-                <Match when={!providerOf(rail())?.available}><p class="ag-picker-note">{providerOf(rail())?.reason}</p></Match>
+                <Match when={!providerOf(rail())?.available}>
+                  <p class="ag-picker-note">{providerOf(rail())?.reason}</p>
+                  <Show when={providerOf(rail())?.install}>
+                    <Show when={installs[rail()] && !installs[rail()]!.error} fallback={
+                      <>
+                        <Show when={installs[rail()]?.error}><p class="ag-picker-note error">{installs[rail()]!.error}</p></Show>
+                        <button class="menu-item ag-pick" onClick={() => void installProvider(rail())}>
+                          <Icon name="download" size={14} /><span class="ag-pick-text"><span>Install {providerOf(rail())?.name}</span><small>Official build from the ACP registry, kept in Cascade’s data folder</small></span>
+                        </button>
+                      </>
+                    }>
+                      {(() => {
+                        const p = () => installs[rail()]!
+                        return (
+                          <div class="ag-install">
+                            <div class="ag-install-bar"><span style={{ width: `${p().total ? Math.round(p().received / p().total * 100) : 3}%` }} /></div>
+                            <small>{p().received && p().received === p().total ? 'Unpacking…' : `Downloading ${Math.round(p().received / 1e6)}${p().total ? ` / ${Math.round(p().total / 1e6)}` : ''} MB`}</small>
+                          </div>
+                        )
+                      })()}
+                    </Show>
+                  </Show>
+                </Match>
                 <Match when={failure()}><p class="ag-picker-note error">{failure()}</p></Match>
                 <Match when={chat()?.entries.length && chat()?.providerId !== rail()}>
-                  <button class="menu-item ag-pick" onClick={() => { setAnchor(null); void startChat(rail()) }}>
+                  <button class="menu-item ag-pick" onClick={() => { setAnchor(null); startChat(rail()).catch(() => {}) }}>
                     <Icon name="square-pen" size={14} /><span>New chat with {providerOf(rail())?.name}</span>
                   </button>
                 </Match>
-                <Match when={loading() === rail() || !sameProvider()}><p class="ag-picker-note"><Icon name="loader-circle" size={13} class="spin" /> Starting {providerOf(rail())?.name}…</p></Match>
+                <Match when={loading() === rail() || !sameProvider()}><p class="ag-picker-note"><Icon name="loader-circle" size={13} class="spin" /> {status() || `Starting ${providerOf(rail())?.name}…`}</p></Match>
                 <Match when={!model()}><p class="ag-picker-note">This agent picks its own model.</p></Match>
                 <Match when={true}>
                   <For each={items()} fallback={<p class="ag-picker-note">No models found</p>}>{(o) => (

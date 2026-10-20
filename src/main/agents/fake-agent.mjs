@@ -1,12 +1,16 @@
 // Test fixture: a tiny ACP agent over stdio. Echoes prompts, streams a tool call, asks permission once.
 import { Readable, Writable } from 'node:stream'
-import { agent, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
+import { agent, ndJsonStream, PROTOCOL_VERSION, RequestError } from '@agentclientprotocol/sdk'
 let model = 'small'
 const options = () => [{ id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: model, options: [{ value: 'small', name: 'Small' }, { value: 'big', name: 'Big' }] }]
 let seen = {}
+// FAKE_AUTH=1: session/new needs an `authenticate` call first, like a logged-out agent.
+let signedIn = !process.env.FAKE_AUTH
 agent({ name: 'fake' })
-  .onRequest('initialize', () => ({ protocolVersion: PROTOCOL_VERSION, agentCapabilities: { loadSession: true, promptCapabilities: { image: true }, mcpCapabilities: { http: true } }, agentInfo: { name: 'fake', title: 'Fake Agent', version: '1.0' } }))
-  .onRequest('session/new', ({ params }) => { seen = { cwd: params.cwd, mcp: params.mcpServers, allowed: params._meta?.claudeCode?.options?.allowedTools }; return { sessionId: 's1', configOptions: options() } })
+  .onRequest('initialize', () => ({ protocolVersion: PROTOCOL_VERSION, agentCapabilities: { loadSession: true, promptCapabilities: { image: true }, mcpCapabilities: { http: true } }, agentInfo: { name: 'fake', title: 'Fake Agent', version: '1.0' }, authMethods: [{ id: 'key', name: 'API key', type: 'env_var', vars: [{ name: 'FAKE_KEY' }] }, { id: 'browser', name: 'Log in' }] }))
+  .onRequest('authenticate', ({ params }) => { if (params.methodId === 'browser') signedIn = true; return {} })
+  .onRequest('session/new', ({ params }) => {
+    if (!signedIn) throw RequestError.authRequired(); seen = { cwd: params.cwd, mcp: params.mcpServers, allowed: params._meta?.claudeCode?.options?.allowedTools }; return { sessionId: 's1', configOptions: options() } })
   .onRequest('session/load', async ({ params, client }) => {
     // Replays history like real agents do; the host must not re-emit it.
     await client.notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'REPLAY' } } })

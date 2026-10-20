@@ -7,9 +7,12 @@ The **Agent** side panel (sparkles icon in the left sidebar switcher) runs codin
 |---|---|---|
 | Claude Code | bundled `@agentclientprotocol/claude-agent-acp` (Claude Agent SDK) | your existing `claude` login |
 | Codex | bundled `@agentclientprotocol/codex-acp` (`@openai/codex`) | your existing `codex login` |
+| Cursor | `cursor-agent acp` from PATH, or **Install** in the picker (official build from the [ACP registry](https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json), ~184 MB, kept in `<userData>/agents/cursor`) | browser login on first use |
 | OpenCode | `opencode acp` from PATH | opencode's own config |
 
-Bundled adapters run as Electron-as-Node (`ELECTRON_RUN_AS_NODE=1`). PATH lookups also check `~/.local/bin`, `~/.bun/bin`, `~/.npm-global/bin` and nvm, because GUI launches often miss your shell PATH. Unavailable agents appear dimmed in the picker, with the reason in the tooltip.
+Bundled adapters run as Electron-as-Node (`ELECTRON_RUN_AS_NODE=1`). PATH lookups also check `~/.local/bin`, `~/.bun/bin`, `~/.npm-global/bin` and nvm, because GUI launches often miss your shell PATH. Unavailable agents appear dimmed in the picker, with the reason in the tooltip. There's no Gemini CLI or Antigravity launcher on purpose. Any model an agent offers (including Gemini models in Cursor or OpenCode) shows up in its model list unfiltered.
+
+**Sign-in:** if `session/new` fails with ACP `auth_required`, the host calls `authenticate` with the agent's first interactive method (env-var methods are skipped). For Cursor that opens a browser login; the panel shows "Finish signing in…" until it resolves. If the agent can't open a browser, the login link appears above the composer.
 
 ## Architecture
 - `src/main/agents/index.ts`: `createAgentHost` runs one agent subprocess per chat and talks ndjson ACP over its stdio. It does `initialize`, then `session/new` with `{type:'http', name:'cascade', url, Authorization}` when the agent supports http MCP. It relays `session/update`, permission requests, config options and process exit to the renderer (`agents:*` IPC; types in `src/shared/agents.ts`).
@@ -29,7 +32,8 @@ Bundled adapters run as Electron-as-Node (`ELECTRON_RUN_AS_NODE=1`). PATH lookup
 
 ## History
 - The last 30 chats are kept in localStorage, trimmed, without image data. They are saved shortly after each change and when the window closes.
-- Sending in a stopped or restored chat restarts the agent with `session/load` when it advertises `loadSession` (Claude and Codex do). Replayed history is dropped because the thread already has it. If the agent can't reload, a fresh session starts and the chat says so.
+- Sending in a stopped or restored chat restarts the agent with `session/load` when it advertises `loadSession` (Claude, Codex and Cursor do). Replayed history is dropped because the thread already has it.
+- If the agent can't reload, a fresh session starts. It replaces the saved session id, and the chat says so with the reason, only when the next message is sent. Codex can't reload sessions that never got a prompt, so opening the picker must not overwrite the saved id.
 
 ## Test
 - `bun run test src/main/agents`: drives a fake ACP agent (`fake-agent.mjs`) through the real host.

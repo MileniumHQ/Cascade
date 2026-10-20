@@ -56,6 +56,7 @@ const bridge: HostBridge = {
     setOption: (id, configId, value) => ipcRenderer.invoke('agents:setOption', id, configId, value),
     respond: (id, requestId, optionId) => ipcRenderer.invoke('agents:respond', id, requestId, optionId),
     close: (id) => ipcRenderer.invoke('agents:close', id),
+    install: (providerId) => ipcRenderer.invoke('agents:install', providerId),
     onEvent: (fn) => on('agents:event', fn)
   },
   analysis: {

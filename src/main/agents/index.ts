@@ -1,21 +1,24 @@
 // Agent panel host: one ACP agent subprocess per chat, with Cascade's MCP server attached.
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { access, constants, readdir, stat } from 'node:fs/promises'
+import { createWriteStream } from 'node:fs'
+import { access, constants, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { delimiter, isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { pipeline } from 'node:stream/promises'
 import { Readable, Writable } from 'node:stream'
-import { client, ndJsonStream, PROTOCOL_VERSION, type ClientConnection, type ContentBlock, type LoadSessionRequest, type LoadSessionResponse, type McpServer, type PromptRequest, type PromptResponse, type RequestPermissionResponse, type SetSessionConfigOptionRequest, type SetSessionConfigOptionResponse } from '@agentclientprotocol/sdk'
+import { client, ndJsonStream, PROTOCOL_VERSION, type AuthMethod, type ClientConnection, type ContentBlock, type LoadSessionRequest, type LoadSessionResponse, type McpServer, type PromptRequest, type PromptResponse, type RequestPermissionResponse, type SetSessionConfigOptionRequest, type SetSessionConfigOptionResponse } from '@agentclientprotocol/sdk'
 import { tools as cascadeTools } from '../mcp/catalog'
 import type { AgentAttachment, AgentEvent, AgentProvider, AgentSession, StartOptions, SessionConfigOption, StopReason } from '../../shared/agents'
 
-/** How to launch an agent. `script` = a bundled Node entry run with Electron-as-Node. */
-export interface AgentLauncher { id: string; name: string; icon: AgentProvider['icon']; script?: string; command?: string; args?: string[] }
+/** How to launch an agent. `script` = a bundled Node entry run with Electron-as-Node; `registry` = ACP registry id Cascade can download. */
+export interface AgentLauncher { id: string; name: string; icon: AgentProvider['icon']; script?: string; command?: string; args?: string[]; registry?: string }
 
 export const LAUNCHERS: AgentLauncher[] = [
   { id: 'claude', name: 'Claude Code', icon: 'claude', script: '@agentclientprotocol/claude-agent-acp/dist/index.js' },
   { id: 'codex', name: 'Codex', icon: 'codex', script: '@agentclientprotocol/codex-acp/dist/index.js' },
+  { id: 'cursor', name: 'Cursor', icon: 'cursor', command: 'cursor-agent', args: ['acp'], registry: 'cursor' },
   { id: 'opencode', name: 'OpenCode', icon: 'opencode', command: 'opencode', args: ['acp'] }
 ]
 
@@ -61,7 +64,17 @@ export interface AgentHostOptions {
   resolve?: (specifier: string) => string
   /** Node runtime for bundled scripts: Electron with ELECTRON_RUN_AS_NODE. */
   node?: string
+  /** Where registry agents are downloaded (`<userData>/agents`). */
+  dataDir?: string
+  /** ACP registry index (overridable for tests). */
+  registryUrl?: string
 }
+
+export const REGISTRY = 'https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json'
+const PLATFORM = `${process.platform === 'darwin' ? 'darwin' : process.platform === 'win32' ? 'windows' : 'linux'}-${process.arch === 'arm64' ? 'aarch64' : 'x86_64'}`
+interface RegistryBinary { archive: string; cmd: string; args?: string[] }
+/** Written next to an installed registry agent. */
+interface Installed { version: string; command: string; args: string[] }
 
 export function createAgentHost(options: AgentHostOptions) {
   const require = createRequire(import.meta.url)
@@ -69,21 +82,38 @@ export function createAgentHost(options: AgentHostOptions) {
   const resolve = options.resolve ?? ((s: string) => require.resolve(s).replace(/app\.asar(?=[/\\])/, 'app.asar.unpacked'))
   const chats = new Map<string, Chat>()
 
-  async function launch(l: AgentLauncher): Promise<{ command: string; args: string[]; env: NodeJS.ProcessEnv } | { error: string }> {
+  const installedFile = (l: AgentLauncher) => options.dataDir && l.registry ? join(options.dataDir, l.registry, 'installed.json') : null
+  async function installed(l: AgentLauncher): Promise<Installed | null> {
+    const file = installedFile(l)
+    if (!file) return null
+    try {
+      const info = JSON.parse(await readFile(file, 'utf8')) as Installed
+      await access(info.command, constants.X_OK)
+      return info
+    } catch { return null }
+  }
+
+  async function launch(l: AgentLauncher): Promise<{ command: string; args: string[]; env: NodeJS.ProcessEnv } | { error: string; install?: boolean }> {
     const dirs = await searchPath(options.home)
     const env: NodeJS.ProcessEnv = { ...process.env, PATH: dirs.join(delimiter) }
     delete env.ELECTRON_RUN_AS_NODE
+    const own = await installed(l)
+    if (own) return { command: own.command, args: own.args, env }
     if (l.script) {
       try { return { command: options.node ?? process.execPath, args: [resolve(l.script)], env: { ...env, ELECTRON_RUN_AS_NODE: '1' } } } catch { return { error: 'Bundled adapter missing; reinstall Cascade.' } }
     }
     const path = await which(l.command!, dirs)
-    return path ? { command: path, args: l.args ?? [], env } : { error: `\`${l.command}\` not found on PATH. Install it to use ${l.name}.` }
+    if (path) return { command: path, args: l.args ?? [], env }
+    return l.registry && options.dataDir
+      ? { error: `${l.name}'s agent isn't installed.`, install: true }
+      : { error: `\`${l.command}\` not found on PATH. Install it to use ${l.name}.` }
   }
 
   async function providers(): Promise<AgentProvider[]> {
     return Promise.all(LAUNCHERS.map(async l => {
       const how = await launch(l)
-      return { id: l.id, name: l.name, icon: l.icon, available: !('error' in how), ...('error' in how ? { reason: how.error } : {}) }
+      if (!('error' in how)) return { id: l.id, name: l.name, icon: l.icon, available: true }
+      return { id: l.id, name: l.name, icon: l.icon, available: false, reason: how.error, ...(how.install ? { install: {} } : {}) }
     }))
   }
 
@@ -143,18 +173,30 @@ export function createAgentHost(options: AgentHostOptions) {
       chat.images = init.agentCapabilities?.promptCapabilities?.image === true
       let config: SessionConfigOption[] | null | undefined
       let resumed = false
+      let resumeError: string | undefined
+      if (resume && !init.agentCapabilities?.loadSession) resumeError = `${launcher.name} can't reload earlier sessions`
       if (resume && init.agentCapabilities?.loadSession) {
         // sessionId stays unset while loading, so the replayed history isn't re-emitted.
-        const loaded = await Promise.race([chat.connection.agent.request<LoadSessionResponse, LoadSessionRequest>('session/load', { sessionId: resume, cwd: dir, mcpServers, ...extra }), exited]).catch(() => null)
+        const loaded = await Promise.race([chat.connection.agent.request<LoadSessionResponse, LoadSessionRequest>('session/load', { sessionId: resume, cwd: dir, mcpServers, ...extra }), exited]).catch((error: unknown) => { resumeError = error instanceof Error ? error.message : String(error); return null })
         if (loaded) { chat.sessionId = resume; config = loaded.configOptions; resumed = true; chat.primed = true }
       }
       if (!resumed) {
-        const session = await Promise.race([chat.connection.agent.request('session/new', { cwd: dir, mcpServers, ...extra }), exited])
+        const open = () => Promise.race([chat.connection.agent.request('session/new', { cwd: dir, mcpServers, ...extra }), exited])
+        let session: Awaited<ReturnType<typeof open>>
+        try { session = await open() } catch (error) {
+          // Agents that need a login offer ACP auth methods; interactive ones open the browser and resolve once done.
+          const method = authRequired(error) ? (init.authMethods ?? []).find(interactive) : undefined
+          if (!method) throw error
+          options.emit({ type: 'status', providerId, message: `Finish signing in to ${launcher.name} in your browser…` })
+          await Promise.race([chat.connection.agent.request('authenticate', { methodId: method.id }), exited])
+          options.emit({ type: 'status', providerId, message: '' })
+          session = await open()
+        }
         chat.sessionId = session.sessionId
         config = session.configOptions
       }
       const info = init.agentInfo
-      return { id, providerId, agent: info ? `${info.title ?? info.name} ${info.version}` : launcher.name, options: config ?? [], cascadeTools: mcpServers.length > 0, sessionId: chat.sessionId, cwd: dir, resumed, images: chat.images }
+      return { id, providerId, agent: info ? `${info.title ?? info.name} ${info.version}` : launcher.name, options: config ?? [], cascadeTools: mcpServers.length > 0, sessionId: chat.sessionId, cwd: dir, resumed, ...(resumeError ? { resumeError } : {}), images: chat.images }
     } catch (error) {
       await close(id)
       throw new Error(friendly(error, launcher))
@@ -205,14 +247,75 @@ export function createAgentHost(options: AgentHostOptions) {
     setTimeout(() => { if (chat.child.exitCode === null) chat.child.kill('SIGKILL') }, 3000).unref()
   }
 
-  return { providers, start, prompt, cancel, setOption, respond, close, closeAll: () => Promise.all([...chats.keys()].map(close)) }
+  const installing = new Map<string, Promise<void>>()
+  /** Download an agent's official build listed in the ACP registry into dataDir/<registry id>. */
+  function install(providerId: string): Promise<void> {
+    const l = LAUNCHERS.find(x => x.id === providerId)
+    if (!l?.registry || !options.dataDir) return Promise.reject(new Error(`${l?.name ?? providerId} can't be installed from Cascade.`))
+    const running = installing.get(providerId)
+    if (running) return running
+    const job = (async () => {
+      const index = await (await fetch(options.registryUrl ?? REGISTRY)).json() as { agents: { id: string; version: string; distribution?: { binary?: Record<string, RegistryBinary> } }[] }
+      const entry = index.agents.find(a => a.id === l.registry)
+      const binary = entry?.distribution?.binary?.[PLATFORM]
+      if (!entry || !binary) throw new Error(`${l.name} has no download for ${PLATFORM}.`)
+      const root = join(options.dataDir!, l.registry!)
+      const dir = join(root, entry.version)
+      await mkdir(root, { recursive: true })
+      const response = await fetch(binary.archive)
+      if (!response.ok || !response.body) throw new Error(`Download failed (${response.status}).`)
+      const total = Number(response.headers.get('content-length')) || 0
+      const archive = join(root, `download${binary.archive.endsWith('.zip') ? '.zip' : '.tar.gz'}`)
+      let received = 0, last = 0
+      const progress = new TransformStream<Uint8Array, Uint8Array>({ transform(chunk, ctrl) {
+        received += chunk.length
+        if (received - last > 2_000_000) { last = received; options.emit({ type: 'install', providerId, received, total }) }
+        ctrl.enqueue(chunk)
+      } })
+      await pipeline(Readable.fromWeb(response.body.pipeThrough(progress) as import('node:stream/web').ReadableStream), createWriteStream(archive))
+      const tmp = `${dir}.partial`
+      await rm(tmp, { recursive: true, force: true })
+      await mkdir(tmp, { recursive: true })
+      await run(archive.endsWith('.zip') ? 'unzip' : 'tar', archive.endsWith('.zip') ? ['-oq', archive, '-d', tmp] : ['xzf', archive, '-C', tmp])
+      await rm(dir, { recursive: true, force: true })
+      await rename(tmp, dir)
+      await rm(archive, { force: true })
+      // Keep only this version.
+      for (const old of await readdir(root)) if (old !== entry.version && old !== 'installed.json') await rm(join(root, old), { recursive: true, force: true })
+      const info: Installed = { version: entry.version, command: join(dir, binary.cmd), args: binary.args ?? [] }
+      await writeFile(join(root, 'installed.json'), JSON.stringify(info, null, 1))
+      options.emit({ type: 'install', providerId, received: total || received, total: total || received })
+    })().finally(() => installing.delete(providerId))
+    installing.set(providerId, job)
+    return job
+  }
+
+  return { providers, start, prompt, cancel, setOption, respond, close, install, closeAll: () => Promise.all([...chats.keys()].map(close)) }
 }
 
+const authRequired = (error: unknown) => (error as { code?: number })?.code === -32000 || /auth/i.test(String((error as Error)?.message ?? error))
+/** Methods the agent completes itself (browser login), not env-var / terminal ones. */
+const interactive = (m: AuthMethod) => { const type = (m as { type?: string }).type; return type === undefined || type === 'agent' }
+
 const lastLines = (text: string) => text.trim().split('\n').slice(-3).join(' ').slice(0, 400)
+const LOGIN: Record<string, string> = { claude: 'claude', codex: 'codex login', cursor: 'cursor-agent login', opencode: 'opencode auth login' }
 function friendly(error: unknown, launcher: AgentLauncher) {
   const message = error instanceof Error ? error.message : String(error)
-  if (/auth/i.test(message)) return `${launcher.name} needs you to sign in. Run \`${launcher.id === 'claude' ? 'claude' : launcher.id === 'codex' ? 'codex login' : launcher.command ?? launcher.id}\` in a terminal once, then retry.`
-  return message
+  // ACP errors put the useful part (e.g. a login link) in data.message.
+  const detail = (error as { data?: { message?: unknown; details?: unknown } })?.data
+  const extra = typeof detail?.message === 'string' ? detail.message : typeof detail?.details === 'string' ? detail.details : ''
+  if (authRequired(error) && !extra) return `${launcher.name} needs you to sign in. Run \`${LOGIN[launcher.id] ?? launcher.command ?? launcher.id}\` in a terminal once, then retry.`
+  return extra ? `${launcher.name}: ${extra}` : message
+}
+
+function run(command: string, args: string[]) {
+  return new Promise<void>((done, fail) => {
+    const child = spawn(command, args, { stdio: ['ignore', 'ignore', 'pipe'] })
+    let err = ''
+    child.stderr.on('data', (b: Buffer) => { err = (err + b.toString()).slice(-1000) })
+    child.once('error', fail)
+    child.once('exit', code => code === 0 ? done() : fail(new Error(`${command} failed: ${err.trim() || code}`)))
+  })
 }
 
 export async function registerAgentsIpc(options: Omit<AgentHostOptions, 'emit'>, send: (event: AgentEvent) => void) {
@@ -225,6 +328,7 @@ export async function registerAgentsIpc(options: Omit<AgentHostOptions, 'emit'>,
   ipcMain.handle('agents:setOption', (_e, id: string, configId: string, value: string | boolean) => host.setOption(id, configId, value))
   ipcMain.handle('agents:respond', (_e, id: string, requestId: string, optionId: string | null) => host.respond(id, requestId, optionId))
   ipcMain.handle('agents:close', (_e, id: string) => host.close(id))
+  ipcMain.handle('agents:install', (_e, providerId: string) => host.install(providerId))
   app.on('before-quit', () => { void host.closeAll() })
   return host
 }

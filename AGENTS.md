@@ -19,7 +19,7 @@ DOM-powered video editor. Electron 44 + TypeScript (TS 7 / tsgo) + SolidJS + pla
 - Resource limits: run one GPU-heavy job at a time (whisper Vulkan, export, Electron test instance); the machine has crashed under load.
 
 ## Agent panel
-- Left sidebar "Agent" panel runs Claude Code / Codex / OpenCode over ACP with Cascade's MCP attached. See `docs/agents.md`; host in `src/main/agents/`, UI in `src/plugins/builtin/panels/agent/`.
+- Left sidebar "Agent" panel runs Claude Code / Codex / Cursor / OpenCode over ACP (Cursor installable in-app from the ACP registry) with Cascade's MCP attached. See `docs/agents.md`; host in `src/main/agents/`, UI in `src/plugins/builtin/panels/agent/`.
 
 ## User plugins
 - `.ts/.tsx/.js/.mjs` files in `<userData>/plugins` are bundled with esbuild and hot-reloaded on save. Default-export a `PluginDefinition`. Example: `examples/plugins/wiggle.ts` (typecheck with `tsc -p tsconfig.examples.json`).

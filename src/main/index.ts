@@ -105,7 +105,11 @@ function createWindows(): void {
     }
   })
   for (const window of [main, splash]) {
-    window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    // Links with target=_blank (agent replies, login links) open in the system browser.
+    window.webContents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:\/\//.test(url)) void shell.openExternal(url).catch(console.warn)
+      return { action: 'deny' }
+    })
     window.webContents.on('will-navigate', (event, url) => {
       // Keep the Node-capable preload on the application's own page.
       if (url !== window.webContents.getURL()) event.preventDefault()
@@ -162,7 +166,7 @@ async function initialize(): Promise<void> {
   ipcMain.on('plugins:openFolder', () => { void shell.openPath(paths.plugins).then((error) => { if (error) console.warn(error) }).catch(console.warn) })
   protocol.handle('media', serveMedia)
   protocol.handle('cascade-plugin', (request) => servePlugin(request, (name) => userPlugins.code(name)))
-  await registerAgentsIpc({ home: paths.home, defaultCwd: paths.projects, mcp: () => mcpInfo }, (event) => {
+  await registerAgentsIpc({ home: paths.home, defaultCwd: paths.projects, dataDir: join(paths.userData, 'agents'), mcp: () => mcpInfo }, (event) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('agents:event', event)
   })
   createWindows()

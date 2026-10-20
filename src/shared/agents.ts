@@ -11,10 +11,12 @@ export interface AgentProvider {
   id: string
   name: string
   /** Icon key for the UI. */
-  icon: 'claude' | 'codex' | 'opencode' | 'agent'
+  icon: 'claude' | 'codex' | 'cursor' | 'opencode' | 'agent'
   available: boolean
   /** Why it can't start (not installed, etc.). */
   reason?: string
+  /** Cascade can download it from the ACP registry (size in bytes when known). */
+  install?: { size?: number }
 }
 
 export interface AgentSession {
@@ -32,6 +34,8 @@ export interface AgentSession {
   cwd: string
   /** True when `resume` reloaded the earlier conversation; false = fresh session. */
   resumed: boolean
+  /** Why `resume` fell back to a fresh session. */
+  resumeError?: string
   /** The agent accepts image prompt blocks. */
   images: boolean
 }
@@ -54,6 +58,9 @@ export type AgentEvent =
   | { chatId: string; type: 'permission-resolved'; requestId: string }
   | { chatId: string; type: 'options'; options: SessionConfigOption[] }
   | { chatId: string; type: 'exit'; message: string }
+  /** Start-up progress not tied to a visible chat yet (e.g. waiting for browser sign-in). */
+  | { type: 'status'; providerId: string; message: string }
+  | { type: 'install'; providerId: string; received: number; total: number }
 
 export interface AgentsBridge {
   providers(): Promise<AgentProvider[]>
@@ -66,5 +73,7 @@ export interface AgentsBridge {
   /** `optionId` null = dismiss (cancelled). */
   respond(chatId: string, requestId: string, optionId: string | null): Promise<void>
   close(chatId: string): Promise<void>
+  /** Download a registry agent into Cascade's data folder (progress via `install` events). */
+  install(providerId: string): Promise<void>
   onEvent(fn: (event: AgentEvent) => void): () => void
 }
