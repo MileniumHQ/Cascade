@@ -58,6 +58,7 @@ Tools are listed in deterministic order and accept `detail: "concise" | "detaile
 | `frame_get`, `contact_sheet`, `timeline_preview_sheet`, `media_contact_sheet` | Visual inspection |
 | `plugin_write`, `plugin_list`, `plugin_remove`, `plugin_api_docs` | Property plugin authoring and hot reload |
 | `export_start`, `job_get`, `export_cancel` | Asynchronous export jobs |
+| `media_analyze`, `transcript_get`, `transcript_search` | Edit by content: words, fillers, pauses, loudness, tone, sound events and shot cuts. See [Editing by transcript](#editing-by-transcript) |
 | `captions_generate`, `job_get` | Local Whisper captions for a clip (`clipId`) or source (`mediaId`); asynchronous, poll `job_get`. See [captions.md](captions.md) |
 
 ## Batch example
@@ -103,6 +104,38 @@ Failure example:
 Operation 2 (delete): Unknown clip does-not-exist; refresh timeline_get. No edits applied.
 Recovery: inspect project_get, timeline_get or registry_list, correct the arguments, then retry.
 ```
+
+## Editing by transcript
+
+The analysis is the map for content edits. Agents can see exactly where words, sentences, pauses, fillers, sound events, tone shifts and shot cuts sit on the timeline.
+
+1. `media_analyze(mediaId)`, then poll `job_get`. Analysis runs once per source file and is cached. Every clip of that source benefits, whatever its trim or speed. See [analysis.md](analysis.md) for models and accuracy.
+2. `transcript_get` returns timeline-time lines, interleaved chronologically:
+
+```
+s1 00:00:01.00–00:00:02.21 w1–w5 So, {um,} this is great.
+  ⏸ 1.50s
+✂ 00:00:03.15
+s2 00:00:04.06–00:00:05.03 w6–w7 [happy .80] *Really* great!
+[APPLAUSE 00:00:05.09–00:00:07.00 .90]
+```
+
+   Legend:
+   - `{um}` marks a filler.
+   - `*word*` is at least 6 dB louder than the speaker's median, and `_word_` at least 10 dB quieter.
+   - `word?` marks low recognizer confidence.
+   - A tone tag appears only when the tone is non-neutral with confidence ≥ 0.5.
+   - `(part)` means the sentence is partly trimmed out of the clip.
+   - `view: "words"` lists every word with its id and timecode.
+3. Edit by id with `timeline_apply_edits`:
+   - `{"op":"cut_words","from":"w12","to":"w19"}` ripple-removes words or sentences, with a boundary just before the first word and just before the next word. The natural pause is kept, attacks aren't clipped, and boundaries snap to frames. It cuts every unlocked track, so video, audio and captions stay in sync.
+   - `{"op":"remove_fillers"}` cuts every um/uh, optionally limited by `clipId` or `start`/`end`.
+   - `{"op":"tighten_pauses","maxPause":352800000}` shortens pauses longer than 0.5 s to 0.5 s. Pauses filled by applause or a music sting are skipped unless `keepEvents` is false.
+
+   Ids re-resolve against the edited timeline after every op, so several `cut_words` in one batch are safe. An id that has already been cut is rejected, and the whole batch is not applied.
+4. `transcript_search("phrase")` finds spoken phrases (case- and punctuation-insensitive), and `regex:true` matches sentence text. Results are word-id ranges ready for `cut_words`.
+
+`timeline_get` ends with a hint showing whether a transcript is available, or which sources to analyze.
 
 ## Frames and sheets
 
