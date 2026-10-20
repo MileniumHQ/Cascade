@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { parseWhisperJSON, createTranscriptionService, constrainToSpeech } from './transcribe'
 import { FLICKS } from '../shared/time'
+import { groupCaptions } from '../plugins/builtin/captions/group'
 
 const token = (text: string, dtw: number, from: number, to: number, id = 100) => ({ text, id, p: 0.9, t_dtw: dtw, offsets: { from, to } })
 describe('whisper full JSON', () => {
@@ -40,10 +41,36 @@ describe('whisper full JSON', () => {
     const words = t.segments.flatMap(s => s.words)
     expect(words.map(w => w.start)).toEqual([FLICKS, 1.5*FLICKS, 1.7*FLICKS, 3*FLICKS])
     expect(words.every(w => w.end > w.start)).toBe(true)
+    const captions = groupCaptions(t, { sourceIn: 0, start: 0, speed: 1, end: 6 * FLICKS })
+    expect(captions.map(c => c.text.replace(/\n/g, ' ')).join(' ')).toBe('Watch a show. Next.')
+    expect(captions.every((c, i) => c.end > c.start && (!i || c.start >= captions[i - 1].end))).toBe(true)
+  })
+  it('expands reversed-anchor fallback when token offsets cross adjacent DTW anchors', () => {
+    const t = parseWhisperJSON({ transcription: [{ text: '', offsets: { from: 0, to: 6000 }, tokens: [
+      token(' We', 190, 1000, 1500), token(' watch', 205, 1500, 1700), token(' a', 200, 1700, 1800),
+      token(' show.', 210, 1800, 2200), token(' Next.', 300, 3000, 3300)
+    ] }] }, 'p', 'm', 30 * FLICKS)
+    const words = t.segments.flatMap(s => s.words)
+    expect(words.map(w => w.start)).toEqual([31, 31.5, 31.7, 32.1, 33].map(s => Math.round(s * FLICKS)))
+    expect(words.every(w => w.end > w.start)).toBe(true)
+    const captions = groupCaptions(constrainToSpeech(t, []), { sourceIn: 30 * FLICKS, start: 0, speed: 2, end: 3 * FLICKS })
+    expect(captions.map(c => c.text.replace(/\n/g, ' ')).join(' ')).toBe('We watch a show. Next.')
+    expect(captions.every((c, i) => c.end > c.start && (!i || c.start >= captions[i - 1].end))).toBe(true)
   })
   it('accepts empty speech but rejects missing alignment', () => {
     expect(parseWhisperJSON({ transcription: [] }, 'p', 'm').segments).toEqual([])
     expect(() => parseWhisperJSON({ transcription: [{ text: 'hi', offsets: { from: 0, to: 1 }, tokens: [{ text: 'hi', id: 1, p: 1 }] }] }, 'p', 'm')).toThrow(/timestamps/)
+  })
+  it('preserves words through grouping when both timestamp estimates collapse', () => {
+    const t = parseWhisperJSON({ transcription: [{ text: '', offsets: { from: 0, to: 6000 }, tokens: [
+      token(' All', 100, 1000, 1000), token(' these', 100, 1000, 1000), token(' words.', 100, 1000, 1000),
+      token(' Next.', 220, 2200, 2500)
+    ] }] }, 'p', 'm')
+    const words = t.segments.flatMap(s => s.words)
+    expect(words.map(w => w.start)).toEqual([1, 1.4, 1.8, 2.2].map(s => Math.round(s * FLICKS)))
+    expect(words.every(w => w.end > w.start && Number.isSafeInteger(w.start))).toBe(true)
+    const captions = groupCaptions(t, { sourceIn: 0, start: 0, speed: 1, end: 6 * FLICKS })
+    expect(captions.map(c => c.text.replace(/\n/g, ' ')).join(' ')).toBe('All these words. Next.')
   })
   it('rejects fractional/reversed ranges before starting processes', async () => {
     const service = createTranscriptionService('/does-not-exist')

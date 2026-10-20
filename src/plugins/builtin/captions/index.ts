@@ -1,6 +1,6 @@
 import { definePlugin } from '@core/plugin-api'
 import { Value } from '@core/value'
-import { findClip, uid, type Clip, type Id, type MediaItem, type PropertyInstance, type Track } from '@shared/project'
+import { findClip, uid, type Clip, type Id, type MediaItem, type PropertyInstance } from '@shared/project'
 import type { TranscribeProgress } from '@shared/ipc'
 import { pushToast } from '@ui/kit'
 import { groupCaptions } from './group'
@@ -87,16 +87,10 @@ export const captionsPlugin = definePlugin({
               property('size', { size: [0.88, 0.16], padding: 0 }),
               property('text', { text: c.text, font: 'Commissioner', size: 0.046, weight: 750, color: '#ffffff', align: 'center', italic: false, tracking: 0, leading: 1.2, stroke: 0.003, strokeColor: '#111111' })
             ] }))
-          const track: Track = { id: uid('tr_'), kind: 'visual', name: 'Captions', hidden: false, muted: false, locked: false, clips }
-          // One undo step includes the new track and every caption. No core media knowledge needed.
-          app.doc.transact('Generate captions', (d) => {
-            const tl = d.timelines[timelineId]
-            const lastVisual = tl.tracks.map((t) => t.kind).lastIndexOf('visual')
-            tl.tracks.splice(lastVisual + 1, 0, track)
-          })
+          app.edit.addTrack('visual', { name: 'Captions', clips, label: 'Generate captions' })
           app.selection.setClips([clips[0].id])
           app.layout.reveal('timeline')
-          toast('success', `Created ${clips.length} captions`, `${status.gpu ? 'Vulkan' : 'CPU'} · editable text clips · undo in one step`)
+          toast('success', `Created ${clips.length} captions`, 'Editable text clips · undo in one step')
           return clips.map((c) => c.id)
         } finally { off(); busy = false; progress.set(null) }
       }

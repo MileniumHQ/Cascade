@@ -19,7 +19,7 @@ const MODELS = [
     sha256: '2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987',
     url: 'https://huggingface.co/ggml-org/whisper-vad/resolve/9ffd54a1e1ee413ddf265af9913beaf518d1639b/ggml-silero-v6.2.0.bin' }
 ] as const
-const VERSION = 'v1.9.5-vad-dtw-acoustic-4'
+const VERSION = 'v1.9.5-vad-dtw-acoustic-6'
 
 interface WhisperToken { text: string; id: number; p: number; t_dtw?: number; offsets?: { from: number; to: number } }
 interface WhisperJSON {
@@ -42,12 +42,40 @@ export function parseWhisperJSON(json: WhisperJSON, path: string, model: string,
   const rawOnsets = groups.map((g) => onset(g[0]))
   // A failed DTW path can collapse several words onto one timestamp. Use the
   // separately estimated token offsets for that run rather than zero-length words.
+  const fallback = new Set<number>()
   const onsets = groups.map((g, i) => {
-    const ms = rawOnsets[i]
-    const previous = rawOnsets[i - 1], next = rawOnsets[i + 1]
+    const ms = rawOnsets[i], previous = rawOnsets[i - 1], next = rawOnsets[i + 1]
     const collapsed = ms !== undefined && ((previous !== undefined && ms <= previous) || (next !== undefined && ms >= next))
-    return collapsed && g[0].offsets ? g[0].offsets.from : ms
+    const from = g[0].offsets?.from
+    if (collapsed && from !== undefined && Number.isFinite(from) && from >= 0) { fallback.add(i); return from }
+    return ms
   })
+  for (let i = 1; i < onsets.length; i++) {
+    if (onsets[i] === undefined || onsets[i - 1] === undefined || onsets[i]! > onsets[i - 1]!) continue
+    let changed = false
+    for (const index of [i - 1, i]) {
+      const from = groups[index][0].offsets?.from
+      if (!fallback.has(index) && from !== undefined && Number.isFinite(from) && from >= 0) {
+        onsets[index] = from
+        fallback.add(index)
+        changed = true
+      }
+    }
+    // Switching timing sources can cross a neighboring DTW anchor. Expand the
+    // fallback to that neighbor too; each word switches at most once.
+    if (changed) i = Math.max(0, i - 2)
+  }
+  // Some upstream runs collapse both clocks (often around repeated phrases).
+  // Keep every word by sharing the interval up to the next usable anchor.
+  for (let i = 0; i < onsets.length - 1; i++) {
+    const from = onsets[i]
+    if (from === undefined || onsets[i + 1] === undefined || onsets[i + 1]! > from) continue
+    let next = i + 1
+    while (next < onsets.length && onsets[next] !== undefined && onsets[next]! <= from) next++
+    const to = onsets[next] ?? Math.max(from + (next - i) * 10, groups[next - 1].at(-1)!.offsets?.to ?? from)
+    for (let k = i + 1; k < next; k++) onsets[k] = from + (to - from) * (k - i) / (next - i)
+    i = next - 1
+  }
   const words: TranscriptWord[] = []
   for (let i = 0; i < groups.length; i++) {
     const group = groups[i]
@@ -120,6 +148,7 @@ export function createTranscriptionService(userData: string, resourcesPath = pro
   const cacheDir = join(userData, 'cache/transcripts')
   let current: AbortController | undefined
   let gpuProbe: { path: string; result: Promise<boolean> } | undefined
+  let cpuOnly = process.env.CASCADE_WHISPER_CPU === '1'
   const listeners = new Set<(p: TranscribeProgress) => void>()
   const emit = (p: TranscribeProgress) => { for (const listener of listeners) listener(p) }
   async function binaryPath() {
@@ -136,9 +165,9 @@ export function createTranscriptionService(userData: string, resourcesPath = pro
   async function status(): Promise<TranscribeStatus> {
     const binary = await binaryPath()
     // An existing invalid model reaches backend discovery without allocating model memory.
-    if (binary && gpuProbe?.path !== binary) gpuProbe = { path: binary, result: capture(binary, ['-m', binary, '-f', binary], 15_000)
+    if (binary && !cpuOnly && gpuProbe?.path !== binary) gpuProbe = { path: binary, result: capture(binary, ['-m', binary, '-f', binary], 15_000)
       .then((p) => /ggml_vulkan: Found [1-9]\d* Vulkan devices?/.test(p.stderr)).catch(() => false) }
-    return { binary: !!binary, gpu: binary && gpuProbe ? await gpuProbe.result : false, models: await Promise.all(MODELS.map(async (m) => ({ id: m.id, name: m.name,
+    return { binary: !!binary, gpu: !cpuOnly && binary && gpuProbe ? await gpuProbe.result : false, models: await Promise.all(MODELS.map(async (m) => ({ id: m.id, name: m.name,
       sizeBytes: m.sizeBytes, installed: await size(join(modelsDir, m.id)) === m.sizeBytes }))) }
   }
   async function install(id: string, signal: AbortSignal) {
@@ -256,13 +285,21 @@ export function createTranscriptionService(userData: string, resourcesPath = pro
         })
         emit({ phase: 'transcribe', progress: 0, message: 'Aligning speech and words locally' })
         let progressBuffer = ''
-        await execute(binary, ['-m', join(modelsDir, model), '-f', wav, '-l', language, '--vad', '-vm', join(modelsDir, VAD_MODEL),
+        const args = ['-m', join(modelsDir, model), '-f', wav, '-l', language, '--vad', '-vm', join(modelsDir, VAD_MODEL),
           '--dtw', 'large.v3.turbo', '--no-flash-attn', '-ojf', '--split-on-word', '-pp', '-of', join(temp, 'transcript'),
-          '-t', String(Math.min(8, availableParallelism()))], signal, (text) => {
+          '-t', String(Math.min(8, availableParallelism()))]
+        const report = (text: string) => {
           progressBuffer = (progressBuffer + text).slice(-1024)
           const matches = [...progressBuffer.matchAll(/progress\s*=\s*(\d+)%/g)]
           if (matches.length) { const percent = Number(matches.at(-1)![1]); emit({ phase: 'transcribe', progress: percent / 100, message: `Aligning speech and words · ${percent}%` }); progressBuffer = '' }
-        })
+        }
+        try { await execute(binary, [...args, ...(cpuOnly ? ['-ng'] : [])], signal, report) } catch (error) {
+          if (cpuOnly || signal.aborted) throw error
+          cpuOnly = true // One failure latches CPU for the lifetime of this service.
+          progressBuffer = ''
+          emit({ phase: 'transcribe', progress: 0, message: 'GPU transcription failed; retrying on CPU' })
+          await execute(binary, [...args, '-ng'], signal, report)
+        }
         const json = JSON.parse(await readFile(join(temp, 'transcript.json'), 'utf8')) as WhisperJSON
         const transcript = constrainToSpeech(parseWhisperJSON(json, path, model, range?.start, range?.end), silences)
         signal.throwIfAborted()

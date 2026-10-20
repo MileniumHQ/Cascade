@@ -20,7 +20,9 @@ Default: [Whisper Large v3 Turbo Q8](https://huggingface.co/ggerganov/whisper.cp
 
 FFmpeg extracts only the requested source range to 16 kHz mono PCM. Whisper runs with `--vad --dtw large.v3.turbo --no-flash-attn -ojf --split-on-word -pp`. Flash attention must be disabled because upstream disables DTW when it is enabled. The setup script applies a checked, idempotent patch to v1.9.5's full JSON path: the token-data getter bypasses upstream's VAD-aware timestamp accessors, so the patch maps token offsets and DTW times through upstream's segment-aware VAD mapper. Without this, silence removal causes source-time drift.
 
-The parser joins BPE pieces into words, uses DTW anchors, and infers bounded word ends from the following anchor. Collapsed or reversed DTW anchors fall back to the independently estimated token offsets. A simultaneous FFmpeg silence pass (`-35 dB`, at least 180 ms) trims word ends crossing silence and pulls nearby post-pause onsets to the acoustic boundary. All returned times are integer source-media flicks, including the requested range offset. Cache keys include source path, mtime, size, range, model, language, and alignment version. Cancellation stops extraction/inference/downloads; partial downloads remain resumable, and partial transcripts never become cached results.
+The parser joins BPE pieces into words, uses DTW anchors, and infers bounded word ends from the following anchor. Collapsed or reversed DTW anchors fall back to the independently estimated token offsets. If mixing those offsets with a neighboring DTW anchor reverses their order, the fallback expands to that neighbor. If both clocks collapse, words share the interval up to the next usable anchor; these interpolated boundaries are approximate. Alignment cache version 6 invalidates transcripts from before this correction. A simultaneous FFmpeg silence pass (`-35 dB`, at least 180 ms) trims word ends crossing silence and pulls nearby post-pause onsets to the acoustic boundary. All returned times are integer source-media flicks, including the requested range offset. Cache keys include source path, mtime, size, range, model, language, and alignment version. Cancellation stops extraction/inference/downloads; partial downloads remain resumable, and partial transcripts never become cached results.
+
+One failed GPU inference triggers one CPU (`-ng`) attempt, then latches CPU for the service's lifetime. A failed CPU attempt is surfaced without looping; cancellation never triggers a retry. Set `CASCADE_WHISPER_CPU=1` to force CPU and skip Vulkan discovery. Keep Vulkan inference separate from other GPU work on this workstation; the resumed Electron screenshot check used cached transcripts with this override.
 
 Caption grouping accounts for clip speed before splitting at punctuation, pauses, length, and six-second reading spans. It balances at most two approximately 42-character lines, rebalances short trailing words, and aims for at least 0.7 seconds without overlap. A final clipped phrase or physically impossible dense speech can be shorter. Style uses Commissioner 750, white with a dark outline, frame-relative size/position, and a lower-third center at 84% frame height. Text remains ordinary editable plugin properties.
 
@@ -34,11 +36,14 @@ Linux x64, Ryzen 5 7600, Radeon RX 7800 XT / RADV, Vulkan device 0. Runtime stat
 | CPU fallback after missing Vulkan headers | 42.0 s |
 | Later patched incremental Vulkan rebuild | 12.9 s |
 | First 300–600 s run including both downloads and checksums | 17.439 s, 17.20× realtime |
-| Final 300–600 s run, installed models | 10.145 s, **29.57× realtime**, 764 words, 80 caption clips |
-| Full WWDC file, 6,531.181 s | 218.380 s, **29.91× realtime**, 17,710 words |
-| Cached five-minute result | 2.0 ms; no extraction/inference |
+| Resumed final 300–600 s run, installed models | 9.615 s, **31.20× realtime**, 764 words, 80 caption clips |
+| Full WWDC file, 6,531.181 s, before crash | 218.380 s, **29.91× realtime**, 17,710 words |
+| Single resumed full-file run, before final interpolation fix | 214.047 s, **30.51× realtime**, 17,710 words |
+| Cached final five-minute result | 0.58 ms; no extraction/inference |
 
 The five-minute output has integer times, zero overlapping words or caption clips, a minimum caption duration of 0.700 s, maximum line length 42, and maximum two lines. A real canceled download left 18,100,939 bytes, then resumed beyond that offset and passed its SHA-256 in 6.4 s.
+
+The original full-file result contained 197 zero-duration words and grouping lost text. The first fallback reduced that to 113; inspection found regular offsets collapsed too. After the final fix, a streaming reparse of the retained full JSON in batches of 64 source segments checked all **17,710 words**: zero zero-duration words, zero overlaps, all text preserved by grouping, and maximum line length 42. This bounded check produced 1,925 caption groups; grouping across batch boundaries can change that count. The shortest group was **59 ms**, caused by dense repeated model output. Such passages need human correction; preserving every recognized word, the line limit, and non-overlap cannot also guarantee 0.7 s there. No second full-file inference was run after the final parser fix.
 
 Timing spot check: extracted PCM, measured an independent 10 ms RMS envelope at -35 dB (180 ms sustained for silence ends), and compared six silence-adjacent word edges. These are acoustic checks, not human phonetic labels or a word-error-rate benchmark.
 
@@ -70,12 +75,14 @@ const off = app.host.transcribe.onProgress(progress => { /* phase, progress 0..1
 off()
 ```
 
-`CaptionsService` and `GenerateCaptionsOptions` are exported from `src/plugins/builtin/captions/index.ts`. `Transcript`, `TranscriptSegment`, `TranscriptWord`, `TranscribeOptions`, `TranscribeStatus`, and `TranscribeProgress` live in `src/shared/ipc.ts`. The bridge has status/installModel/run/cancel/onProgress. There is one application-wide transcription job, with progress and cancellation scoped to the requesting renderer. A changed/deleted clip or switched project/timeline is rejected before insertion. No new core editing API or MCP tool was added.
+`CaptionsService` and `GenerateCaptionsOptions` are exported from `src/plugins/builtin/captions/index.ts`. The existing plugin contract exposes services through `ctx.app.services`. `Transcript`, `TranscriptSegment`, `TranscriptWord`, `TranscribeOptions`, `TranscribeStatus`, and `TranscribeProgress` live in `src/shared/ipc.ts`. The bridge has status/installModel/run/cancel/onProgress. There is one application-wide transcription job, with progress and cancellation scoped to the requesting renderer. A changed/deleted clip or switched project/timeline is rejected before insertion. `Editing.addTrack` accepts optional `{ name, clips, label }` so a plugin can create a populated track in one undoable edit. No MCP tool was added.
 
-Verification: `npx tsc --noEmit -p tsconfig.json`, `npx electron-vite build`, and 80 Vitest tests pass. The real Electron app imported WWDC, generated captions for a trimmed clip, checked single-step undo/redo, exercised both context-menu predicates, and canceled an uncached full-source request without creating a partial track. A separate clean profile exercised the first-use model confirmation and cancellation. Screenshots were inspected:
+Verification: `bun run typecheck`, `bun run build`, and 86 Vitest tests pass. Regression tests cover collapsed/reversed DTW anchors, crossing fallback offsets, both clocks collapsing, text preservation through grouping at 1×/2× speed, one-shot CPU fallback after simulated GPU failure, cancellation without retry, and explicit CPU mode. The resumed real Electron app imported WWDC, created captions for a trimmed clip from the fresh cached transcript, checked single-step undo/redo, exercised both context-menu predicates, and canceled an uncached full-source request during extraction without creating a partial track. Before the crash, a separate clean profile exercised the first-use model confirmation and cancellation. The resumed driver used `CASCADE_USER_DATA=/tmp/wt-captions-profile`, `CASCADE_PROJECTS=/tmp/wt-captions-projects`, and `CASCADE_WHISPER_CPU=1`. Screenshots were inspected:
 
 - `/tmp/wt-captions-shots/captions-timeline-preview.png`
 - `/tmp/wt-captions-shots/captions-two-lines.png`
 - `/tmp/wt-captions-shots/caption-progress.png`
+
+Durable copies and measurement artifacts remain in this worktree's gitignored `vendor/resume-shots/`, `vendor/benchmark-resumed-range.json`, `vendor/benchmark-resumed-full.json`, `vendor/check-full-stream.log`, and `vendor/resume-waveform.json`.
 
 Limits: English word grouping is the tested path; languages without whitespace need a future language-aware segmenter. Only the default transcription model and Silero are currently offered. CPU fallback builds, but its transcription speed was not benchmarked. Packaged distribution and non-Linux platforms were not smoke-tested. Silence detection is conservative and cannot replace human review of difficult audio.
