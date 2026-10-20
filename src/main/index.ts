@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import type { HostBridge } from '../shared/ipc'
 import { registerExportIpc } from './export'
 import { registerTranscribeIpc } from './transcribe'
+import { registerAnalysisIpc } from './analysis'
 import { stopMediaProcesses } from './ffmpeg'
 import { createMediaService } from './media'
 import { UserPlugins } from './plugins'
@@ -140,7 +141,8 @@ async function initialize(): Promise<void> {
   registerStoreIpc()
   registerExportIpc()
   const paths = getHostPaths()
-  await registerTranscribeIpc(paths.userData)
+  const transcription = await registerTranscribeIpc(paths.userData)
+  await registerAnalysisIpc(paths.userData, transcription)
   const media = createMediaService(join(paths.userData, 'cache'))
   // Spell out the wrappers so the public bridge and service signatures stay checked together.
   ipcMain.handle('media:probe', (_event, path: string) => media.probe(path))

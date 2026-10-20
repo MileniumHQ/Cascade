@@ -48,6 +48,14 @@ const bridge: HostBridge = {
     cancel: () => ipcRenderer.invoke('transcribe:cancel'),
     onProgress: (fn) => on('transcribe:progress', fn)
   },
+  analysis: {
+    status: () => ipcRenderer.invoke('analysis:status'),
+    installModels: (parts) => ipcRenderer.invoke('analysis:installModels', parts),
+    run: (path, opts) => ipcRenderer.invoke('analysis:run', path, opts),
+    cached: (path) => ipcRenderer.invoke('analysis:cached', path),
+    cancel: () => ipcRenderer.invoke('analysis:cancel'),
+    onProgress: (fn) => on('analysis:progress', fn)
+  },
   export: {
     start: (req) => ipcRenderer.invoke('export:start', req),
     cancel: (jobId) => ipcRenderer.invoke('export:cancel', jobId),

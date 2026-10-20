@@ -15,7 +15,7 @@ export default defineConfig({
     resolve: { alias },
     build: {
       externalizeDeps: { exclude: ['zod', '@modelcontextprotocol/sdk'] },
-      rollupOptions: { input: { index: resolve(__dirname, 'src/main/index.ts') } }
+      rollupOptions: { input: { index: resolve(__dirname, 'src/main/index.ts'), 'analysis-worker': resolve(__dirname, 'src/main/analysis/worker.ts') } }
     }
   },
   preload: {
