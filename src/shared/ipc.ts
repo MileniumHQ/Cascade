@@ -4,6 +4,7 @@
  */
 import type { MediaMeta, Project } from './project'
 import type { Flicks, FrameRate } from './time'
+import type { AnalysisBridge } from './analysis'
 
 /** All transcript times are integer flicks in the original source media. */
 export interface TranscriptWord {
@@ -193,6 +194,9 @@ export interface HostBridge {
     cancel(): Promise<void>
     onProgress(fn: (progress: TranscribeProgress) => void): () => void
   }
+
+  /** Local source analysis (words, tone, sound events, shots). Optional until the service lands. */
+  analysis?: AnalysisBridge
 
   export: {
     start(req: ExportRequest): Promise<string>
