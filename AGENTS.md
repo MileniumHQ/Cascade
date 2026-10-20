@@ -35,6 +35,7 @@ DOM-powered video editor. Electron 44 + TypeScript (TS 7 / tsgo) + SolidJS + pla
 
 ## Rules
 - Time is integer **flicks** (`FLICKS = 705_600_000`/s). Never store seconds or frames in the document.
+- Clip speed is the keyframeable Speed property (`timeRemap`); linked audio follows its video. Map timeline ↔ source with `app.edit.timeMap(clip)` / `ClipFrameState.remap`, never `clip.speed` (a legacy multiplier).
 - The stage never uses px. Spatial values are stored as frame fractions; plugins emit CSS via `StageUnits` (`cqw`/`cqh`). The UI can show px (reference resolution) freely.
 - All document mutations go through `app.edit.*` / `doc.transact` (undoable). Never mutate project objects directly (they're frozen).
 - The core must not know specific media types/properties — those belong in plugins.
