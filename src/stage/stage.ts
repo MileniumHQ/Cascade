@@ -171,7 +171,7 @@ export class Stage {
       return null
     }
     if (inst.el) wrapper.appendChild(inst.el)
-    if (track.kind === 'visual') this.layerFor(track, 0).appendChild(wrapper)
+    if (track.kind === 'visual') (this.trackLayers.get(track.id) ?? this.layerFor(track, 0)).appendChild(wrapper)
     return {
       clip,
       trackId: track.id,

@@ -1,0 +1,99 @@
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import type { HostBridge, McpCall, RenderWorkerBridge } from '../shared/ipc'
+
+function on<T>(channel: string, callback: (value: T) => void): () => void {
+  const listener = (_event: IpcRendererEvent, value: T): void => callback(value)
+  ipcRenderer.on(channel, listener)
+  return () => ipcRenderer.removeListener(channel, listener)
+}
+
+const bridge: HostBridge = {
+  info: () => ipcRenderer.invoke('host:info'),
+  mediaUrl: (path) => `media://local/${encodeURIComponent(path)}`,
+  window: {
+    minimize: () => ipcRenderer.send('window:minimize'),
+    toggleMaximize: () => ipcRenderer.send('window:toggleMaximize'),
+    close: () => ipcRenderer.send('window:close'),
+    setTitle: (title) => ipcRenderer.send('window:setTitle', title),
+    onMaximizeChange: (fn) => on('window:maximizeChange', fn)
+  },
+  dialog: {
+    openFiles: (opts) => ipcRenderer.invoke('dialog:openFiles', opts),
+    saveFile: (opts) => ipcRenderer.invoke('dialog:saveFile', opts),
+    confirm: (opts) => ipcRenderer.invoke('dialog:confirm', opts)
+  },
+  fs: {
+    readText: (path) => ipcRenderer.invoke('fs:readText', path),
+    writeText: (path, text) => ipcRenderer.invoke('fs:writeText', path, text),
+    exists: (path) => ipcRenderer.invoke('fs:exists', path),
+    stat: (path) => ipcRenderer.invoke('fs:stat', path)
+  },
+  projects: {
+    recent: () => ipcRenderer.invoke('projects:recent'),
+    addRecent: (p) => ipcRenderer.invoke('projects:addRecent', p),
+    removeRecent: (path) => ipcRenderer.invoke('projects:removeRecent', path)
+  },
+  media: {
+    probe: (path) => ipcRenderer.invoke('media:probe', path),
+    thumbnails: (path, opts) => ipcRenderer.invoke('media:thumbnails', path, opts),
+    waveform: (path) => ipcRenderer.invoke('media:waveform', path),
+    proxy: (path) => ipcRenderer.invoke('media:proxy', path),
+    poster: (path, atSeconds) => ipcRenderer.invoke('media:poster', path, atSeconds)
+  },
+  export: {
+    start: (req) => ipcRenderer.invoke('export:start', req),
+    cancel: (jobId) => ipcRenderer.invoke('export:cancel', jobId),
+    frame: (req) => ipcRenderer.invoke('export:frame', req),
+    onProgress: (fn) => on('export:progress', fn)
+  },
+  plugins: {
+    list: () => ipcRenderer.invoke('plugins:list'),
+    write: (name, code) => ipcRenderer.invoke('plugins:write', name, code),
+    remove: (name) => ipcRenderer.invoke('plugins:remove', name),
+    openFolder: () => ipcRenderer.send('plugins:openFolder'),
+    onChange: (fn) => on('plugins:changed', fn)
+  },
+  mcp: {
+    onCall: (fn) => on<McpCall>('mcp:call', (call) => {
+      void (async () => {
+        try {
+          const result = await fn(call)
+          await ipcRenderer.invoke('mcp:reply', call.id, { result })
+        } catch (error) {
+          await ipcRenderer.invoke('mcp:reply', call.id, { error: error instanceof Error ? error.message : String(error) })
+        }
+      })().catch((error: unknown) => console.warn('Unable to send MCP reply:', error))
+    })
+  },
+  settings: {
+    load: () => ipcRenderer.invoke('settings:load'),
+    save: (values) => ipcRenderer.invoke('settings:save', values)
+  },
+  splash: {
+    progress: (message, done, total) => ipcRenderer.send('splash:progress', message, done, total),
+    ready: () => ipcRenderer.send('splash:ready'),
+    onProgress: (fn) => {
+      const listener = (_event: IpcRendererEvent, message: string, done: number, total: number): void => fn({ message, done, total })
+      ipcRenderer.on('splash:progress', listener)
+      return () => ipcRenderer.removeListener('splash:progress', listener)
+    }
+  },
+  shell: {
+    showItemInFolder: (path) => ipcRenderer.send('shell:showItemInFolder', path),
+    openExternal: (url) => ipcRenderer.send('shell:openExternal', url)
+  }
+}
+
+if (new URL(globalThis.location.href).pathname.endsWith('/render.html')) {
+  const render: RenderWorkerBridge = {
+    job: () => ipcRenderer.invoke('render:job'),
+    frameReady: (index) => ipcRenderer.send('render:frameReady', index),
+    audioChunk: (index, pcm) => ipcRenderer.send('render:audioChunk', index, pcm),
+    done: () => ipcRenderer.send('render:done'),
+    error: (message) => ipcRenderer.send('render:error', message),
+    onCommand: (fn) => on('render:command', fn)
+  }
+  bridge.render = render
+}
+
+contextBridge.exposeInMainWorld('cascade', bridge)

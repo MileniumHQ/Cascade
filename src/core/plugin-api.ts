@@ -204,6 +204,8 @@ export interface ParamEditorContext<T = unknown> {
   fromDisplay(v: number, axis?: 0 | 1): number
   unitLabel(axis?: 0 | 1): string
   readonly animated: boolean
+  /** True when a keyframe sits exactly at the playhead. */
+  keyed(): boolean
 }
 
 export interface ParamTypeContribution<T = any> extends Contribution {
@@ -337,7 +339,13 @@ export interface GeneratorContribution extends Contribution {
   description: string
   icon: Icon
   mediaType: string
-  create(): { name: string; data?: Record<string, unknown>; clipData?: Record<string, unknown> }
+  create(): {
+    name: string
+    data?: Record<string, unknown>
+    clipData?: Record<string, unknown>
+    /** Properties (with initial values) added to clips made from this source, after the media type defaults. */
+    properties?: { type: string; values?: Record<string, unknown> }[]
+  }
 }
 
 // ───────────────────────────── workbench ─────────────────────────────

@@ -151,6 +151,8 @@ export interface HostBridge {
   splash: {
     progress(message: string, done: number, total: number): void
     ready(): void
+    /** Splash window only: receive progress from the editor window. */
+    onProgress?(fn: (p: { message: string; done: number; total: number }) => void): () => void
   }
 
   shell: {

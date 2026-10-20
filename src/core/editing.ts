@@ -99,7 +99,7 @@ export class Editing {
     const gen = this.app.registries.generators.get(generatorId)
     if (!gen) return null
     const res = gen.create()
-    const m: MediaItem = { id: uid('md_'), type: gen.mediaType, name: res.name, meta: {}, data: { ...res.data, clipData: res.clipData, generator: gen.id } }
+    const m: MediaItem = { id: uid('md_'), type: gen.mediaType, name: res.name, meta: {}, data: { ...res.data, clipData: res.clipData, properties: res.properties, generator: gen.id } }
     this.doc.transact(`Add ${gen.name}`, (d) => {
       d.media[m.id] = m
       d.mediaOrder.push(m.id)
@@ -125,10 +125,12 @@ export class Editing {
 
   // ───────────────────────── clips ─────────────────────────
 
-  private newPropertyInstance(type: string): PropertyInstance | null {
+  private newPropertyInstance(type: string, values?: Record<string, unknown>): PropertyInstance | null {
     const contrib = this.app.registries.properties.get(type)
     if (!contrib) return null
-    return { id: uid('pi_'), type, enabled: true, params: defaultParams(contrib) }
+    const params = defaultParams(contrib)
+    for (const [k, v] of Object.entries(values ?? {})) params[k] = { value: v }
+    return { id: uid('pi_'), type, enabled: true, params }
   }
 
   /** Build (but don't insert) a clip for a media item. */
@@ -137,7 +139,11 @@ export class Editing {
     if (!mt) return null
     const dur =
       mt.timeBased && media.meta.duration ? media.meta.duration : secondsToFlicks(mt.defaultDuration ?? 5)
-    const props = (mt.defaultProperties ?? []).map((t) => this.newPropertyInstance(t)).filter(Boolean) as PropertyInstance[]
+    const presets = (media.data?.properties as { type: string; values?: Record<string, unknown> }[] | undefined) ?? []
+    const props = [
+      ...(mt.defaultProperties ?? []).filter((t) => !presets.some((p) => p.type === t)).map((t) => this.newPropertyInstance(t)),
+      ...presets.map((p) => this.newPropertyInstance(p.type, p.values))
+    ].filter(Boolean) as PropertyInstance[]
     const genData = (media.data?.clipData as Record<string, unknown>) ?? {}
     return {
       id: uid('cl_'),

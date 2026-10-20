@@ -1,0 +1,122 @@
+@import '@fontsource-variable/commissioner/full.css';
+
+:root {
+  /* surfaces — neutral, slightly warm-free greys */
+  --bg: #09090a;
+  --panel: #111113;
+  --panel-2: #17171a;
+  --panel-3: #1e1e22;
+  --panel-4: #26262b;
+  --line: rgba(255, 255, 255, 0.065);
+  --line-2: rgba(255, 255, 255, 0.11);
+  --line-3: rgba(255, 255, 255, 0.18);
+  --glass: rgba(28, 28, 32, 0.72);
+  --glass-strong: rgba(22, 22, 26, 0.88);
+  --shadow-pop: 0 18px 50px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
+
+  /* text */
+  --text: #ececef;
+  --text-2: #b4b4bb;
+  --muted: #8d8d96;
+  --dim: #5a5a63;
+
+  /* accents (used at reduced opacity) */
+  --lime: #c6f24e;
+  --lime-rgb: 198, 242, 78;
+  --lime-soft: rgba(198, 242, 78, 0.14);
+  --lime-line: rgba(198, 242, 78, 0.35);
+  --sky: #82cbff;
+  --sky-rgb: 130, 203, 255;
+  --sky-soft: rgba(130, 203, 255, 0.14);
+  --sky-line: rgba(130, 203, 255, 0.4);
+  --danger: #ff6b6b;
+  --danger-soft: rgba(255, 107, 107, 0.14);
+  --warn: #f2c14e;
+  --ok: #52c48e;
+
+  /* clip type colors (plugins may define their own) */
+  --clip-video: #e8707f;
+  --clip-image: #e3aa4a;
+  --clip-element: #ad9cf2;
+  --clip-audio: #52c48e;
+
+  --r-sm: 5px;
+  --r: 7px;
+  --r-lg: 10px;
+  --r-xl: 14px;
+
+  --font: 'Commissioner Variable', 'Commissioner', system-ui, sans-serif;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 12px/1.35 var(--font);
+  font-variation-settings: 'FLAR' 0, 'VOLM' 0;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  overflow: hidden;
+}
+
+input,
+textarea,
+button,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: default;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+:focus {
+  outline: none;
+}
+:focus-visible {
+  outline: 1.5px solid var(--sky-line);
+  outline-offset: 1px;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.09);
+  border-radius: 10px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.16);
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+:focus-visible {
+  outline: 1.5px solid var(--sky-line);
+  outline-offset: 1px;
+}
+
+::selection {
+  background: rgba(var(--sky-rgb), 0.3);
+}
