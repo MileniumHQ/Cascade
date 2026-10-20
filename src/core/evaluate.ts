@@ -138,6 +138,10 @@ export function spring(stiffness: number, damping: number, mass = 1): (p: number
       const wd = w0 * Math.sqrt(1 - zeta * zeta)
       return 1 - Math.exp(-zeta * w0 * t) * (Math.cos(wd * t) + ((zeta * w0) / wd) * Math.sin(wd * t))
     }
+    if (zeta > 1) {
+      const wd = w0 * Math.sqrt(zeta * zeta - 1)
+      return 1 - Math.exp(-zeta * w0 * t) * (Math.cosh(wd * t) + ((zeta * w0) / wd) * Math.sinh(wd * t))
+    }
     return 1 - Math.exp(-w0 * t) * (1 + w0 * t)
   }
 }

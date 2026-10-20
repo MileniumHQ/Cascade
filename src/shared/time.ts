@@ -21,7 +21,7 @@ export const flicksToSeconds = (t: Flicks): number => t / FLICKS
 export const frameToFlicks = (n: number, fps: FrameRate): Flicks => Math.round((n * FLICKS * fps.den) / fps.num)
 
 /** Frame index containing time `t` (floor, robust to rounding). */
-export const flicksToFrame = (t: Flicks, fps: FrameRate): number => Math.floor((t * fps.num) / (FLICKS * fps.den) + 1e-6)
+export const flicksToFrame = (t: Flicks, fps: FrameRate): number => Math.floor((t * fps.num) / (FLICKS * fps.den) + (0.25 * fps.num) / (FLICKS * fps.den))
 
 /** Snap a time to the nearest frame boundary. */
 export const snapToFrame = (t: Flicks, fps: FrameRate): Flicks =>
@@ -52,7 +52,7 @@ export function formatTimecode(t: Flicks, fps: FrameRate): string {
   const abs = Math.abs(t)
   const totalSeconds = Math.floor(abs / FLICKS + 1e-9)
   const rem = abs - totalSeconds * FLICKS
-  const frame = Math.min(Math.ceil(fpsValue(fps)) - 1, Math.floor((rem / FLICKS) * fpsValue(fps) + 1e-6))
+  const frame = Math.min(Math.ceil(fpsValue(fps)) - 1, Math.floor(((rem + 0.25) / FLICKS) * fpsValue(fps)))
   const h = Math.floor(totalSeconds / 3600)
   const m = Math.floor((totalSeconds % 3600) / 60)
   const s = totalSeconds % 60
@@ -71,6 +71,10 @@ export function parseTimecode(text: string, fps: FrameRate, relativeTo: Flicks =
   const s = text.trim()
   if (!s) return null
   if (/^[+-]\d+$/.test(s)) return relativeTo + frameToFlicks(parseInt(s, 10), fps)
+  if (s.startsWith('-')) {
+    const v = parseTimecode(s.slice(1), fps)
+    return v === null ? null : -v
+  }
   const m = s.match(/^(?:(\d+):)?(?:(\d+):)?(\d+)(?:\.(\d+))?$/)
   if (!m) return null
   const parts = [m[1], m[2], m[3]].filter((x) => x !== undefined).map(Number)
@@ -91,7 +95,7 @@ export function formatRulerLabel(t: Flicks, fps: FrameRate, stepFlicks: Flicks):
   const s = totalSeconds % 60
   let label = h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`
   if (stepFlicks < FLICKS) {
-    const frame = Math.floor(((t - totalSeconds * FLICKS) / FLICKS) * fpsValue(fps) + 1e-6)
+    const frame = Math.floor(((t - totalSeconds * FLICKS + 0.25) / FLICKS) * fpsValue(fps))
     label += `.${pad(frame, frameDigits(fps))}`
   }
   return label

@@ -98,7 +98,11 @@ export class DocumentStore {
   endGesture() {
     this.gestureKey = null
     const last = this.undoStack[this.undoStack.length - 1]
-    if (last) last.at = 0 // prevent time-based merging with the next gesture
+    if (last) {
+      // Seal the step: neither time-based nor same-key merging with the next gesture.
+      last.at = 0
+      last.coalesce = undefined
+    }
   }
 
   get canUndo() {
