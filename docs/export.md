@@ -54,7 +54,7 @@ Temporary output lives beside the destination, allowing an atomic final rename. 
 
 - `benchmark.steps.mjs`: real Electron app, AV1/Opus `~/wwdc.webm`, animated text on V2, rational 30000/1001 fps. Cases are supplied by `CASCADE_BENCH_CASES`; output defaults to `/tmp/cascade-export-bench`. Each result includes ffprobe decoded frame counts and durations. Run with the repository's `scripts/drive.mjs` and an isolated profile.
 - `verify.steps.mjs`: format smoke tests, failed-VAAPI fallback, immediate/active cancellation, warm-project edits, a 1×1 PNG, and a synthetic audio project covering mid-chunk starts, a clip crossing the 10-second boundary, animated gain, 2× playback speed and a muted track.
-- `verify-av.py`: source/export PCM cross-correlation using existing Python/NumPy. No app dependency was added.
+- `docs/export/verify-av.py`: source/export PCM cross-correlation using existing Python/NumPy. No app dependency was added.
 - `plan.test.ts`, `decoder.test.ts`: frame partitions, range rounding, stamp validation, all built-in plans, argument validation and streaming decoder selection/liveness.
 
 ## Known limits

@@ -1,4 +1,5 @@
 import { definePlugin } from '@core/plugin-api'
+import { prepareExportRequest } from '../export-request'
 import { CascadeApp, type CascadeAPI } from '@core/app'
 import type { Session } from '../../../renderer/app/session'
 import type { PluginHost } from '@core/plugin-host'
@@ -100,7 +101,7 @@ export class AgentTools {
           if (!app.registries.exporters.get(a.exporter)) throw new Error('Unknown exporter; inspect registry_list')
           const start = a.start ?? 0, end = a.end ?? app.duration()
           if (end <= start || end > app.duration()) throw new Error('Export needs a nonempty range within the timeline')
-          const jobId = await host.export.start({ project: app.project(), timelineId: app.project().activeTimeline, width: a.width ?? app.project().settings.width, height: a.height ?? app.project().settings.height, fps: app.fps(), range: { start, end }, exporter: a.exporter, output: await this.path(a.output), options: a.options })
+          const jobId = await host.export.start(await prepareExportRequest(app, { exporter: a.exporter, output: await this.path(a.output), options: a.options, width: a.width, height: a.height, range: { start, end } }))
           if (!this.jobs.has(jobId)) this.jobs.set(jobId, { jobId, state: 'preparing', framesDone: 0, framesTotal: 0, fps: 0 })
           return text({ jobId, next: 'Poll job_get' })
         }
