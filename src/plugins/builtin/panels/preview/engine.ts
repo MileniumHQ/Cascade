@@ -43,6 +43,8 @@ export class PreviewEngine {
   private smooth = 0
   private interval = 1000 / 60
   private frameTimes: number[] = []
+  private frameCount = 0
+  private droppedCount = 0
 
   constructor(private app: CascadeAPI, host: HTMLElement) {
     this.iframe = document.createElement('iframe')
@@ -137,11 +139,19 @@ export class PreviewEngine {
       const dt = now - this.lastTick
       this.frameTimes.push(dt)
       if (this.frameTimes.length > 30) this.frameTimes.shift()
-      this.interval = Math.min(this.interval, Math.max(4, dt))
-      const fps = 1000 / (this.frameTimes.reduce((a, b) => a + b, 0) / this.frameTimes.length)
-      if (this.frameTimes.length % 10 === 0) this.app.playback.stats.set({ fps: Math.round(fps), dropped: this.app.playback.stats.get().dropped + (dt > this.interval * 1.8 ? 1 : 0) })
+      // Baseline = typical frame interval (25th percentile), robust to the odd back-to-back tick.
+      if (this.frameTimes.length >= 10) {
+        const sorted = [...this.frameTimes].sort((a, b) => a - b)
+        this.interval = Math.max(1000 / 144, sorted[Math.floor(sorted.length / 4)])
+      }
+      const late = dt > this.interval * 1.8
+      if (late) this.droppedCount++
+      if (++this.frameCount % 10 === 0) {
+        const fps = 1000 / (this.frameTimes.reduce((a, b) => a + b, 0) / this.frameTimes.length)
+        this.app.playback.stats.set({ fps: Math.round(fps), dropped: this.droppedCount })
+      }
       if (!this.app.settings.get<boolean>('preview.adaptive')) return
-      if (dt > this.interval * 1.8) {
+      if (late) {
         this.slow++
         this.smooth = 0
       } else {
