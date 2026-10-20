@@ -114,6 +114,8 @@ export function Timeline(props: { ctx: PanelContext }) {
   onMount(() => {
     const ro = new ResizeObserver(() => {
       const w = root.clientWidth - HEADER_W
+      // Hidden behind another bottom tab: keep the last width so the shared view isn't clobbered.
+      if (w <= 0) return
       setWidth(w)
       app.view.viewportWidth.set(w)
       redrawRuler()
@@ -123,6 +125,7 @@ export function Timeline(props: { ctx: PanelContext }) {
     const subs = [
       app.playback.time.subscribe((t) => {
         placePlayhead()
+        if (!root.clientWidth) return // the keyframes tab follows the playhead while it's in front
         const px = app.view.timeToPx(t) - app.view.scrollX.get()
         if (app.playback.playing.get()) {
           if (app.settings.get<boolean>('timeline.followPlayhead') !== false && (px > width() - 40 || px < 0)) setScroll(app.view.timeToPx(t) - width() * 0.1)
@@ -179,8 +182,8 @@ export function Timeline(props: { ctx: PanelContext }) {
     } else if (!cur.includes(id)) {
       app.selection.setClips([...ids.filter((x) => x !== id), id])
     } else {
-      // keep multi-selection but make this primary
-      app.selection.setClips([...cur.filter((c) => c !== id), id])
+      // keep multi-selection (pulling in any unselected linked partners) but make this primary
+      app.selection.setClips([...new Set([...cur, ...ids])].filter((c) => c !== id).concat(id))
     }
   }
 
@@ -761,7 +764,7 @@ function ClipView(props: {
         </Show>
         <span class="tl-clip-name">{props.clip.name}</span>
         <Show when={(props.clip.speed ?? 1) !== 1}>
-          <span class="tl-clip-speed tnum">{props.clip.speed}×</span>
+          <span class="tl-clip-speed tnum">{+(props.clip.speed ?? 1).toFixed(2)}×</span>
         </Show>
       </div>
       <div class="tl-clip-body">

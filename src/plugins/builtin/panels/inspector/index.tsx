@@ -3,7 +3,8 @@ import type { CascadeAPI } from '@core/app'
 import { definePlugin, type PanelContext } from '@core/plugin-api'
 import { findClip, type Clip, type Id } from '@shared/project'
 import { shallowArrayEqual } from '@core/value'
-import { Button, Empty, IconButton } from '@ui/kit'
+import { expandLinked } from '@core/timeline-ops'
+import { Button, Empty, IconButton, Segmented } from '@ui/kit'
 import { Icon } from '@ui/icon'
 import { useProject, useValue } from '@ui/reactive'
 import { solidMount } from '../../solid'
@@ -163,15 +164,74 @@ function ClipInspector(props: { app: CascadeAPI; clipId: Id }) {
   )
 }
 
+/**
+ * The clip the inspector edits: the selection itself, or — when the selection is exactly one link
+ * group (video + its audio) — the picked partner, visual clips first.
+ */
+function useFocus(app: CascadeAPI) {
+  const clips = useValue(app.selection.clips)
+  const project = useProject(app)
+  const [pick, setPick] = createSignal<Id | null>(null)
+  const group = createMemo(
+    () => {
+      project()
+      const ids = clips()
+      if (ids.length < 2) return [] as Id[]
+      const tl = app.timeline()
+      const linked = expandLinked(tl, [ids[0]])
+      if (linked.size !== ids.length || !ids.every((id) => linked.has(id))) return [] as Id[]
+      const audio = (id: Id) => (findClip(tl, id)?.track.kind === 'audio' ? 1 : 0)
+      return [...ids].sort((a, b) => audio(a) - audio(b))
+    },
+    [] as Id[],
+    { equals: shallowArrayEqual }
+  )
+  const focused = createMemo(() => {
+    if (clips().length === 1) return clips()[0]
+    const g = group()
+    if (!g.length) return null
+    const p = pick()
+    return p && g.includes(p) ? p : g[0]
+  })
+  return { clips, group, focused, setPick }
+}
+
+function LinkSwitch(props: { app: CascadeAPI; group: Id[]; value: Id; onChange: (id: Id) => void }) {
+  const project = useProject(props.app)
+  const options = createMemo(() => {
+    project()
+    const tl = props.app.timeline()
+    return props.group.map((id) => {
+      const f = findClip(tl, id)
+      const mt = f && props.app.registries.mediaTypes.get(f.clip.type)
+      return { value: id, label: f?.track.kind === 'audio' ? 'Audio' : (mt?.name ?? 'Clip'), icon: f?.track.kind === 'audio' ? 'audio-lines' : (mt?.icon ?? 'film') }
+    })
+  })
+  return (
+    <div class="ins-link-switch">
+      <Icon name="link-2" size={12} />
+      <span>Linked</span>
+      <Segmented value={props.value} options={options()} onChange={props.onChange} />
+    </div>
+  )
+}
+
 function Inspector(props: { ctx: PanelContext }) {
   const app = props.ctx.app
-  const clips = useValue(app.selection.clips)
+  const { clips, group, focused, setPick } = useFocus(app)
   const media = useValue(app.selection.media)
   return (
     <div class="ins">
       <Switch>
-        <Match when={clips().length === 1 && clips()[0]} keyed>
-          {(id) => <ClipInspector app={app} clipId={id} />}
+        <Match when={focused()} keyed>
+          {(id) => (
+            <>
+              <Show when={group().length > 1}>
+                <LinkSwitch app={app} group={group()} value={id} onChange={setPick} />
+              </Show>
+              <ClipInspector app={app} clipId={id} />
+            </>
+          )}
         </Match>
         <Match when={clips().length > 1}>
           <MultiClip app={app} />
@@ -189,11 +249,10 @@ function Inspector(props: { ctx: PanelContext }) {
 
 function HeaderActions(props: { ctx: PanelContext }) {
   const app = props.ctx.app
-  const clips = useValue(app.selection.clips)
-  const clipId = () => (clips().length === 1 ? clips()[0] : null)
+  const { focused } = useFocus(app)
   return (
-    <AddPropertyAnchor app={app} clipId={clipId} align="end">
-      {(a) => <IconButton icon="plus" size="sm" tip="Add property" active={a.open} disabled={!clipId()} onClick={(e) => a.toggle(e.currentTarget)} />}
+    <AddPropertyAnchor app={app} clipId={focused} align="end">
+      {(a) => <IconButton icon="plus" size="sm" tip="Add property" active={a.open} disabled={!focused()} onClick={(e) => a.toggle(e.currentTarget)} />}
     </AddPropertyAnchor>
   )
 }

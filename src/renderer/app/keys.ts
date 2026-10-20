@@ -11,6 +11,7 @@ export function eventKey(e: KeyboardEvent): string {
   if (e.altKey) parts.push('Alt')
   let k = e.key
   if (k === ' ') k = 'Space'
+  else if (k === '+') k = 'Plus'
   else if (k.length === 1) k = k.toUpperCase()
   if (e.code.startsWith('Digit')) k = e.code.slice(5)
   if (['Control', 'Shift', 'Alt', 'Meta'].includes(k)) return ''

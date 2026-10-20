@@ -18,6 +18,17 @@ body.ins-reordering * {
 }
 
 /* ── clip header ── */
+.ins-link-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.ins-link-switch .segmented {
+  margin-left: auto;
+}
 .ins-clip {
   padding: 12px 12px 10px;
   border-bottom: 1px solid var(--line);

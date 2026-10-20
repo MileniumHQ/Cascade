@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, Index, onCleanup, onMount, Show, Switch, Match } from 'solid-js'
 import { keyframeAt, KF_EPSILON } from '@core/evaluate'
+import type { CascadeAPI } from '@core/app'
 import { findClip, type Clip, type Id } from '@shared/project'
 import { FLICKS, flicksToFrame, formatRulerLabel, formatTimecode, rulerStep, snapToFrame, type Flicks } from '@shared/time'
 import { Icon } from '@ui/icon'
@@ -97,9 +98,18 @@ export function DopeSheet(props: { s: PanelState }) {
     rulerHead.style.opacity = rx < -40 || rx > lanes.clientWidth + 40 ? '0' : '1'
     rulerHead.firstElementChild!.textContent = formatTimecode(t, app.fps())
   }
+  // Follow the playhead like the timeline does (the timeline is hidden while this tab is in front).
+  const follow = (t: Flicks) => {
+    const w = laneW()
+    if (!props.s.visible() || w <= 0) return
+    const px = (t / FLICKS) * app.view.pxPerSecond.get() - app.view.scrollX.get()
+    if (app.playback.playing.get()) {
+      if (app.settings.get<boolean>('timeline.followPlayhead') !== false && (px > w - 40 || px < 0)) app.view.scrollX.set(Math.max(0, px + app.view.scrollX.get() - w * 0.1))
+    } else if (px > w || px < 0) app.view.scrollX.set(Math.max(0, px + app.view.scrollX.get() - w * 0.5))
+  }
   onMount(() => {
     placeHead()
-    const subs = [app.playback.time.subscribe(placeHead), app.view.pxPerSecond.subscribe(placeHead), app.view.scrollX.subscribe(placeHead)]
+    const subs = [app.playback.time.subscribe(placeHead), app.playback.time.subscribe(follow), app.view.pxPerSecond.subscribe(placeHead), app.view.scrollX.subscribe(placeHead)]
     onCleanup(() => subs.forEach((d) => d.dispose()))
   })
   createEffect(() => {
@@ -638,6 +648,7 @@ export function DopeSheet(props: { s: PanelState }) {
             </div>
           </div>
         </div>
+        <HScroll app={app} laneW={laneW} scrollX={scrollX} pps={pps} clipEnd={() => (clip() ? clip()!.start + clip()!.duration : 0)} />
       </div>
       <Show when={!clip()}>
         <div class="kf-empty">
@@ -645,5 +656,35 @@ export function DopeSheet(props: { s: PanelState }) {
         </div>
       </Show>
     </>
+  )
+}
+
+/** Horizontal scrollbar for the shared timeline view, under the keyframe lanes. */
+function HScroll(props: { app: CascadeAPI; laneW: () => number; scrollX: () => number; pps: () => number; clipEnd: () => Flicks }) {
+  const app = props.app
+  const total = () => Math.max((Math.max(app.duration(), props.clipEnd()) / FLICKS) * props.pps() + props.laneW() * 0.5, props.scrollX() + props.laneW(), 1)
+  const thumbW = () => Math.max(24, (props.laneW() / total()) * props.laneW())
+  const thumbX = () => (props.scrollX() / Math.max(1, total() - props.laneW())) * (props.laneW() - thumbW())
+  const down = (e: PointerEvent) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    const track = e.currentTarget as HTMLElement
+    const onThumb = (e.target as HTMLElement).classList.contains('kf-hscroll-thumb')
+    const r = track.getBoundingClientRect()
+    const range = () => Math.max(1, props.laneW() - thumbW())
+    const span = () => Math.max(0, total() - props.laneW())
+    // Clicking the track jumps the thumb's centre there; then drag from wherever it lands.
+    if (!onThumb) app.view.scrollX.set(Math.max(0, ((e.clientX - r.left - thumbW() / 2) / range()) * span()))
+    const x0 = e.clientX
+    const s0 = app.view.scrollX.get()
+    const move = (ev: PointerEvent) => app.view.scrollX.set(Math.max(0, Math.min(span(), s0 + ((ev.clientX - x0) / range()) * span())))
+    const up = () => (window.removeEventListener('pointermove', move), window.removeEventListener('pointerup', up))
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+  return (
+    <div class="kf-hscroll" style={{ 'margin-left': `${TREE_W}px` }} onPointerDown={down}>
+      <div class="kf-hscroll-thumb" style={{ width: `${thumbW()}px`, transform: `translateX(${thumbX()}px)` }} />
+    </div>
   )
 }

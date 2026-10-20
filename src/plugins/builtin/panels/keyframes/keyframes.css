@@ -25,6 +25,24 @@
   overflow-y: auto;
   overflow-x: hidden;
 }
+.kf-hscroll {
+  flex: none;
+  height: 10px;
+  position: relative;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+.kf-hscroll-thumb {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.kf-hscroll:hover .kf-hscroll-thumb {
+  background: rgba(255, 255, 255, 0.2);
+}
 .kf-grid {
   display: grid;
   min-height: 100%;

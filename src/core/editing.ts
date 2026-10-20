@@ -202,7 +202,7 @@ export class Editing {
         ops.placeClip(track as Track, c.clip)
       }
     })
-    this.app.selection.setClips([clip.id])
+    this.app.selection.setClips([...clips.map((c) => c.clip.id).filter((id) => id !== clip.id), clip.id])
     return clips.map((c) => c.clip.id)
   }
 
@@ -335,7 +335,14 @@ export class Editing {
       'Edit clip',
       (d) => {
         const f = this.findDraftClip(d, clipId)
-        if (f) Object.assign(f.clip, patch)
+        if (!f) return
+        Object.assign(f.clip, patch)
+        // Linked partners (video + its audio) share timing, so speed changes apply to the group.
+        if (patch.speed !== undefined && f.clip.linkId)
+          for (const id of ops.expandLinked(this.tl(d) as Timeline, [clipId])) {
+            const p = id !== clipId && this.findDraftClip(d, id)
+            if (p) p.clip.speed = patch.speed
+          }
       },
       this.gesture(`clip:${clipId}`, opts)
     )

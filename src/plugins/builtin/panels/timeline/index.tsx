@@ -61,5 +61,7 @@ export const timelinePlugin = definePlugin({
     ctx.commands.register({ id: 'timeline.tool.blade', title: 'Blade tool', category: 'Timeline', run: () => timelineTool.set('blade') })
     ctx.keybindings.register({ id: 'timeline.tool.select:A', command: 'timeline.tool.select', key: 'A' })
     ctx.keybindings.register({ id: 'timeline.tool.blade:B', command: 'timeline.tool.blade', key: 'B' })
+    ctx.keybindings.register({ id: 'timeline.tool.select:V', command: 'timeline.tool.select', key: 'V' })
+    ctx.keybindings.register({ id: 'timeline.tool.blade:C', command: 'timeline.tool.blade', key: 'C' })
   }
 })
