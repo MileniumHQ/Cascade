@@ -64,7 +64,7 @@ export const effectsPlugin = definePlugin({
       simple('contrast', 'Contrast', 'Increase or decrease contrast', 'contrast', { unit: 'percent', default: 1.2, min: 0, softMax: 3, step: 1 }, (a) => `contrast(${r(a)})`),
       simple('saturation', 'Saturation', 'Color intensity', 'palette', { unit: 'percent', default: 1.3, min: 0, softMax: 3, step: 1 }, (a) => `saturate(${r(a)})`, ['vibrance', 'color']),
       simple('hue', 'Hue shift', 'Rotate all colors around the color wheel', 'rainbow', { unit: 'deg', default: 30, step: 1 }, (a) => `hue-rotate(${r(a, 3)}deg)`, ['color', 'tint']),
-      simple('grayscale', 'Black & white', 'Remove color', 'circle-half', { unit: 'percent', default: 1, min: 0, max: 1, step: 1 }, (a) => `grayscale(${r(a)})`, ['monochrome', 'grayscale', 'desaturate']),
+      simple('grayscale', 'Black & white', 'Remove color', 'droplet-off', { unit: 'percent', default: 1, min: 0, max: 1, step: 1 }, (a) => `grayscale(${r(a)})`, ['monochrome', 'grayscale', 'desaturate']),
       simple('sepia', 'Sepia', 'Warm vintage tone', 'coffee', { unit: 'percent', default: 1, min: 0, max: 1, step: 1 }, (a) => `sepia(${r(a)})`, ['vintage', 'old']),
       simple('invert', 'Invert', 'Negative image', 'square-split-horizontal', { unit: 'percent', default: 1, min: 0, max: 1, step: 1 }, (a) => `invert(${r(a)})`, ['negative']),
       {

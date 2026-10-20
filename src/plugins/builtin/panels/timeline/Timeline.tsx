@@ -752,7 +752,7 @@ function ClipView(props: {
       data-id={props.clip.id}
       style={{ left: `${geo().left}px`, width: `${geo().width}px`, '--c': colorOf(app, props.clip) }}
     >
-      <div class="tl-clip-label" style={{ 'padding-left': `${Math.max(6, -geo().offset + 6)}px` }}>
+      <div class="tl-clip-label" style={{ 'padding-left': `${Math.max(6, -geo().left + 6)}px` }}>
         <Show when={props.clip.linkId}>
           <Icon name="link-2" size={10} class="tl-clip-link" />
         </Show>

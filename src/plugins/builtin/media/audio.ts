@@ -114,6 +114,7 @@ function mountWaveform(el: HTMLElement, c: ClipBodyContext) {
   if (!media?.path) return
   const canvas = document.createElement('canvas')
   canvas.className = 'clip-wave'
+  canvas.style.cssText = 'position:absolute;top:0'
   el.appendChild(canvas)
   let data: { rate: number; peaks: Float32Array } | null = null
   let raf = 0
