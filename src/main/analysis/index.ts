@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, open, readFile, readdir, rename, rm, stat, writeFile } 
 import { join, resolve } from 'node:path'
 import { Worker } from 'node:worker_threads'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 import { ANALYSIS_VERSION, type AnalysisBridge, type AnalysisOptions, type AnalysisPart, type AnalysisProgress, type SourceAnalysis, type AnalysisSentence } from '../../shared/analysis'
 import { FLICKS } from '../../shared/time'
 import { createTranscriptionService } from '../transcribe'
@@ -72,19 +73,23 @@ export function createAnalysisService(userData: string, resourcesPath = process.
   const modelsDir = join(userData, 'models'), cacheDir = join(userData, 'cache', 'analysis')
   const media = createMediaService(join(userData, 'cache'))
   const listeners = new Set<(progress: AnalysisProgress) => void>()
-  let current: AbortController | undefined, activePath = ''
+  let current: AbortController | undefined, activePath = '', usingTranscription = false
   const emit = (part: AnalysisProgress['part'], progress: number, text: string, phase: AnalysisProgress['phase'] = 'running') => {
-    for (const listener of listeners) listener({ path: activePath, part, progress, message: text, phase })
+    for (const listener of listeners) listener({ path: activePath, part, progress: Math.max(0, Math.min(1, progress)), message: text, phase })
   }
-  transcription.onProgress(p => { if (current) emit(p.phase === 'download' ? 'download' : p.phase === 'extract' ? 'extract' : 'speech', p.progress, p.message, p.phase === 'error' || p.phase === 'cancelled' ? p.phase : 'running') })
-  const installed = async (m: typeof MODELS[number]) => (await Promise.all(m.files.map(f => size(join(modelsDir, m.directory, f))))).every(n => n > 0)
+  transcription.onProgress(p => { if (current && usingTranscription) emit(p.phase === 'download' ? 'download' : p.phase === 'extract' ? 'extract' : 'speech', p.progress, p.message, p.phase === 'error' || p.phase === 'cancelled' ? p.phase : 'running') })
+  const installed = async (m: typeof MODELS[number]) => (await Promise.all(m.files.map(f => size(join(modelsDir, m.directory, f))))).every((n, i) => n === m.fileSizes[i])
   async function status() {
     const speech = await transcription.status()
-    const available: AnalysisPart[] = ['shots']
+    const available: AnalysisPart[] = []
+    if (await getFFmpegTools().then(() => true, () => false)) available.push('shots')
     const missing = speech.models.filter(m => !m.installed).map(m => ({ part: 'speech' as AnalysisPart, id: m.id, name: m.name, sizeBytes: m.sizeBytes }))
     if (speech.binary && !missing.length) available.unshift('speech')
     // The pinned Linux addon is packaged as a dependency; model presence is checked independently.
-    const runtime = process.platform === 'linux' && process.arch === 'x64'
+    let runtime = false
+    if (process.platform === 'linux' && process.arch === 'x64') {
+      try { createRequire(import.meta.url).resolve('sherpa-onnx-linux-x64/sherpa-onnx.node'); runtime = true } catch { /* Native package missing. */ }
+    }
     for (const model of MODELS) {
       if (await installed(model)) { if (runtime) available.push(model.part) }
       else missing.push({ part: model.part, id: model.id, name: model.name, sizeBytes: model.sizeBytes })
@@ -108,12 +113,18 @@ export function createAnalysisService(userData: string, resourcesPath = process.
       await mkdir(modelsDir, { recursive: true })
       if (requested.includes('speech')) {
         for (const m of (await transcription.status()).models) {
-          signal.throwIfAborted(); await transcription.installModel(m.id); signal.throwIfAborted()
+          signal.throwIfAborted()
+          usingTranscription = true
+          try { await transcription.installModel(m.id) } finally { usingTranscription = false }
+          signal.throwIfAborted()
         }
       }
       for (const model of MODELS.filter(m => requested.includes(m.part))) {
         signal.throwIfAborted()
-        if (await installed(model)) continue
+        if (await installed(model)) {
+          await writeFile(join(modelsDir, model.directory, 'NOTICE.txt'), model.notice + '\n')
+          continue
+        }
         const archive = join(modelsDir, `${model.id}.tar.bz2`)
         await downloadModel(model, archive, signal, (p, text) => emit('download', p, text))
         const temp = await mkdtemp(join(modelsDir, '.extract-'))
@@ -122,6 +133,7 @@ export function createAnalysisService(userData: string, resourcesPath = process.
           await execute('tar', ['-xjf', archive, '-C', temp, ...model.files.map(f => `${model.directory}/${f}`)], signal)
           signal.throwIfAborted()
           await rm(join(modelsDir, model.directory), { recursive: true, force: true })
+          await writeFile(join(temp, model.directory, 'NOTICE.txt'), model.notice + '\n')
           await rename(join(temp, model.directory), join(modelsDir, model.directory))
           emit('download', 1, `${model.name} installed`, 'done')
         } finally { await rm(temp, { recursive: true, force: true }) }
@@ -166,7 +178,7 @@ export function createAnalysisService(userData: string, resourcesPath = process.
       const pcm = join(temp, 'audio.f32')
       let pcmReady = false
       const { ffmpeg } = await getFFmpegTools()
-      const input = ['-ss', String(range.start / FLICKS), '-threads', '4', '-i', absolute, '-t', String((range.end - range.start) / FLICKS)]
+      const input = ['-ss', String(range.start / FLICKS), '-t', String((range.end - range.start) / FLICKS), '-threads', '4', '-i', absolute]
       const extract = async () => {
         if (pcmReady) return
         if (!meta.hasAudio) throw new Error('Source has no audio stream')
@@ -174,8 +186,8 @@ export function createAnalysisService(userData: string, resourcesPath = process.
         const silences: SourceAnalysis['silences'] = []
         let silenceStart: number | undefined
         await execute(ffmpeg, ['-hide_banner', '-nostdin', '-nostats', '-y', ...input, '-vn', '-map', '0:a:0', '-ac', '1', '-ar', String(RATE), '-af', 'silencedetect=noise=-35dB:d=0.18', '-threads', '4', '-f', 'f32le', pcm], signal, line => {
-          const start = line.match(/silence_start: ([\d.]+)/), end = line.match(/silence_end: ([\d.]+)/)
-          const time = (s: string) => Math.min(range.end, range.start + Math.round(Number(s) * FLICKS))
+          const start = line.match(/silence_start: (-?[\d.]+)/), end = line.match(/silence_end: (-?[\d.]+)/)
+          const time = (s: string) => Math.max(range.start, Math.min(range.end, range.start + Math.round(Number(s) * FLICKS)))
           if (start) silenceStart = time(start[1])
           if (end && silenceStart !== undefined) { silences.push({ start: silenceStart, end: time(end[1]) }); silenceStart = undefined }
         })
@@ -205,7 +217,9 @@ export function createAnalysisService(userData: string, resourcesPath = process.
       }
       const work: Partial<Record<AnalysisPart, () => Promise<void>>> = {
         speech: async () => {
-          const transcript = await transcription.run(absolute, { range, language, verbatim: true })
+          usingTranscription = true
+          let transcript: Awaited<ReturnType<TranscriptionService['run']>>
+          try { transcript = await transcription.run(absolute, { range, language, verbatim: true }) } finally { usingTranscription = false }
           const words = transcript.segments.flatMap(s => s.words).map(w => ({ ...w, ...(isFiller(w.text) ? { filler: true } : {}) }))
           await audio(async read => {
             const energy = words.map(() => ({ sum: 0, count: 0 }))
@@ -291,7 +305,7 @@ export function createAnalysisService(userData: string, resourcesPath = process.
     })
   }
   return { status, installModels, run, cached,
-    cancel: async () => { current?.abort(); await transcription.cancel() },
+    cancel: async () => { current?.abort(); if (usingTranscription) await transcription.cancel() },
     onProgress(fn) { listeners.add(fn); return () => { listeners.delete(fn) } } }
 }
 
