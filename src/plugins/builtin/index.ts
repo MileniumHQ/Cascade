@@ -16,12 +16,12 @@ import { placeholderPanel } from './panels/placeholder'
 import { timelinePlugin } from './panels/timeline'
 import { previewPlugin } from './panels/preview'
 import { inspectorPlugin } from './panels/inspector'
+import { sourcesPlugin } from './panels/sources'
 
 const panelsPlugin = definePlugin({
   id: 'cascade.panels',
   name: 'Panels',
   activate(ctx) {
-    ctx.panels.register(placeholderPanel({ id: 'sources', title: 'Sources', icon: 'folder-open', region: 'side' }))
     ctx.panels.register(placeholderPanel({ id: 'keyframes', title: 'Keyframes', icon: 'diamond', region: 'bottom', order: 1 }))
     ctx.panels.register(placeholderPanel({ id: 'export', title: 'Export', icon: 'clapperboard', region: 'bottom', order: 2 }))
   }
@@ -47,7 +47,8 @@ export const builtinPlugins: PluginDefinition[] = [
   panelsPlugin,
   previewPlugin,
   timelinePlugin,
-  inspectorPlugin
+  inspectorPlugin,
+  sourcesPlugin
 ]
 
 /** Plugins that are safe to load in headless export workers (no UI). */
