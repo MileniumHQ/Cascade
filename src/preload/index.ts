@@ -41,6 +41,13 @@ const bridge: HostBridge = {
     proxy: (path) => ipcRenderer.invoke('media:proxy', path),
     poster: (path, atSeconds) => ipcRenderer.invoke('media:poster', path, atSeconds)
   },
+  transcribe: {
+    status: () => ipcRenderer.invoke('transcribe:status'),
+    installModel: (id) => ipcRenderer.invoke('transcribe:installModel', id),
+    run: (path, opts) => ipcRenderer.invoke('transcribe:run', path, opts),
+    cancel: () => ipcRenderer.invoke('transcribe:cancel'),
+    onProgress: (fn) => on('transcribe:progress', fn)
+  },
   export: {
     start: (req) => ipcRenderer.invoke('export:start', req),
     cancel: (jobId) => ipcRenderer.invoke('export:cancel', jobId),

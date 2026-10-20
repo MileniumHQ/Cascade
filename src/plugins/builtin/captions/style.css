@@ -1,0 +1,5 @@
+.captions-progress { display: flex; align-items: center; gap: 7px; color: var(--text-2); font-size: 11.5px; }
+.captions-progress > span:first-of-type { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.captions-progress progress { width: 70px; height: 3px; border: 0; border-radius: var(--r-sm); overflow: hidden; }
+.captions-progress progress::-webkit-progress-bar { background: var(--panel-4); }
+.captions-progress progress::-webkit-progress-value { background: var(--lime); opacity: .65; }

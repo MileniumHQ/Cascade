@@ -17,6 +17,7 @@ import { timelinePlugin } from './panels/timeline'
 import { previewPlugin } from './panels/preview'
 import { inspectorPlugin } from './panels/inspector'
 import { sourcesPlugin } from './panels/sources'
+import { captionsPlugin } from './captions'
 
 const panelsPlugin = definePlugin({
   id: 'cascade.panels',
@@ -48,7 +49,8 @@ export const builtinPlugins: PluginDefinition[] = [
   previewPlugin,
   timelinePlugin,
   inspectorPlugin,
-  sourcesPlugin
+  sourcesPlugin,
+  captionsPlugin
 ]
 
 /** Plugins that are safe to load in headless export workers (no UI). */
