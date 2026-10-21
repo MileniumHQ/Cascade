@@ -4,7 +4,7 @@
   "author": "Milenium",
   "homepage": "https://github.com/MileniumHQ/Cascade",
   "desktopName": "cascade.desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DOM-powered video editor",
   "type": "module",
   "main": "out/main/index.js",

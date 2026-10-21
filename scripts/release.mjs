@@ -3,7 +3,7 @@
 //
 // Builds the committed HEAD in a clean temporary worktree (uncommitted work never ships), with the
 // version taken from the latest v* tag and bumped. package.json's version isn't edited; the builds get
-// it through extraMetadata. Uploads the AppImage, RPM, Windows installer, their blockmaps and the
+// it through extraMetadata. Uploads the AppImage, Windows installer, their blockmaps and the
 // latest*.yml files the updater reads, then tags HEAD. --dry-run builds into vendor/release-<tag>/dist and stops.
 import { spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -27,10 +27,8 @@ const sh = (command, argv, opts = {}) => {
 const out = (command, argv, opts) => sh(command, argv, { ...opts, quiet: true })
 
 sh('gh', ['auth', 'status'], { quiet: true })
-for (const tool of ['rpmbuild', 'wine']) {
-  if (tool === 'wine' && flags.has('--no-win')) continue
-  if (spawnSync('which', [tool]).status !== 0) throw new Error(`${tool} not found (rpmbuild: rpm-tools; wine: for the Windows installer, or pass --no-win).`)
-}
+// RPM is off for now (see electron-builder.yml); add 'rpmbuild' back here and its file below to re-enable.
+if (!flags.has('--no-win') && spawnSync('which', ['wine']).status !== 0) throw new Error('wine not found (needed for the Windows installer, or pass --no-win).')
 
 // Next version from the newest v* tag.
 const last = out('git', ['tag', '--list', 'v*', '--sort=-v:refname']).split('\n')[0] || 'v0.0.0'
@@ -68,7 +66,7 @@ try {
   if (!flags.has('--no-win')) sh('node', ['scripts/dist-win.mjs', '--publish', 'never', meta], inWork)
 
   const dist = join(work, 'dist')
-  const files = ['Cascade-linux-x86_64.AppImage', 'Cascade-linux-x86_64.rpm', 'latest-linux.yml']
+  const files = ['Cascade-linux-x86_64.AppImage', /* 'Cascade-linux-x86_64.rpm', */ 'latest-linux.yml']
   if (!flags.has('--no-win')) files.push('Cascade-windows-x64-setup.exe', 'Cascade-windows-x64-setup.exe.blockmap', 'latest.yml')
   for (const f of files) if (!existsSync(join(dist, f))) throw new Error(`Missing build output ${f}`)
   const appImage = join(dist, 'Cascade-linux-x86_64.AppImage')

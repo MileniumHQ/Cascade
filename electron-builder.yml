@@ -45,8 +45,9 @@ linux:
   artifactName: ${productName}-linux-${arch}.${ext}
   target:
     - AppImage
-    # Fedora/openSUSE; needs rpmbuild on the build machine (Arch: rpm-tools).
-    - rpm
+    # Fedora/openSUSE; needs rpmbuild on the build machine (Arch: rpm-tools). Off until packages cover
+    # every big distro; the updater still handles RPM installs (src/main/updater.ts).
+    # - rpm
     - dir
   icon: resources/icon.png
   category: AudioVideo
