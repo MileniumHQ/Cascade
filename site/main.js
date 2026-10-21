@@ -104,8 +104,8 @@ function apply(a, t) {
 const scenes = [
   { id: 'intro', label: 'Intro', start: 0, end: 12.4, at: 0 },
   { id: 'stage', label: 'Web tech', start: 12.4, end: 24.4, at: 15.6 },
-  { id: 'agents', label: 'Agents', start: 24.4, end: 38.4, at: 26.4 },
-  { id: 'motion', label: 'Motion', start: 38.4, end: 47.2, at: 40.4 },
+  { id: 'agents', label: 'Copilot', start: 24.4, end: 38.4, at: 26.4 },
+  { id: 'motion', label: 'Animate', start: 38.4, end: 47.2, at: 40.4 },
   { id: 'plugins', label: 'Plugins', start: 47.2, end: 55.2, at: 49 },
   { id: 'export', label: 'Export', start: 55.2, end: 61.4, at: 57 },
   { id: 'open', label: 'Open source', start: 61.4, end: TOTAL, at: 63 }
