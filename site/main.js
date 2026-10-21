@@ -426,6 +426,13 @@ document.querySelectorAll('[data-jump]').forEach((a) => a.addEventListener('clic
 document.querySelectorAll('.w').forEach((w, i) => { w.style.animationDelay = `${120 + i * 70}ms` })
 $('intro-lede').style.animationDelay = '620ms'
 $('intro-cta').style.animationDelay = '760ms'
+// Windows visitors get the installer; everyone else the AppImage. /download lists every build.
+if (/Win/.test(navigator.userAgentData?.platform ?? navigator.platform ?? '')) {
+  document.querySelectorAll('[data-download]').forEach((el) => {
+    el.href = 'https://github.com/MileniumHQ/Cascade/releases/latest/download/Cascade-windows-x64-setup.exe'
+    el.querySelector('span').textContent = 'Download for Windows'
+  })
+}
 document.querySelectorAll('[data-year]').forEach((el) => { el.textContent = new Date().getFullYear() })
 
 function layout() {
