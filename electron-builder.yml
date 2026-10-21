@@ -26,6 +26,8 @@ extraResources:
     to: whisper/linux-x64
     filter: ["whisper-cli", "LICENSE", "build.json"]
 linux:
+  # Stable name so the site can link to releases/latest/download/Cascade-linux-x64.AppImage.
+  artifactName: ${productName}-linux-${arch}.${ext}
   target:
     - AppImage
     - dir
