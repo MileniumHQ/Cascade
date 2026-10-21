@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, Menu, protocol, shell } from 'electron'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { existsSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import type { HostBridge } from '../shared/ipc'
@@ -13,7 +14,9 @@ import { serveMedia, servePlugin } from './protocols'
 import { getHostPaths, registerStoreIpc } from './store'
 import { mcpInfo, startMcp } from './mcp'
 import { registerAgentsIpc } from './agents'
+import { startUpdater } from './updater'
 import { runStdio } from './mcp/stdio'
+import { registerLinuxDesktop } from './desktop-integration'
 
 protocol.registerSchemesAsPrivileged(['media', 'cascade-plugin'].map((scheme) => ({
   scheme, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true, bypassCSP: true }
@@ -97,7 +100,7 @@ function createWindows(): void {
   main.on('closed', () => {
     clearTimers()
     if (!splash.isDestroyed()) splash.destroy()
-    if (mainWindow === main) { mainWindow = null; finishSplash = undefined; closeSplashTimers = undefined }
+    if (mainWindow === main) { mainWindow = null; openFileReady = false; finishSplash = undefined; closeSplashTimers = undefined }
   })
   main.on('maximize', () => main.webContents.send('window:maximizeChange', true))
   main.on('unmaximize', () => main.webContents.send('window:maximizeChange', false))
@@ -133,6 +136,11 @@ function registerWindowIpc(): void {
   ipcMain.on('window:setTitle', (event, title: string) => {
     if (typeof title === 'string') BrowserWindow.fromWebContents(event.sender)?.setTitle(title)
   })
+  ipcMain.on('window:openFileReady', (event) => {
+    if (event.sender !== mainWindow?.webContents) return
+    openFileReady = true
+    for (const file of pendingOpenFiles.splice(0)) event.sender.send('window:openFile', file)
+  })
   ipcMain.on('splash:progress', (event, message: string, done: number, total: number) => {
     if (event.sender !== mainWindow?.webContents) return
     splashProgress = { message, done, total }
@@ -145,6 +153,7 @@ function registerWindowIpc(): void {
 
 async function initialize(): Promise<void> {
   Menu.setApplicationMenu(null)
+  if (process.platform === 'linux' && app.isPackaged) void registerLinuxDesktop(process.resourcesPath).catch((error: unknown) => console.warn('Desktop integration:', error))
   registerWindowIpc()
   registerStoreIpc()
   registerExportIpc()
@@ -157,6 +166,7 @@ async function initialize(): Promise<void> {
   ipcMain.handle('media:probe', (_event, path: string) => media.probe(path))
   ipcMain.handle('media:thumbnails', (_event, path: string, opts: Parameters<HostBridge['media']['thumbnails']>[1]) => media.thumbnails(path, opts))
   ipcMain.handle('media:waveform', (_event, path: string) => media.waveform(path))
+  ipcMain.handle('media:pcm', (_event, path: string, startSec: number, durationSec: number, sampleRate?: number) => media.pcm(path, startSec, durationSec, sampleRate))
   ipcMain.handle('media:poster', (_event, path: string, atSeconds?: number) => media.poster(path, atSeconds))
   ipcMain.handle('media:proxy', (_event, path: string) => media.proxy(path))
   plugins = new UserPlugins(paths.plugins, (files) => {
@@ -173,8 +183,23 @@ async function initialize(): Promise<void> {
   await registerAgentsIpc({ home: paths.home, defaultCwd: paths.projects, dataDir: join(paths.userData, 'agents'), mcp: () => mcpInfo }, (event) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('agents:event', event)
   })
+  await startUpdater(() => mainWindow)
   createWindows()
   await startMcp(() => mainWindow)
+}
+
+// .cascade files the OS hands us (file association): queued until the editor subscribes.
+const pendingOpenFiles: string[] = []
+let openFileReady = false
+function openFiles(argv: string[], cwd = process.cwd()): void {
+  for (const arg of argv) {
+    if (!/\.cascade$/i.test(arg) || arg.startsWith('-')) continue
+    // Linux launchers pass %U as file:// URIs.
+    const file = arg.startsWith('file://') ? fileURLToPath(arg) : resolve(cwd, arg)
+    if (!existsSync(file)) continue
+    if (openFileReady && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('window:openFile', file)
+    else pendingOpenFiles.push(file)
+  }
 }
 
 if (process.argv.includes('--mcp-stdio')) {
@@ -182,7 +207,10 @@ if (process.argv.includes('--mcp-stdio')) {
 } else if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
+  openFiles(process.argv.slice(1))
+  app.on('open-file', (event, file) => { event.preventDefault(); openFiles([file]) })
+  app.on('second-instance', (_event, argv, cwd) => {
+    openFiles(argv.slice(1), cwd)
     if (!mainWindow || mainWindow.isDestroyed()) return
     if (mainWindow.isMinimized()) mainWindow.restore()
     if (mainWindow.isVisible()) { mainWindow.show(); mainWindow.focus() }
@@ -202,12 +230,15 @@ if (process.argv.includes('--mcp-stdio')) {
 }
 
 let fontList: Promise<string[]> | null = null
-/** Installed font families via fontconfig (Linux). Cached for the session. */
+/** Installed font families via fontconfig (Linux) or GDI+ (Windows). Cached for the session. */
 function systemFonts(): Promise<string[]> {
+  const [command, args] = process.platform === 'win32'
+    ? ['powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Add-Type -AssemblyName System.Drawing; (New-Object System.Drawing.Text.InstalledFontCollection).Families | ForEach-Object { $_.Name }']]
+    : ['fc-list', ['--format', '%{family[0]}\\n']]
   fontList ??= new Promise((resolve) => {
-    execFile('fc-list', ['--format', '%{family[0]}\\n'], { maxBuffer: 16 * 1024 * 1024 }, (error, stdout) => {
+    execFile(command, args, { maxBuffer: 16 * 1024 * 1024, windowsHide: true }, (error, stdout) => {
       if (error) return resolve([])
-      const names = new Set(stdout.split('\n').map((s) => s.trim()).filter((s) => s && !s.startsWith('.')))
+      const names = new Set(stdout.split(/\r?\n/).map((s) => s.trim()).filter((s) => s && !s.startsWith('.')))
       resolve([...names].sort((a, b) => a.localeCompare(b)))
     })
   })

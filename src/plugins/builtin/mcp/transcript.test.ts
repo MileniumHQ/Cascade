@@ -69,8 +69,8 @@ test('formats an interleaved, id-addressable transcript', () => {
 test('the words view gives exact pitch and loudness per word', () => {
   const { app, analyses } = editor()
   const out = formatTranscript(buildIndex(app.project(), analyses), { fps: app.fps(), view: 'words', maxLines: 100, ...labels(new Ids()) })
-  expect(out).toContain('w6 00:00:04.06 *Really* +4.0st +3.0dB')
-  expect(out).toContain('w7 00:00:04.19 great! +1.2st -1.0dB')
+  expect(out).toContain('w6 00:00:04.06–00:00:04.18 *Really* +4.0st +3.0dB')
+  expect(out).toContain('w7 00:00:04.19–00:00:05.03 great! +1.2st -1.0dB')
 })
 
 test('search finds phrases across punctuation and returns word ranges', () => {
@@ -141,4 +141,17 @@ test('anchors that were cut are rejected and nothing is applied', () => {
     { op: 'ripple_delete', start: 'w2.start', end: 'w3.end' }
   ] }, ids, analyses)).toThrow(/not on the timeline/)
   expect(app.project()).toBe(before)
+})
+
+test('repeated placements of the same words get distinct ids', () => {
+  const { app, analyses } = editor()
+  app.doc.transact('repeat', d => {
+    const tl = d.timelines[d.activeTimeline]
+    tl.tracks.find(t => t.kind === 'audio')!.clips.push({ id: 'again', type: 'audio', mediaId: 'm1', name: 'talk', start: S(20), duration: S(2), sourceIn: S(99.9), properties: [], data: {} })
+  })
+  const index = buildIndex(app.project(), analyses)
+  const so = index.words.filter(w => w.text === 'So,')
+  expect(so).toHaveLength(2)
+  expect(new Set(so.map(w => w.key)).size).toBe(2)
+  expect(new Set(index.sentences.map(s => s.key)).size).toBe(index.sentences.length)
 })

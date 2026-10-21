@@ -100,6 +100,7 @@ export function ExportPanel(props: { ctx: PanelContext }) {
   const tl = () => project().timelines[project().activeTimeline]
   const hasInOut = () => tl()?.inPoint !== undefined || tl()?.outPoint !== undefined
   const range = createMemo(() => {
+    project() // app.duration() isn't reactive; track edits (MCP, undo, open) through the project
     const dur = app.duration()
     if (rangeMode() === 'inout' && hasInOut()) return { start: tl()!.inPoint ?? 0, end: tl()!.outPoint ?? dur }
     return { start: 0, end: dur }

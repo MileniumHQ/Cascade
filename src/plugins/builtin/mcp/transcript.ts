@@ -5,7 +5,7 @@
 import type { AnalysisPart, AnalysisSentence, SourceAnalysis } from '@shared/analysis'
 import { clipEnd, type Clip, type Id, type Project, type Track } from '@shared/project'
 import { FLICKS, formatTimecode, type Flicks, type FrameRate } from '@shared/time'
-import { constantMap, type TimeMap } from '@core/time-remap'
+import { constantMap, sourceSpan, type TimeMap } from '@core/time-remap'
 
 /** Cached analyses per source file path. */
 export type Analyses = Map<string, SourceAnalysis[]>
@@ -69,8 +69,10 @@ export function buildIndex(project: Project, analyses: Analyses, timeMap: (clip:
       const media = clip.mediaId ? project.media[clip.mediaId] : undefined
       if (!media?.path || !(media.type === 'video' || media.type === 'audio')) continue
       const map = timeMap(clip)
-      const srcStart = clip.sourceIn, srcEnd = clip.sourceIn + map.offset(clip.duration)
+      const { lo: srcStart, hi: srcEnd } = sourceSpan(clip, map)
       const toTimeline = (src: Flicks) => Math.min(clipEnd(clip), Math.max(clip.start, clip.start + Math.round(map.localAt(src - clip.sourceIn))))
+      // A reversed clip plays a word's end before its start.
+      const span = (a: Flicks, b: Flicks) => (map.reversed ? { start: toTimeline(b), end: toTimeline(a) } : { start: toTimeline(a), end: toTimeline(b) })
       const inClip = (src: Flicks) => src >= srcStart && src < srcEnd
       const list = pick(analyses.get(media.path), srcStart, srcEnd)
       if (!list.length) { out.unanalyzed.push({ clip, track }); continue }
@@ -86,9 +88,10 @@ export function buildIndex(project: Project, analyses: Analyses, timeMap: (clip:
             for (let i = s.words[0]; i < s.words[1]; i++) {
               const w = a.words[i]
               if (!w || !fresh((w.start + w.end) / 2)) continue
-              words.push({ key: `${clip.mediaId}|${track.id}|${w.start}`, clipId: clip.id, trackId: track.id, text: w.text, start: toTimeline(w.start), end: toTimeline(w.end), filler: !!w.filler, db: w.db, st: w.st, emphasis: !!w.emphasis, p: w.p })
+              words.push({ key: `${clip.mediaId}|${track.id}|${w.start}`, clipId: clip.id, trackId: track.id, text: w.text, ...span(w.start, w.end), filler: !!w.filler, db: w.db, st: w.st, emphasis: !!w.emphasis, p: w.p })
             }
             if (!words.length) continue
+            if (map.reversed) words.reverse()
             out.words.push(...words)
             out.sentences.push({ key: `${clip.mediaId}|${track.id}|s${s.start}`, clipId: clip.id, start: words[0].start, end: words.at(-1)!.end, words,
               partial: words.length < s.words[1] - s.words[0], pitch: s.pitch, speaker: s.speaker })
@@ -96,7 +99,7 @@ export function buildIndex(project: Project, analyses: Analyses, timeMap: (clip:
           for (const e of a.events) {
             const from = Math.max(e.start, srcStart), to = Math.min(e.end, srcEnd)
             if (to <= from || covered(used, from)) continue
-            out.events.push({ cue: e.cue, start: toTimeline(from), end: toTimeline(to), score: e.score, underSpeech: !!e.underSpeech, clipId: clip.id })
+            out.events.push({ cue: e.cue, ...span(from, to), score: e.score, underSpeech: !!e.underSpeech, clipId: clip.id })
           }
         }
         if (shots) for (const t of a.shots) if (fresh(t) && t > srcStart) out.shots.push({ t: toTimeline(t), clipId: clip.id })
@@ -106,6 +109,16 @@ export function buildIndex(project: Project, analyses: Analyses, timeMap: (clip:
   }
   const byStart = <T extends { start: Flicks }>(x: T[]) => x.sort((a, b) => a.start - b.start)
   byStart(out.words); byStart(out.sentences); byStart(out.events)
+  // The same source moment placed twice on a track (repeats, stutters) gets #2, #3… in timeline order.
+  const unique = (items: { key: string }[]) => {
+    const seen = new Map<string, number>()
+    for (const x of items) {
+      const n = (seen.get(x.key) ?? 0) + 1
+      seen.set(x.key, n)
+      if (n > 1) x.key += `#${n}`
+    }
+  }
+  unique(out.words); unique(out.sentences)
   out.shots.sort((a, b) => a.t - b.t)
   return out
 }
@@ -128,7 +141,44 @@ function showPitch(s: TSentence, typical: number) {
   return tag + (s.pitch.end === 'rise' ? ' ↗' : '')
 }
 
+/**
+ * A source's own transcript, in source time, merged across its cached analyses (widest first,
+ * later ones fill gaps). Words and sentences are numbered by position (1-based) for source anchors.
+ */
+export interface SourceIndex extends TIndex {
+  wordNo: Map<TWord, number>
+  sentenceNo: Map<TSentence, number>
+}
+export function buildSourceIndex(mediaId: Id, list: SourceAnalysis[] | undefined): SourceIndex {
+  const out: SourceIndex = { words: [], sentences: [], events: [], shots: [], clips: [], unanalyzed: [], wordNo: new Map(), sentenceNo: new Map() }
+  const used: { start: Flicks; end: Flicks }[] = []
+  for (const a of pick(list, 0, Number.MAX_SAFE_INTEGER)) {
+    const fresh = (t: Flicks) => t >= a.range.start && t < a.range.end && !covered(used, t)
+    for (const s of a.sentences) {
+      const words: TWord[] = []
+      for (let i = s.words[0]; i < s.words[1]; i++) {
+        const w = a.words[i]
+        if (w && fresh((w.start + w.end) / 2)) words.push({ key: `${mediaId}|src|${w.start}`, clipId: '', trackId: '', text: w.text, start: w.start, end: w.end, filler: !!w.filler, db: w.db, st: w.st, emphasis: !!w.emphasis, p: w.p })
+      }
+      if (!words.length) continue
+      out.sentences.push({ key: `${mediaId}|src|s${s.start}`, clipId: '', start: words[0].start, end: words.at(-1)!.end, words, partial: words.length < s.words[1] - s.words[0], pitch: s.pitch, speaker: s.speaker })
+    }
+    for (const e of a.events) if (fresh(e.start)) out.events.push({ cue: e.cue, start: e.start, end: e.end, score: e.score, underSpeech: !!e.underSpeech, clipId: '' })
+    for (const t of a.shots) if (fresh(t)) out.shots.push({ t, clipId: '' })
+    used.push(a.range)
+  }
+  out.sentences.sort((a, b) => a.start - b.start)
+  out.sentences.forEach((s, i) => out.sentenceNo.set(s, i + 1))
+  out.words = out.sentences.flatMap((s) => s.words)
+  out.words.forEach((w, i) => out.wordNo.set(w, i + 1))
+  out.events.sort((a, b) => a.start - b.start)
+  out.shots.sort((a, b) => a.t - b.t)
+  return out
+}
+
 export interface FormatOptions {
+  /** First line; defaults to the timeline legend. */
+  legend?: string
   fps: FrameRate
   view: 'sentences' | 'words'
   start?: Flicks
@@ -141,6 +191,7 @@ export interface FormatOptions {
   trackLabel: (t: Track) => string
 }
 
+export const SOURCE_LEGEND = 'Source time (not on the timeline). m#:w#/m#:s# ids are source anchors for add_clip sourceIn/sourceOut (m1:w12.start-40ms, m1:s3.end+80ms). Markup as in the timeline transcript: {um}=filler, *word*=stressed, _word_=very quiet, word?=low confidence, [lively]/[flat], ↗=rising ending, ⏸ pause, ✂ shot cut, [CUE] sound event.'
 export const TRANSCRIPT_LEGEND = 'Timeline time. w#/s# ids are anchors for any time in timeline_apply_edits/frame_get (w12, w12.end, s3.start, w12.end+80ms). {um}=filler, *word*=stressed (pitch and loudness peak above the sentence trend; conservative, ≤1 per sentence; or ≥ +6 dB louder), _word_=very quiet (≤ -16 dB, may be hard to hear), word?=low confidence, [lively]/[flat]=pitch variation vs the speaker’s norm, ↗=rising ending (question, uncertainty, list continuing), (part)=sentence partly outside the clip. ⏸ pause, ✂ shot cut, [CUE] sound event.'
 
 export function formatTranscript(index: TIndex, o: FormatOptions): string {
@@ -148,7 +199,7 @@ export function formatTranscript(index: TIndex, o: FormatOptions): string {
   const lo = o.start ?? 0, hi = o.end ?? Number.MAX_SAFE_INTEGER
   const inRange = (a: Flicks, b: Flicks) => b > lo && a < hi
   const clipOk = (id: Id) => !o.clipId || id === o.clipId || index.clips.some((c) => c.clip.id === id && c.clip.linkId && index.clips.some((d) => d.clip.id === o.clipId && d.clip.linkId === c.clip.linkId))
-  const lines: string[] = [TRANSCRIPT_LEGEND]
+  const lines: string[] = [o.legend ?? TRANSCRIPT_LEGEND]
   for (const c of index.clips) {
     if (!clipOk(c.clip.id) || !inRange(c.clip.start, clipEnd(c.clip))) continue
     lines.push(`${o.clipLabel(c.clip)} ${JSON.stringify(c.mediaName)} on ${o.trackLabel(c.track)} ${tc(c.clip.start)}–${tc(clipEnd(c.clip))} source ${tc(c.clip.sourceIn)}${c.speed === null ? ' speed keyframed' : c.speed !== 1 ? ` speed ${+c.speed.toFixed(3)}` : ''} · ${c.role === 'shots' ? 'shots only (speech on linked audio)' : `analysis: ${c.parts.join(', ')}`}`)
@@ -166,7 +217,7 @@ export function formatTranscript(index: TIndex, o: FormatOptions): string {
     items.push({ t: s.start, line: () => {
       const head = `${o.sentenceId(s)} ${tc(s.start)}–${tc(s.end)} ${first}${s.words.length > 1 ? `–${last}` : ''}${s.speaker !== undefined ? ` S${s.speaker + 1}` : ''}${showPitch(s, typical)}${s.partial ? ' (part)' : ''} `
       if (o.view === 'sentences') return [head + s.words.map(markup).join(' ')]
-      return [head, ...s.words.map((w) => `  ${o.wordId(w)} ${tc(w.start)} ${markup(w)}${w.st !== undefined ? ` ${signed(w.st, 'st')}` : ''}${w.db !== undefined ? ` ${signed(w.db, 'dB')}` : ''}`)]
+      return [head, ...s.words.map((w) => `  ${o.wordId(w)} ${tc(w.start)}–${tc(w.end)} ${markup(w)}${w.st !== undefined ? ` ${signed(w.st, 'st')}` : ''}${w.db !== undefined ? ` ${signed(w.db, 'dB')}` : ''}`)]
     } })
   }
   // Pauses between consecutive shown words (only notable ones).
@@ -187,7 +238,7 @@ export function formatTranscript(index: TIndex, o: FormatOptions): string {
     }
     lines.push(...add); shown++
   }
-  if (!items.length) lines.push(index.clips.length ? 'No speech, events or shots in this range.' : 'No analyzed clips. Use media_analyze on the sources (media_list), then retry.')
+  if (!items.length) lines.push(index.clips.length || o.legend ? 'No speech, events or shots in this range.' : 'No analyzed clips. Use media_analyze on the sources (media_list), then retry.')
   return lines.join('\n')
 }
 

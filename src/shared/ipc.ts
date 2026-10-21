@@ -61,6 +61,14 @@ export interface ThumbnailStrip {
   partial: boolean
 }
 
+/** Decoded stereo PCM for a source range: interleaved Float32 L/R frames at `sampleRate`, as a URL. */
+export interface PcmData {
+  url: string
+  sampleRate: number
+  channels: 2
+  frames: number
+}
+
 export interface WaveformData {
   /** Peaks per second of source audio. */
   rate: number
@@ -111,7 +119,7 @@ export interface ExportRequest {
  * curves and pitch settings); main only runs ffmpeg.
  * - `source`: decode the source range; the render worker resamples it (pitch follows speed).
  * - `stretch`: ffmpeg time-stretches the range with rubberband (pitch independent of speed);
- *   the worker plays the result at rate 1 from `localStart`.
+ *   the worker plays the result at rate 1 from `localStart`. Reversed clips always use this.
  */
 export interface ClipAudioPlan {
   mode: 'source' | 'stretch'
@@ -125,6 +133,8 @@ export interface ClipAudioPlan {
   tempo?: number
   pitch?: number
   commands?: { t: number; tempo: number; pitch: number }[]
+  /** Stretch only: the clip plays the range backwards (ffmpeg reverses it before stretching). */
+  reverse?: boolean
 }
 
 export interface ExportProgress {
@@ -168,7 +178,25 @@ export interface HostInfo {
   versions: Record<string, string>
   paths: { userData: string; documents: string; home: string; plugins: string; projects: string }
   ffmpeg: { path: string; version: string; hwEncoders: string[] }
-  mcp: { url: string; enabled: boolean; token?: string; command?: string }
+  mcp: {
+    url: string
+    enabled: boolean
+    token?: string
+    command?: string
+    /** Launching the stdio proxy (`--mcp-stdio`) with this executable and profile. */
+    stdio?: { command: string; args: string[]; env?: Record<string, string> }
+  }
+}
+
+/** In-app update progress (packaged Windows / AppImage / RPM builds; `unsupported` elsewhere). */
+export interface UpdateState {
+  status: 'unsupported' | 'idle' | 'checking' | 'downloading' | 'ready' | 'error'
+  current: string
+  /** The version being downloaded or ready to install. */
+  version?: string
+  percent?: number
+  error?: string
+  checkedAt?: number
 }
 
 export interface HostBridge {
@@ -183,6 +211,8 @@ export interface HostBridge {
     close(): void
     onMaximizeChange(fn: (maximized: boolean) => void): () => void
     setTitle(title: string): void
+    /** .cascade files the OS asked to open (launch argv, a second launch, macOS open-file), including ones queued before subscribing. */
+    onOpenFile(fn: (path: string) => void): () => void
   }
 
   dialog: {
@@ -210,6 +240,8 @@ export interface HostBridge {
     probe(path: string): Promise<MediaMeta & { error?: string }>
     thumbnails(path: string, opts?: { height?: number }): Promise<ThumbnailStrip | null>
     waveform(path: string): Promise<WaveformData | null>
+    /** Decode a source range (at most 10 minutes) to stereo PCM. Cached per file and range. */
+    pcm(path: string, startSec: number, durationSec: number, sampleRate?: number): Promise<PcmData | null>
     /** Create (or reuse) a Chromium-playable proxy. Resolves to the proxy path. */
     proxy(path: string): Promise<string | null>
     /** Single still frame as a URL (for image thumbnails / posters). */
@@ -226,6 +258,15 @@ export interface HostBridge {
 
   /** External coding agents over ACP, for the agent panel. */
   agents: AgentsBridge
+
+  update: {
+    state(): Promise<UpdateState>
+    /** Check GitHub releases now; a found update downloads in the background. */
+    check(): Promise<UpdateState>
+    /** Quit, install the downloaded update and reopen. */
+    install(): Promise<void>
+    onState(fn: (state: UpdateState) => void): () => void
+  }
 
   /** Local source analysis (words, prosody, sound events, shots). */
   analysis: AnalysisBridge

@@ -1,4 +1,5 @@
 import type { CascadeAPI } from '@core/app'
+import type { MediaItem } from '@shared/project'
 import type { OverlayContext } from '@core/plugin-api'
 import { Emitter } from '@core/events'
 import { Value } from '@core/value'
@@ -66,7 +67,7 @@ export class PreviewEngine {
           document: doc,
           mode: 'preview',
           mediaUrl: (p) => app.host!.mediaUrl(p),
-          audio: { context: this.audio, destination: this.master },
+          audio: { context: this.audio, destination: this.master, getBuffer: (media, start, duration) => decodeRange(app, this.audio!, media, start, duration) },
           css: fontCss() + '\n#cascade-stage{font-family:"Inter",system-ui,sans-serif}'
         })
         this.stage.onFrame.on(() => this.onFrame.emit())
@@ -220,4 +221,22 @@ export class PreviewEngine {
     void this.audio?.close()
     this.iframe.remove()
   }
+}
+
+/** Decoded PCM of a source range (reverse playback in the preview), decoded by the host's ffmpeg. */
+async function decodeRange(app: CascadeAPI, context: BaseAudioContext, media: MediaItem, start: number, duration: number): Promise<AudioBuffer | null> {
+  if (!media.path || !app.host || duration <= 0) return null
+  const pcm = await app.host.media.pcm(media.path, start, duration, context.sampleRate)
+  if (!pcm?.frames) return null
+  const bytes: ArrayBuffer = await (await fetch(pcm.url)).arrayBuffer()
+  const data = new Float32Array(bytes)
+  const frames = Math.floor(data.length / 2)
+  const buffer = context.createBuffer(2, frames, pcm.sampleRate)
+  const left = buffer.getChannelData(0)
+  const right = buffer.getChannelData(1)
+  for (let i = 0; i < frames; i++) {
+    left[i] = data[i * 2]
+    right[i] = data[i * 2 + 1]
+  }
+  return buffer
 }

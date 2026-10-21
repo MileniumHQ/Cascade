@@ -1,0 +1,28 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<linearGradient id="page" x1="76" y1="21" x2="436" y2="491" gradientUnits="userSpaceOnUse">
+<stop stop-color="#0B4A30"/>
+<stop offset="1" stop-color="#0A2350"/>
+</linearGradient>
+<linearGradient id="flap" x1="326" y1="131" x2="400" y2="57" gradientUnits="userSpaceOnUse">
+<stop stop-color="#C9D8D3"/>
+<stop offset="1" stop-color="#8FA8A1"/>
+</linearGradient>
+<filter id="shadow" x="280" y="0" width="190" height="180" filterUnits="userSpaceOnUse">
+<feGaussianBlur stdDeviation="7"/>
+</filter>
+<clipPath id="logo-blue">
+<rect width="800" height="800" rx="150"/>
+</clipPath>
+</defs>
+<path d="M120 21H326L436 131V447C436 471.3 416.3 491 392 491H120C95.7 491 76 471.3 76 447V65C76 40.7 95.7 21 120 21Z" fill="url(#page)"/>
+<path d="M120 22.5H325.4L434.5 131.6V447C434.5 470.5 415.5 489.5 392 489.5H120C96.5 489.5 77.5 470.5 77.5 447V65C77.5 41.5 96.5 22.5 120 22.5Z" stroke="white" stroke-opacity="0.1" stroke-width="3"/>
+<path d="M326 21V115C326 124 333 141 350 141H436Z" fill="black" fill-opacity="0.45" filter="url(#shadow)"/>
+<path d="M326 21L436 131H346C335 131 326 122 326 111V21Z" fill="url(#flap)"/>
+<!-- The logo (resources/logo.svg) at full opacity: its 75% layers as they look on a light ground. -->
+<g transform="translate(156 186) scale(0.2286)">
+<path d="M75 225C75 142.157 142.157 75 225 75H725C807.843 75 875 142.157 875 225V650C875 774.264 774.264 875 650 875H225C142.157 875 75 807.843 75 725V225Z" fill="#32FF5B"/>
+<rect width="800" height="800" rx="150" fill="#43BDFF"/>
+<path d="M75 225C75 142.157 142.157 75 225 75H725C807.843 75 875 142.157 875 225V650C875 774.264 774.264 875 650 875H225C142.157 875 75 807.843 75 725V225Z" fill="#3FCDD6" clip-path="url(#logo-blue)"/>
+</g>
+</svg>

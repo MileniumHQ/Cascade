@@ -311,7 +311,7 @@ export class Stage {
       local,
       sourceTime: (clip.sourceIn + remap.offset(local)) / FLICKS,
       playing: o.playing && visible,
-      rate: (o.rate ?? 1) * remap.speedAt(local),
+      rate: (o.rate ?? 1) * remap.speedAt(local) * (remap.reversed ? -1 : 1),
       remap,
       clip,
       media,
@@ -472,7 +472,7 @@ export class Stage {
         const remap = clipTimeMap(clip, timeline, this.opts.registries)
         const state: ClipFrameState = {
           time: from, local, sourceTime: (clip.sourceIn + remap.offset(local)) / FLICKS,
-          playing: false, rate: remap.speedAt(local), remap, clip, media: clip.mediaId ? project.media[clip.mediaId] : undefined,
+          playing: false, rate: remap.speedAt(local) * (remap.reversed ? -1 : 1), remap, clip, media: clip.mediaId ? project.media[clip.mediaId] : undefined,
           project, mode: 'render', extra: {}, u: this.units
         }
         mounted.inst.update(state)

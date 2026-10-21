@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { mkdir, open, readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
-import type { HostBridge, ThumbnailStrip, WaveformData } from '../shared/ipc'
+import type { HostBridge, PcmData, ThumbnailStrip, WaveformData } from '../shared/ipc'
 import type { MediaMeta } from '../shared/project'
 import { flicksToSeconds, parseFrameRate, secondsToFlicks } from '../shared/time'
 import { capture, getFFmpegTools, spawnTracked } from './ffmpeg'
@@ -208,6 +208,27 @@ export function createMediaService(cacheRoot: string): HostBridge['media'] {
     } catch (error) { console.warn('Waveform generation failed:', errorMessage(error)); return null }
   }
 
+  async function pcm(path: string, startSec: number, durationSec: number, sampleRate = 48000): Promise<PcmData | null> {
+    try {
+      const info = await source(path)
+      const start = Math.max(0, Number(startSec) || 0)
+      const duration = Math.min(600, Math.max(0, Number(durationSec) || 0))
+      const rate = Math.round(Math.min(192000, Math.max(8000, sampleRate)))
+      if (!duration) return null
+      const output = join(info.dir, `pcm-${start.toFixed(4)}-${duration.toFixed(4)}-${rate}.f32`)
+      const data = async (): Promise<PcmData> => ({ url: mediaUrl(output), sampleRate: rate, channels: 2, frames: (await stat(output)).size / 8 })
+      if (await exists(output)) return await data()
+      return await once(output, async () => {
+        await mkdir(info.dir, { recursive: true })
+        const temporary = `${output}.partial`
+        // Input seeking: fast on long sources; a codec-priming packet of offset is fine here.
+        await encode(['-ss', String(start), '-i', path, '-t', String(duration), '-vn', '-ac', '2', '-ar', String(rate), '-c:a', 'pcm_f32le', '-f', 'f32le', temporary])
+        await rename(temporary, output)
+        return await data()
+      })
+    } catch (error) { console.warn('PCM decode failed:', errorMessage(error)); return null }
+  }
+
   async function poster(path: string, atSeconds = 0): Promise<string | null> {
     try {
       const info = await source(path)
@@ -241,5 +262,5 @@ export function createMediaService(cacheRoot: string): HostBridge['media'] {
     } catch (error) { console.warn('Proxy generation failed:', errorMessage(error)); return null }
   }
 
-  return { probe, thumbnails, waveform, proxy, poster }
+  return { probe, thumbnails, waveform, pcm, proxy, poster }
 }

@@ -25,7 +25,7 @@ export type Cleanup = () => void
 /** Mount a UI into `el`; return cleanup. */
 export type Mount<Ctx> = (el: HTMLElement, ctx: Ctx) => Cleanup | void
 
-/** Icons are a Lucide icon name (e.g. "film") or a raw `<svg …>` string. */
+/** Icons are a Cascade icon name (Lucide-style, e.g. "film"; see scripts/gen-icons.mjs), a bundled Material Symbol name, or a raw `<svg …>` string. */
 export type Icon = string
 
 export type PluginEnv = 'editor' | 'render'
@@ -185,6 +185,8 @@ export interface PropertyContribution extends Contribution {
    * The stage integrates it to map timeline time to source time; linked clips share it.
    */
   timeRemap?: string
+  /** Id of a toggle param that plays the clip's source backwards (with `timeRemap`). */
+  timeReverse?: string
   /** Custom inspector UI replacing the default param rows. */
   editor?: Mount<PropertyEditorContext>
   /** Compact one-line summary in the inspector header (e.g. "12px"). */
@@ -252,7 +254,7 @@ export interface ClipFrameState {
   /** Seconds into the source media (accounts for sourceIn and speed). */
   sourceTime: number
   playing: boolean
-  /** Playback rate × the clip's speed at this instant. */
+  /** Playback rate × the clip's speed at this instant (negative when the clip plays its source backwards). */
   rate: number
   /** Clip-local → source mapping (speed may vary over time). */
   remap: TimeMap
@@ -295,7 +297,7 @@ export interface StageAudio {
   context: BaseAudioContext
   /** Connect your source chain's end to this. */
   destination: AudioNode
-  /** Render mode: decoded PCM for a media range (seconds). */
+  /** Decoded PCM for a media range (seconds). Always in render mode; in the preview when the host can decode. */
   getBuffer?(media: MediaItem, startSec: number, durationSec: number): Promise<AudioBuffer | null>
   /**
    * Render mode: audio already processed for a clip (e.g. time-stretched by ffmpeg), starting at

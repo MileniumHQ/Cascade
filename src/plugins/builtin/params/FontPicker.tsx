@@ -2,10 +2,8 @@ import { createMemo, createResource, createSignal, For, onMount, Show } from 'so
 import type { CascadeAPI } from '@core/app'
 import { Icon } from '@ui/icon'
 import { Popover } from '@ui/kit'
+import { BUILTIN_FONTS as BUILTIN } from './fonts'
 import './font-picker.css'
-
-/** Always available: the bundled UI font and the CSS generic families. */
-const BUILTIN = ['Inter', 'system-ui', 'sans-serif', 'serif', 'monospace']
 const ROW_H = 30
 const LIST_H = 330
 

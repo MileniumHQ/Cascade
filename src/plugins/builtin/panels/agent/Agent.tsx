@@ -1,12 +1,14 @@
-import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from 'solid-js'
+import { createEffect, createMemo, createSignal, For, Index, Match, on, onCleanup, onMount, Show, Switch } from 'solid-js'
 import type { PanelContext } from '@core/plugin-api'
 import { Icon } from '@ui/icon'
 import { IconButton, openMenu, Popover, type MenuItem } from '@ui/kit'
-import type { AgentAttachment, SessionConfigOption } from '@shared/agents'
+import type { AgentAttachment, AgentUsage, KeyProvider, SessionConfigOption } from '@shared/agents'
 import { markdown } from './markdown'
+import { describeTool, modelParts, thoughtPreview } from './describe'
+import type { AgentTools } from '../../mcp'
 import {
   active, activeId, askFirst, cancel, chats, chooseProvider, closeChat, connect, draftProvider, flatOptions, newChat, providers, refreshProviders,
-  dropQueued, installProvider, startError, setStartError, installs, respond, status, resumeActive, send, sendQueued, setActiveId, setAskFirst, setOption, startChat, starting, type Chat, type Entry
+  dropQueued, fetchKeyProviders, fetchUsage, installProvider, setProviderKey, setEditorContext, startError, setStartError, installs, respond, status, resumeActive, send, sendQueued, setActiveId, setAskFirst, setOption, startChat, starting, type Chat, type Entry
 } from './state'
 
 // Brand marks (inline SVG keeps them crisp at 12–24px).
@@ -27,20 +29,50 @@ const TOOL_ICONS: Record<string, string> = {
   think: 'brain', fetch: 'globe', switch_mode: 'toggle-left', other: 'wrench'
 }
 /** "mcp__cascade__timeline_get" → "timeline_get" with the Cascade mark. */
-const toolLabel = (title: string) => {
-  const m = title.match(/(?:mcp__)?cascade(?:__|\.|: ?|\/)(\w+)/i)
-  return m ? { label: m[1].replace(/_/g, ' '), cascade: true } : { label: title, cascade: false }
+const toolLabel = (title: string) => describeTool({ title })
+
+type WorkEntry = Extract<Entry, { kind: 'tool' | 'thought' }>
+type Item = { kind: 'entry'; entry: Entry } | { kind: 'work'; entries: WorkEntry[] }
+/** Runs of tool calls and thoughts between messages become one collapsible group; empty thoughts are dropped. */
+function groupWork(entries: readonly Entry[]): Item[] {
+  const items: Item[] = []
+  for (const entry of entries) {
+    if (entry.kind === 'thought' && !entry.text.trim()) continue
+    if (entry.kind !== 'tool' && entry.kind !== 'thought') { items.push({ kind: 'entry', entry }); continue }
+    const last = items.at(-1)
+    if (last?.kind === 'work') last.entries.push(entry)
+    else items.push({ kind: 'work', entries: [entry] })
+  }
+  return items
 }
 
 export function AgentPanel(props: { ctx: PanelContext }) {
   connect(props.ctx.app.host?.agents)
+  setEditorContext(() => (props.ctx.app.services.get('agent-tools') as AgentTools | undefined)?.editorState() ?? '')
   return (
     <div class="ag">
       <Show when={props.ctx.app.host?.agents} fallback={<div class="ag-empty"><p>Agents are only available in the desktop app.</p></div>}>
+        <JobBar app={props.ctx.app} />
         <Thread />
         <Composer />
       </Show>
     </div>
+  )
+}
+
+/** Progress of a long agent job (captions, analysis, audio check, export), pinned above the thread. */
+function JobBar(props: { app: PanelContext['app'] }) {
+  const [job, setJob] = createSignal<ReturnType<AgentTools['activeJob']>>()
+  const timer = setInterval(() => setJob((props.app.services.get('agent-tools') as AgentTools | undefined)?.activeJob()), 300)
+  onCleanup(() => clearInterval(timer))
+  return (
+    <Show when={job()}>{(j) => (
+      <div class="ag-job" title={j().message}>
+        <div class="ag-job-text"><span class="ag-job-label">{j().label}</span><span class="ag-job-message">{j().message}</span>
+          <Show when={j().progress !== undefined}><span class="ag-job-pct">{Math.round(j().progress! * 100)}%</span></Show></div>
+        <div class={`ag-job-track${j().progress === undefined ? ' ag-job-indeterminate' : ''}`}><div class="ag-job-fill" style={{ width: j().progress === undefined ? undefined : `${j().progress! * 100}%` }} /></div>
+      </div>
+    )}</Show>
   )
 }
 
@@ -67,11 +99,16 @@ function Thread() {
   const observer = new MutationObserver(() => { if (pinned) scroller.scrollTop = scroller.scrollHeight })
   onMount(() => observer.observe(scroller, { childList: true, subtree: true, characterData: true }))
   onCleanup(() => observer.disconnect())
+  const items = createMemo(() => groupWork(chat()?.entries ?? []))
   createEffect(on(activeId, () => { pinned = true; queueMicrotask(() => { if (scroller) scroller.scrollTop = scroller.scrollHeight }) }))
   return (
     <div class="ag-thread" ref={scroller} onScroll={onScroll}>
       <Show when={chat()?.entries.length} fallback={<Hero />}>
-        <For each={chat()!.entries}>{(entry) => <Row entry={entry} />}</For>
+        <Index each={items()}>{(item, i) => (
+          <Show when={item().kind === 'work' && item() as Extract<Item, { kind: 'work' }>} fallback={<Row entry={(item() as Extract<Item, { kind: 'entry' }>).entry} />}>
+            {(w) => <WorkGroup entries={w().entries} live={!!chat()?.running && i === items().length - 1} />}
+          </Show>
+        )}</Index>
         <Show when={chat()!.running}><Working chat={chat()!} /></Show>
       </Show>
     </div>
@@ -111,19 +148,19 @@ function Row(props: { entry: Entry }) {
       <Match when={props.entry.kind === 'thought' && props.entry}>{(e) => (
         <div class="ag-work">
           <button class="ag-work-row" onClick={() => setOpen(!open())} aria-expanded={open()}>
-            <Icon name="brain" size={14} class="ag-work-icon" /><span class="ag-work-label">Thought</span>
+            <Icon name="brain" size={14} class="ag-work-icon" /><span class="ag-work-label ag-thought">{thoughtPreview(e().text) || 'Thought'}</span>
             <Icon name={open() ? 'chevron-down' : 'chevron-right'} size={12} class="ag-chev" />
           </button>
           <Show when={open()}><div class="ag-work-detail ag-md" innerHTML={markdown(e().text)} /></Show>
         </div>
       )}</Match>
       <Match when={props.entry.kind === 'tool' && props.entry}>{(e) => {
-        const label = createMemo(() => toolLabel(e().title))
+        const label = createMemo(() => e().label ?? toolLabel(e().title))
         return (
           <div class={`ag-work ag-${e().status}`}>
             <button class="ag-work-row" onClick={() => setOpen(!open())} aria-expanded={open()} disabled={!e().detail}>
               <Icon name={label().cascade ? 'clapperboard' : TOOL_ICONS[e().toolKind] ?? 'wrench'} size={14} class="ag-work-icon" />
-              <span class="ag-work-label">{label().label}</span>
+              <span class={`ag-work-label ${label().mono ? 'ag-mono' : ''}`}>{label().label}</span>
               <Show when={e().status === 'failed'}><Icon name="x" size={12} class="ag-fail" /></Show>
               <Show when={e().detail}><Icon name={open() ? 'chevron-down' : 'chevron-right'} size={12} class="ag-chev" /></Show>
             </button>
@@ -143,6 +180,32 @@ function Row(props: { entry: Entry }) {
       )}</Match>
       <Match when={props.entry.kind === 'notice' && props.entry}>{(e) => <div class={`ag-notice ag-notice-${e().tone}`}>{e().text}</div>}</Match>
     </Switch>
+  )
+}
+
+/** A run of tool calls / thoughts. Short runs show inline; longer ones collapse to a summary (the live one shows its latest step). */
+function WorkGroup(props: { entries: WorkEntry[]; live: boolean }) {
+  const [open, setOpen] = createSignal(false)
+  const count = (kind: WorkEntry['kind']) => props.entries.filter(e => e.kind === kind).length
+  const failed = () => props.entries.filter(e => e.kind === 'tool' && e.status === 'failed').length
+  const summary = () => {
+    const tools = count('tool'), thoughts = count('thought')
+    return [tools && `${tools} ${tools === 1 ? 'step' : 'steps'}`, thoughts && `${thoughts} ${thoughts === 1 ? 'thought' : 'thoughts'}`, failed() && `${failed()} failed`].filter(Boolean).join(' · ')
+  }
+  const cascade = () => props.entries.some(e => e.kind === 'tool' && (e.label ?? toolLabel(e.title)).cascade)
+  return (
+    <Show when={props.entries.length > 2} fallback={<For each={props.entries}>{(e) => <Row entry={e} />}</For>}>
+      <div class={`ag-group ${open() ? 'open' : ''}`}>
+        <button class={`ag-work-row ag-group-head ${props.live ? 'ag-in_progress' : ''}`} onClick={() => setOpen(!open())} aria-expanded={open()}>
+          <Icon name={cascade() ? 'clapperboard' : 'list-tree'} size={14} class="ag-work-icon" />
+          <span class="ag-work-label">{props.live ? 'Working' : 'Worked'} · {summary()}</span>
+          <Icon name={open() ? 'chevron-down' : 'chevron-right'} size={12} class="ag-chev" />
+        </button>
+        <Show when={open()} fallback={<Show when={props.live}><div class="ag-group-body"><Row entry={props.entries[props.entries.length - 1]} /></div></Show>}>
+          <div class="ag-group-body"><For each={props.entries}>{(e) => <Row entry={e} />}</For></div>
+        </Show>
+      </div>
+    </Show>
   )
 }
 
@@ -208,7 +271,7 @@ function Composer() {
         <div class="ag-approval">
           <div class="ag-approval-head"><Icon name="shield-alert" size={13} /><span>Permission needed</span>
             <Show when={chat()!.permissions.length > 1}><span class="ag-count">1/{chat()!.permissions.length}</span></Show></div>
-          <div class="ag-approval-title">{toolLabel(p().toolCall.title ?? 'Tool call').label}</div>
+          <div class="ag-approval-title">{describeTool(p().toolCall).label}</div>
           <Show when={p().toolCall.rawInput}><pre class="ag-approval-detail">{(() => { const i = p().toolCall.rawInput as Record<string, unknown>; return typeof i?.command === 'string' ? i.command : JSON.stringify(i, null, 1) })()}</pre></Show>
           <div class="ag-approval-actions">
             <For each={p().options}>{(o) => (
@@ -256,6 +319,7 @@ function Composer() {
             <ModelPicker />
             <Show when={option('thought_level')}>{(o) => <><span class="ag-sep" /><OptionChip option={o()} icon="brain" /></>}</Show>
             <Show when={option('mode')}>{(o) => <OptionChip option={o()} icon="shield" />}</Show>
+            <UsageButton />
             <MoreMenu options={extras()} />
           </div>
           <Show when={busy() && !ready()} fallback={
@@ -277,6 +341,8 @@ function Composer() {
 const linkify = (text: string) => text.split(/(https?:\/\/\S+)/).map((part, i) => i % 2 ? <a href={part} target="_blank" rel="noreferrer">{part.length > 60 ? `${part.slice(0, 57)}…` : part}</a> : part)
 
 const optionName = (o: SessionConfigOption) => o.type === 'select' ? flatOptions(o).find(x => x.value === o.currentValue)?.name ?? String(o.currentValue) : o.currentValue ? 'On' : 'Off'
+/** Model chip: just the model ("google-vertex/Claude Opus 5.5" → "Claude Opus 5.5"). */
+const modelName = (o: SessionConfigOption) => modelParts(optionName(o)).name
 
 function OptionChip(props: { option: SessionConfigOption; icon: string }) {
   const [anchor, setAnchor] = createSignal<HTMLElement | null>(null)
@@ -317,18 +383,85 @@ function MoreMenu(props: { options: SessionConfigOption[] }) {
   return <button class="ag-chip ag-more" data-tip="More options" onClick={open}><Icon name="ellipsis" size={14} /></button>
 }
 
+const tokens = (n: number) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n)
+
+/** Plan limits for the chat's agent (Claude/Codex/Cursor) or token use (OpenCode), plus this chat's context fill. */
+function UsageButton() {
+  const [anchor, setAnchor] = createSignal<HTMLElement | null>(null)
+  const [usage, setUsage] = createSignal<AgentUsage | null>(null)
+  const [error, setError] = createSignal('')
+  const [loading, setLoading] = createSignal(false)
+  const chat = active
+  const provider = () => chat()?.providerId ?? draftProvider()
+  const load = (fresh = false) => {
+    const id = provider()
+    setLoading(true); setError('')
+    fetchUsage(id, fresh)
+      .then(u => { if (provider() === id) setUsage(u) })
+      .catch(e => { if (provider() === id) { setUsage(null); setError(String(e?.message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')) } })
+      .finally(() => setLoading(false))
+  }
+  const toggle = (e: MouseEvent) => {
+    if (anchor()) return setAnchor(null)
+    setUsage(null); setAnchor(e.currentTarget as HTMLElement); load()
+  }
+  const context = () => {
+    const u = chat()?.usage
+    if (!u?.size) return ''
+    const cost = u.cost !== undefined ? ` · ${u.currency === 'USD' || !u.currency ? '$' : `${u.currency} `}${u.cost.toFixed(2)}` : ''
+    return `${tokens(u.used)} / ${tokens(u.size)} context${cost}`
+  }
+  return (
+    <>
+      <button class="ag-chip ag-more" data-tip="Usage" disabled={!providerOf(provider())?.available} onClick={toggle}><Icon name="gauge" size={14} /></button>
+      <Show when={anchor()}>{(a) => (
+        <Popover anchor={a()} onClose={() => setAnchor(null)} placement="top" class="ag-pop ag-usage">
+          <div class="ag-usage-head">
+            <span>{providerOf(provider())?.name} usage</span>
+            <IconButton size="sm" icon="refresh-cw" tip="Refresh" onClick={() => load(true)} />
+          </div>
+          <Switch>
+            <Match when={loading() && !usage()}><p class="ag-picker-note"><Icon name="loader-circle" size={13} class="spin" /> Checking…</p></Match>
+            <Match when={error()}><p class="ag-picker-note error">{error()}</p></Match>
+            <Match when={usage()}>{(u) => (
+              <>
+                <For each={u().meters}>{(m) => (
+                  <div class="ag-meter">
+                    <div class="ag-meter-row"><span>{m.label}</span><span class="ag-meter-pct">{Math.round(m.percent)}%</span></div>
+                    <div class={`ag-meter-bar ${m.percent >= 90 ? 'hot' : ''}`}><span style={{ width: `${m.percent}%` }} /></div>
+                    <Show when={m.resets}><small>Resets {m.resets}</small></Show>
+                  </div>
+                )}</For>
+                <Show when={u().stats.length}>
+                  <div class="ag-stats">
+                    <For each={u().stats}>{(st) => <div class={`ag-stat ${st.sub ? 'sub' : ''}`}><span>{st.label}</span><span>{st.value}</span></div>}</For>
+                  </div>
+                </Show>
+                <Show when={u().note}><p class="ag-usage-note">{u().note}</p></Show>
+              </>
+            )}</Match>
+          </Switch>
+          <Show when={context()}><div class="ag-stats ag-usage-chat"><div class="ag-stat"><span>This chat</span><span>{context()}</span></div></div></Show>
+        </Popover>
+      )}</Show>
+    </>
+  )
+}
+
 function ModelPicker() {
   const [anchor, setAnchor] = createSignal<HTMLElement | null>(null)
   const [query, setQuery] = createSignal('')
   const [rail, setRail] = createSignal(draftProvider())
   const [loading, setLoading] = createSignal('')
+  // OpenCode only: the /connect view (model provider + API key) instead of the model list.
+  const [keys, setKeys] = createSignal(false)
   const chat = active
   const provider = () => chat()?.providerId ?? draftProvider()
   const model = () => chat()?.options.find(o => o.category === 'model')
-  const label = () => (model() && optionName(model()!)) || providerOf(provider())?.name || 'Agent'
+  const label = () => (model() && modelName(model()!)) || providerOf(provider())?.name || 'Agent'
   const toggle = (e: MouseEvent) => {
     if (anchor()) return setAnchor(null)
-    setRail(provider()); setQuery(''); setAnchor(e.currentTarget as HTMLElement)
+    setRail(provider()); setQuery(''); setKeys(false); setAnchor(e.currentTarget as HTMLElement)
     void refreshProviders()
   }
   // Models come from a live session; open one for the rail's provider when needed.
@@ -351,7 +484,7 @@ function ModelPicker() {
   const items = () => {
     const m = sameProvider() ? model() : undefined
     const q = query().toLowerCase()
-    return m ? flatOptions(m).filter(o => !q || o.name.toLowerCase().includes(q) || o.value.toLowerCase().includes(q)) : []
+    return m ? flatOptions(m).map(o => ({ ...o, ...modelParts(o.name) })).filter(o => !q || o.name.toLowerCase().includes(q) || o.value.toLowerCase().includes(q) || o.provider?.toLowerCase().includes(q)) : []
   }
   return (
     <>
@@ -362,17 +495,23 @@ function ModelPicker() {
         <Popover anchor={a()} onClose={() => setAnchor(null)} placement="top" class="ag-picker">
           <div class="ag-rail">
             <For each={providers()}>{(p) => (
-              <button class={`ag-rail-btn ${rail() === p.id ? 'on' : ''} ${p.available ? '' : 'off'}`} data-tip={p.available ? p.name : `${p.name}: ${p.reason}`} onClick={() => setRail(p.id)}>
+              <button class={`ag-rail-btn ${rail() === p.id ? 'on' : ''} ${p.available ? '' : 'off'}`} data-tip={p.available ? p.name : `${p.name}: ${p.reason}`} onClick={() => { setRail(p.id); setKeys(false) }}>
                 <Mark provider={p.id} size={20} />
               </button>
             )}</For>
           </div>
           <div class="ag-picker-main">
-            <div class="ag-picker-head">{providerOf(rail())?.name}</div>
-            <Show when={sameProvider() && model()}>
+            <div class="ag-picker-head">
+              <span>{providerOf(rail())?.name}</span>
+              <Show when={rail() === 'opencode' && providerOf(rail())?.available}>
+                <button class={`ag-head-btn ${keys() ? 'on' : ''}`} onClick={() => setKeys(!keys())}><Icon name="key" size={13} /><span>Connect provider</span></button>
+              </Show>
+            </div>
+            <Show when={keys()}><KeyConnect agent={rail()} onSaved={() => setKeys(false)} /></Show>
+            <Show when={!keys() && sameProvider() && model()}>
               <label class="ag-search"><Icon name="search" size={14} /><input placeholder="Search models…" value={query()} onInput={(e) => setQuery(e.currentTarget.value)} /></label>
             </Show>
-            <div class="ag-models">
+            <div class="ag-models" hidden={keys()}>
               <Switch>
                 <Match when={!providerOf(rail())?.available}>
                   <p class="ag-picker-note">{providerOf(rail())?.reason}</p>
@@ -408,7 +547,7 @@ function ModelPicker() {
                 <Match when={true}>
                   <For each={items()} fallback={<p class="ag-picker-note">No models found</p>}>{(o) => (
                     <button class={`menu-item ag-pick ${o.value === model()!.currentValue ? 'active' : ''}`} onClick={() => { setAnchor(null); void setOption(chat()!.id, model()!.id, o.value) }}>
-                      <span class="ag-pick-text"><span>{o.name}</span><Show when={o.description}><small>{o.description}</small></Show></span>
+                      <span class="ag-pick-text"><span>{o.name}</span><Show when={o.provider || o.description}><small>{[o.provider, o.description].filter(Boolean).join(' · ')}</small></Show></span>
                       <Show when={o.value === model()!.currentValue}><Icon name="check" size={13} /></Show>
                     </button>
                   )}</For>
@@ -422,3 +561,59 @@ function ModelPicker() {
   )
 }
 
+
+const errorText = (e: unknown) => String((e as Error)?.message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+
+/** OpenCode's /connect: pick a model provider, paste its API key. */
+function KeyConnect(props: { agent: string; onSaved: () => void }) {
+  const [list, setList] = createSignal<KeyProvider[] | null>(null)
+  const [query, setQuery] = createSignal('')
+  const [picked, setPicked] = createSignal<KeyProvider | null>(null)
+  const [key, setKey] = createSignal('')
+  const [busy, setBusy] = createSignal(false)
+  const [error, setError] = createSignal('')
+  const load = () => fetchKeyProviders(props.agent).then(setList).catch(e => { setList([]); setError(errorText(e)) })
+  onMount(() => void load())
+  const shown = () => {
+    const q = query().toLowerCase()
+    return (list() ?? []).filter(p => !q || p.name.toLowerCase().includes(q) || p.id.includes(q))
+  }
+  const pick = (p: KeyProvider) => { setPicked(p); setKey(''); setError('') }
+  const apply = async (value: string | null) => {
+    const p = picked()
+    if (!p || busy() || (value !== null && !value.trim())) return
+    setBusy(true); setError('')
+    try { await setProviderKey(props.agent, p.id, value); if (value !== null) return props.onSaved(); setPicked(null); await load() }
+    catch (e) { setError(errorText(e)) }
+    finally { setBusy(false) }
+  }
+  return (
+    <Show when={picked()} fallback={
+      <>
+        <label class="ag-search"><Icon name="search" size={14} /><input placeholder="Search providers…" value={query()} onInput={(e) => setQuery(e.currentTarget.value)} /></label>
+        <div class="ag-models">
+          <Show when={error()}><p class="ag-picker-note error">{error()}</p></Show>
+          <Show when={list()} fallback={<p class="ag-picker-note"><Icon name="loader-circle" size={13} class="spin" /> Loading providers…</p>}>
+            <For each={shown()} fallback={<p class="ag-picker-note">No providers found</p>}>{(p) => (
+              <button class="menu-item ag-pick" onClick={() => pick(p)}>
+                <span class="ag-pick-text"><span>{p.name}</span><Show when={p.connected}><small>Connected</small></Show></span>
+                <Show when={p.connected}><Icon name="check" size={13} /></Show>
+              </button>
+            )}</For>
+          </Show>
+        </div>
+      </>
+    }>{(p) => (
+      <form class="ag-key" onSubmit={(e) => { e.preventDefault(); void apply(key()) }}>
+        <button type="button" class="ag-key-back" onClick={() => setPicked(null)}><Icon name="chevron-left" size={13} />{p().name}</button>
+        <input class="ag-key-input" type="password" placeholder={p().connected ? 'Paste a new API key to replace the saved one' : 'Paste API key'} autofocus spellcheck={false} value={key()} onInput={(e) => setKey(e.currentTarget.value)} />
+        <Show when={error()}><p class="ag-picker-note error">{error()}</p></Show>
+        <div class="ag-key-actions">
+          <Show when={p().connected}><button type="button" class="btn btn-sm" disabled={busy()} onClick={() => void apply(null)}><Icon name="trash-2" size={13} />Remove</button></Show>
+          <button type="submit" class="btn btn-sm btn-primary" disabled={busy() || !key().trim()}>{busy() ? 'Saving…' : 'Save key'}</button>
+        </div>
+        <small class="ag-key-note">Stored by OpenCode on this computer, like its /connect command.</small>
+      </form>
+    )}</Show>
+  )
+}

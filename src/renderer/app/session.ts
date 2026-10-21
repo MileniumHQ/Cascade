@@ -19,7 +19,8 @@ export function createSession(app: CascadeApp) {
   async function defaultPath(name: string) {
     const info = await host.info()
     const safe = name.replace(/[^\w\- ]+/g, '').trim() || 'Untitled'
-    return `${info.paths.projects}/${safe}.cascade`
+    const sep = /^[a-zA-Z]:\\/.test(info.paths.projects) ? '\\' : '/'
+    return `${info.paths.projects}${sep}${safe}.cascade`
   }
 
   async function newProject(name: string, settings: Partial<ProjectSettings>) {

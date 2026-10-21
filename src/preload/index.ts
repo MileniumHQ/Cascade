@@ -16,7 +16,12 @@ const bridge: HostBridge = {
     toggleMaximize: () => ipcRenderer.send('window:toggleMaximize'),
     close: () => ipcRenderer.send('window:close'),
     setTitle: (title) => ipcRenderer.send('window:setTitle', title),
-    onMaximizeChange: (fn) => on('window:maximizeChange', fn)
+    onMaximizeChange: (fn) => on('window:maximizeChange', fn),
+    onOpenFile: (fn) => {
+      const off = on('window:openFile', fn)
+      ipcRenderer.send('window:openFileReady')
+      return off
+    }
   },
   dialog: {
     openFiles: (opts) => ipcRenderer.invoke('dialog:openFiles', opts),
@@ -39,6 +44,7 @@ const bridge: HostBridge = {
     probe: (path) => ipcRenderer.invoke('media:probe', path),
     thumbnails: (path, opts) => ipcRenderer.invoke('media:thumbnails', path, opts),
     waveform: (path) => ipcRenderer.invoke('media:waveform', path),
+    pcm: (path, startSec, durationSec, sampleRate) => ipcRenderer.invoke('media:pcm', path, startSec, durationSec, sampleRate),
     proxy: (path) => ipcRenderer.invoke('media:proxy', path),
     poster: (path, atSeconds) => ipcRenderer.invoke('media:poster', path, atSeconds)
   },
@@ -49,6 +55,12 @@ const bridge: HostBridge = {
     cancel: () => ipcRenderer.invoke('transcribe:cancel'),
     onProgress: (fn) => on('transcribe:progress', fn)
   },
+  update: {
+    state: () => ipcRenderer.invoke('update:state'),
+    check: () => ipcRenderer.invoke('update:check'),
+    install: () => ipcRenderer.invoke('update:install'),
+    onState: (fn) => on('update:state', fn)
+  },
   agents: {
     providers: () => ipcRenderer.invoke('agents:providers'),
     start: (providerId, options) => ipcRenderer.invoke('agents:start', providerId, options),
@@ -58,6 +70,10 @@ const bridge: HostBridge = {
     respond: (id, requestId, optionId) => ipcRenderer.invoke('agents:respond', id, requestId, optionId),
     close: (id) => ipcRenderer.invoke('agents:close', id),
     install: (providerId) => ipcRenderer.invoke('agents:install', providerId),
+    usage: (providerId, fresh) => ipcRenderer.invoke('agents:usage', providerId, fresh),
+    keyProviders: (providerId) => ipcRenderer.invoke('agents:keyProviders', providerId),
+    saveKey: (providerId, target, key) => ipcRenderer.invoke('agents:saveKey', providerId, target, key),
+    removeKey: (providerId, target) => ipcRenderer.invoke('agents:removeKey', providerId, target),
     onEvent: (fn) => on('agents:event', fn)
   },
   analysis: {

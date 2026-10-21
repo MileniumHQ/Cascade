@@ -59,7 +59,7 @@ export async function renderAudio(scope: ExportScope, ffmpeg: string, req: Expor
     progress(`Time-stretching audio: ${media.name}`)
     const n = Object.keys(sources).length
     const path = join(directory, `clip-${n}.f32`)
-    const filters = [`atrim=start=${plan.sourceStart}:end=${plan.sourceEnd}`, 'asetpts=PTS-STARTPTS']
+    const filters = [`atrim=start=${plan.sourceStart}:end=${plan.sourceEnd}`, 'asetpts=PTS-STARTPTS', ...(plan.reverse ? ['areverse'] : [])]
     if (plan.commands?.length) {
       const cmds = join(directory, `clip-${n}.cmd`)
       await writeFile(cmds, plan.commands.map((c) => `${c.t.toFixed(6)} rubberband tempo ${c.tempo.toFixed(6)}, rubberband pitch ${c.pitch.toFixed(6)};`).join('\n'))

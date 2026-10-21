@@ -5,6 +5,7 @@ import type { SettingContribution } from '@core/plugin-api'
 import { Button, Empty, Modal, NumberField, Select, TextField, Toggle } from '../ui/kit'
 import { Icon } from '../ui/icon'
 import { useEmitter, useRegistry, useValue } from '../ui/reactive'
+import { McpSetupBlock } from './McpSetup'
 
 /**
  * Global settings. Built-in plugin settings live here as ordinary sections; only
@@ -103,6 +104,9 @@ export function SettingsModal(props: { app: CascadeApp; onClose: () => void }) {
                 </div>
               )}
             </For>
+            <Show when={section() === 'Agents (MCP)'}>
+              <McpSetupBlock app={app} />
+            </Show>
           </Show>
         </div>
       </div>

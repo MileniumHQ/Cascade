@@ -1,6 +1,7 @@
-import { createMemo, createSignal, For, Show } from 'solid-js'
+import { createMemo, createSignal, For, onCleanup, Show } from 'solid-js'
 import type { CascadeApp } from '@core/app'
 import { fpsValue } from '@shared/time'
+import type { UpdateState } from '@shared/ipc'
 import logo from '../assets/logo.svg'
 import { Icon } from '../ui/icon'
 import { IconButton, openMenu, openMenuAnchor } from '../ui/kit'
@@ -85,6 +86,7 @@ export function TitleBar(props: { app: CascadeApp; session: Session }) {
         </div>
       </Show>
       <div class="tb-drag" />
+      <UpdateButton app={app} session={session} />
       <Show when={session.screen() === 'editor'}>
         <button class="tb-pill tnum" onClick={() => app.run('project.settings')} data-tip="Project settings">
           {project().settings.width} × {project().settings.height}
@@ -95,5 +97,33 @@ export function TitleBar(props: { app: CascadeApp; session: Session }) {
       {/* Native window controls (titleBarOverlay) are drawn here by Electron. */}
       <div class="tb-controls" />
     </header>
+  )
+}
+
+/** Appears once an update is downloading; one click when it's ready saves, installs and reopens Cascade. */
+function UpdateButton(props: { app: CascadeApp; session: Session }) {
+  const host = props.app.host
+  const [state, setState] = createSignal<UpdateState | null>(null)
+  const [installing, setInstalling] = createSignal(false)
+  if (host) {
+    void host.update.state().then(setState)
+    onCleanup(host.update.onState(setState))
+  }
+  const install = async () => {
+    setInstalling(true)
+    if (props.app.doc.dirty && props.session.path()) await props.session.save()
+    await host!.update.install()
+  }
+  return (
+    <Show when={state()?.status === 'ready' || state()?.status === 'downloading'}>
+      <Show when={state()!.status === 'ready'} fallback={
+        <span class="tb-pill tb-update busy tnum" data-tip={`Downloading Cascade ${state()!.version}`}><Icon name="download" size={12} />{state()!.percent ?? 0}%</span>
+      }>
+        <button class="tb-pill tb-update" disabled={installing()} onClick={() => void install()} data-tip={`Cascade ${state()!.version} is ready. Saves, installs and reopens.`}>
+          <Icon name={installing() ? 'loader-circle' : 'download'} size={12} class={installing() ? 'spin' : undefined} />
+          {installing() ? 'Updating…' : 'Restart to update'}
+        </button>
+      </Show>
+    </Show>
   )
 }

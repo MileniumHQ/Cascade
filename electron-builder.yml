@@ -2,6 +2,13 @@ appId: app.cascade.editor
 productName: Cascade
 copyright: © 2026 Milenium
 executableName: cascade
+# In-app updates (src/main/updater.ts) read releases from here; builds embed app-update.yml and
+# write latest.yml / latest-linux.yml, which every release must include (scripts/release.mjs uploads them).
+publish:
+  provider: github
+  owner: MileniumHQ
+  repo: Cascade
+  releaseType: release
 directories:
   output: dist
   buildResources: resources
@@ -13,6 +20,7 @@ files:
 asarUnpack:
   - node_modules/sherpa-onnx-node/**
   - node_modules/sherpa-onnx-linux-x64/**
+  - node_modules/sherpa-onnx-win-x64/**
   - node_modules/ffmpeg-static/**
   - node_modules/esbuild/**
   - node_modules/@esbuild/**
@@ -20,16 +28,80 @@ asarUnpack:
   - node_modules/@agentclientprotocol/**
   - node_modules/@anthropic-ai/claude-agent-sdk*/**
   - node_modules/@openai/codex*/**
-extraResources:
-  # Built by `bun run setup:whisper`; resolved via process.resourcesPath in src/main/transcribe.ts.
-  - from: resources/whisper/linux-x64
-    to: whisper/linux-x64
-    filter: ["whisper-cli", "LICENSE", "build.json"]
+# Double-clicking a .cascade file opens it (src/main/index.ts openFiles). Windows: NSIS registers it with
+# resources/file-icon.ico. Linux: the .desktop entry gets the MimeType; electron-builder's mime XML hardcodes a
+# generic icon, so src/main/desktop-integration.ts installs file-icon.png per user at startup.
+# Regenerate the icons with `node scripts/gen-file-icon.mjs`.
+fileAssociations:
+  - ext: cascade
+    name: Cascade project
+    description: Cascade project
+    mimeType: application/x-cascade-project
+    icon: file-icon
+    role: Editor
+# Per-platform native bits: each build ships only its own (Windows ones come from `node scripts/fetch-win-deps.mjs`).
 linux:
   # Stable name so the site can link to releases/latest/download/Cascade-linux-x86_64.AppImage.
   artifactName: ${productName}-linux-${arch}.${ext}
   target:
     - AppImage
+    # Fedora/openSUSE; needs rpmbuild on the build machine (Arch: rpm-tools).
+    - rpm
     - dir
   icon: resources/icon.png
   category: AudioVideo
+  # RPM needs a maintainer (otherwise taken from the author's email).
+  maintainer: Milenium
+  # WM_CLASS matches cascade.desktop, so docks group the window under Cascade's icon.
+  syncDesktopName: true
+  # A platform `files` list replaces the top-level one, so it repeats the includes; with only
+  # exclusions it would pack the whole repo (vendor/, site/, src/…).
+  files:
+    - out/**
+    - package.json
+    - "!**/*.map"
+    - "!node_modules/ffmpeg-static/ffmpeg.exe"
+    - "!node_modules/ffmpeg-static/ffmpeg.exe.tag"
+    - "!node_modules/sherpa-onnx-win-x64/**"
+    - "!node_modules/@esbuild/win32-x64/**"
+    - "!node_modules/@anthropic-ai/claude-agent-sdk-win32-x64/**"
+    # glibc only (Fedora, AppImage hosts); the musl build is another 270 MB.
+    - "!node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl/**"
+    - "!node_modules/@openai/codex-win32-x64/**"
+  extraResources:
+    # Built by `bun run setup:whisper`; resolved via process.resourcesPath in src/main/transcribe.ts.
+    - from: resources/whisper/linux-x64
+      to: whisper/linux-x64
+      filter: ["whisper-cli", "LICENSE", "build.json"]
+    # Per-user mime/desktop integration (src/main/desktop-integration.ts).
+    - from: resources
+      to: icons
+      filter: ["file-icon.png", "icon.png"]
+rpm:
+  # Updates install the downloaded .rpm through dnf behind a polkit prompt.
+  packageName: cascade
+win:
+  # Built from Linux with wine (rcedit, NSIS): `bun run dist:win`.
+  artifactName: ${productName}-windows-${arch}-setup.${ext}
+  target:
+    - target: nsis
+      arch: x64
+  icon: resources/icon.png
+  files:
+    - out/**
+    - package.json
+    - "!**/*.map"
+    - "!node_modules/ffmpeg-static/ffmpeg"
+    - "!node_modules/sherpa-onnx-linux-x64/**"
+    - "!node_modules/@esbuild/linux-x64/**"
+    - "!node_modules/@anthropic-ai/claude-agent-sdk-linux-*/**"
+    - "!node_modules/@openai/codex-linux-*/**"
+  extraResources:
+    # Cross-compiled by `node scripts/setup-whisper.mjs --target win32-x64`.
+    - from: resources/whisper/win32-x64
+      to: whisper/win32-x64
+      filter: ["whisper-cli.exe", "LICENSE", "build.json"]
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true

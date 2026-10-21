@@ -1,46 +1,58 @@
 // Agent panel host: one ACP agent subprocess per chat, with Cascade's MCP server attached.
 import { spawn, type ChildProcess } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
-import { createWriteStream } from 'node:fs'
-import { access, constants, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { createHash, randomUUID } from 'node:crypto'
+import { createReadStream, createWriteStream } from 'node:fs'
+import { access, chmod, constants, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
 import { delimiter, isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { pipeline } from 'node:stream/promises'
 import { Readable, Writable } from 'node:stream'
 import { client, ndJsonStream, PROTOCOL_VERSION, type AuthMethod, type ClientConnection, type ContentBlock, type LoadSessionRequest, type LoadSessionResponse, type McpServer, type PromptRequest, type PromptResponse, type RequestPermissionResponse, type SetSessionConfigOptionRequest, type SetSessionConfigOptionResponse } from '@agentclientprotocol/sdk'
 import { tools as cascadeTools } from '../mcp/catalog'
-import type { AgentAttachment, AgentEvent, AgentProvider, AgentSession, StartOptions, SessionConfigOption, StopReason } from '../../shared/agents'
+import type { AgentAttachment, AgentEvent, AgentProvider, KeyProvider, AgentSession, AgentUsage, StartOptions, SessionConfigOption, StopReason } from '../../shared/agents'
+import { fetchCursorUsage, opencodeUsage, parseClaudeUsage, parseCodexStatus, parseOpencodeStatsText, readModelCatalog, type ModelCatalog, type OpencodeStats } from './usage'
 
 /** How to launch an agent. `script` = a bundled Node entry run with Electron-as-Node; `registry` = ACP registry id Cascade can download. */
 export interface AgentLauncher { id: string; name: string; icon: AgentProvider['icon']; script?: string; command?: string; args?: string[]; registry?: string }
 
 export const LAUNCHERS: AgentLauncher[] = [
-  { id: 'claude', name: 'Claude Code', icon: 'claude', script: '@agentclientprotocol/claude-agent-acp/dist/index.js' },
+  { id: 'claude', name: 'Claude', icon: 'claude', script: '@agentclientprotocol/claude-agent-acp/dist/index.js' },
   { id: 'codex', name: 'Codex', icon: 'codex', script: '@agentclientprotocol/codex-acp/dist/index.js' },
   { id: 'cursor', name: 'Cursor', icon: 'cursor', command: 'cursor-agent', args: ['acp'], registry: 'cursor' },
-  { id: 'opencode', name: 'OpenCode', icon: 'opencode', command: 'opencode', args: ['acp'] }
+  { id: 'opencode', name: 'OpenCode', icon: 'opencode', command: 'opencode', args: ['acp'], registry: 'opencode' }
 ]
 
 /** First prompt preamble: what the agent is embedded in and how to reach the editor. */
-export const CONTEXT = `[Context from Cascade] You are running inside the agent panel of Cascade, a video editor. The user is looking at the editor next to this chat. The \`cascade\` MCP server controls the open project live (undoable): inspect with timeline_get/project_get, see with frame_get or contact sheets, edit with timeline_apply_edits, analyze speech with media_analyze then transcript_get. Prefer those tools over editing project files on disk. Keep replies short; the panel is narrow.`
+export const CONTEXT = `[Context from Cascade] You are running inside the agent panel of Cascade, a video editor. The user is looking at the editor next to this chat. The \`cascade\` MCP server controls the open project live (undoable): inspect with timeline_get/project_get, see with frame_get or contact sheets, edit with timeline_apply_edits, analyze speech with media_analyze then transcript_get. Prefer those tools over editing project files on disk. Each user message ends with [Editor: …], the playhead and selected clips at send time (clip ids as in timeline_get), so "here", "this clip" or "from the playhead" refer to them. Keep replies short; the panel is narrow.`
 
 /** Cascade's read-only tools run without asking (Claude Code naming); edits, shell and file writes still ask in manual mode. */
 export const READ_ONLY_TOOLS = cascadeTools.filter(t => t.annotations.readOnlyHint).map(t => `mcp__cascade__${t.name}`)
 
 /** GUI launches often miss shell PATH entries (nvm, ~/.local/bin, bun). */
-export async function searchPath(home: string, env = process.env.PATH ?? ''): Promise<string[]> {
-  const extra = [join(home, '.local/bin'), join(home, '.bun/bin'), join(home, '.npm-global/bin'), '/usr/local/bin', '/usr/bin']
+export async function searchPath(home: string, env = process.env.PATH ?? process.env.Path ?? '', platform = process.platform): Promise<string[]> {
+  const extra = platform === 'win32'
+    ? [process.env.APPDATA && join(process.env.APPDATA, 'npm'), process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'cursor-agent'), join(home, '.bun/bin'), join(home, '.local/bin'), join(home, '.opencode/bin')].filter((d): d is string => !!d)
+    : [join(home, '.local/bin'), join(home, '.bun/bin'), join(home, '.npm-global/bin'), '/usr/local/bin', '/usr/bin']
   const nvm = join(home, '.nvm/versions/node')
   try { for (const v of (await readdir(nvm)).sort().reverse()) extra.push(join(nvm, v, 'bin')) } catch { /* No nvm. */ }
   return [...new Set([...env.split(delimiter).filter(Boolean), ...extra])]
 }
+/** Windows resolves `opencode` to opencode.exe / opencode.cmd (npm shims) via PATHEXT. */
+const EXTENSIONS = process.platform === 'win32' ? ['.exe', '.cmd', '.bat', '.com'] : ['']
 async function which(command: string, dirs: string[]) {
-  for (const dir of dirs) {
-    const path = join(dir, command)
-    try { await access(path, constants.X_OK); return path } catch { /* Keep looking. */ }
+  for (const dir of dirs) for (const ext of EXTENSIONS) {
+    const path = join(dir, command + ext)
+    try { await access(path, process.platform === 'win32' ? constants.F_OK : constants.X_OK); return path } catch { /* Keep looking. */ }
   }
   return undefined
+}
+/** Node refuses to spawn .cmd/.bat without a shell (CVE-2024-27980); quote for cmd.exe then. */
+export function spawnCommand(command: string, args: string[]): [string, string[], { shell: boolean }] {
+  if (!/\.(cmd|bat)$/i.test(command)) return [command, args, { shell: false }]
+  const quote = (s: string) => /^[\w.:\\/-]+$/.test(s) ? s : `"${s.replace(/"/g, '""')}"`
+  return [quote(command), args.map(quote), { shell: true }]
 }
 
 interface Chat {
@@ -72,7 +84,7 @@ export interface AgentHostOptions {
 
 export const REGISTRY = 'https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json'
 const PLATFORM = `${process.platform === 'darwin' ? 'darwin' : process.platform === 'win32' ? 'windows' : 'linux'}-${process.arch === 'arm64' ? 'aarch64' : 'x86_64'}`
-interface RegistryBinary { archive: string; cmd: string; args?: string[] }
+interface RegistryBinary { archive: string; cmd: string; args?: string[]; sha256?: string }
 /** Written next to an installed registry agent. */
 interface Installed { version: string; command: string; args: string[] }
 
@@ -95,7 +107,8 @@ export function createAgentHost(options: AgentHostOptions) {
 
   async function launch(l: AgentLauncher): Promise<{ command: string; args: string[]; env: NodeJS.ProcessEnv } | { error: string; install?: boolean }> {
     const dirs = await searchPath(options.home)
-    const env: NodeJS.ProcessEnv = { ...process.env, PATH: dirs.join(delimiter) }
+    // Windows spells it Path; a copied env would carry both keys.
+    const env: NodeJS.ProcessEnv = { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => k.toUpperCase() !== 'PATH')), PATH: dirs.join(delimiter) }
     delete env.ELECTRON_RUN_AS_NODE
     const own = await installed(l)
     if (own) return { command: own.command, args: own.args, env }
@@ -131,7 +144,8 @@ export function createAgentHost(options: AgentHostOptions) {
     if ('error' in how) throw new Error(how.error)
     const dir = cwd && isAbsolute(cwd) && (await stat(cwd).catch(() => null))?.isDirectory() ? cwd : options.defaultCwd
     const id = randomUUID()
-    const child = spawn(how.command, how.args, { cwd: dir, env: how.env, stdio: ['pipe', 'pipe', 'pipe'] })
+    const [command, args, shell] = spawnCommand(how.command, how.args)
+    const child = spawn(command, args, { cwd: dir, env: how.env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, ...shell })
     const chat = { id, child, sessionId: '', primed: false, images: false, permissions: new Map(), stderr: '' } as unknown as Chat
     child.stderr!.on('data', (b: Buffer) => { chat.stderr = (chat.stderr + b.toString()).slice(-4000) })
     const app = client({ name: 'cascade' })
@@ -273,16 +287,25 @@ export function createAgentHost(options: AgentHostOptions) {
         ctrl.enqueue(chunk)
       } })
       await pipeline(Readable.fromWeb(response.body.pipeThrough(progress) as import('node:stream/web').ReadableStream), createWriteStream(archive))
+      if (binary.sha256) {
+        const hash = createHash('sha256')
+        await pipeline(createReadStream(archive), hash)
+        if (hash.digest('hex') !== binary.sha256.toLowerCase()) { await rm(archive, { force: true }); throw new Error(`${l.name}'s download is corrupt (checksum mismatch). Try again.`) }
+      }
       const tmp = `${dir}.partial`
       await rm(tmp, { recursive: true, force: true })
       await mkdir(tmp, { recursive: true })
-      await run(archive.endsWith('.zip') ? 'unzip' : 'tar', archive.endsWith('.zip') ? ['-oq', archive, '-d', tmp] : ['xzf', archive, '-C', tmp])
+      // Windows' bundled tar (bsdtar) also reads zip; it has no unzip.
+      if (archive.endsWith('.zip') && process.platform !== 'win32') await run('unzip', ['-oq', archive, '-d', tmp])
+      else await run('tar', [archive.endsWith('.zip') ? '-xf' : '-xzf', archive, '-C', tmp])
       await rm(dir, { recursive: true, force: true })
       await rename(tmp, dir)
       await rm(archive, { force: true })
       // Keep only this version.
       for (const old of await readdir(root)) if (old !== entry.version && old !== 'installed.json') await rm(join(root, old), { recursive: true, force: true })
       const info: Installed = { version: entry.version, command: join(dir, binary.cmd), args: binary.args ?? [] }
+      // Zip archives don't always keep the executable bit.
+      if (process.platform !== 'win32') await chmod(info.command, 0o755).catch(() => {})
       await writeFile(join(root, 'installed.json'), JSON.stringify(info, null, 1))
       options.emit({ type: 'install', providerId, received: total || received, total: total || received })
     })().finally(() => installing.delete(providerId))
@@ -290,27 +313,173 @@ export function createAgentHost(options: AgentHostOptions) {
     return job
   }
 
-  return { providers, start, prompt, cancel, setOption, respond, close, install, closeAll: () => Promise.all([...chats.keys()].map(close)) }
+  /** Run one of the agent's local slash commands in a throwaway session (no MCP, temp cwd) and return its reply. */
+  async function command(l: AgentLauncher, text: string): Promise<string> {
+    const how = await launch(l)
+    if ('error' in how) throw new Error(how.error)
+    const [cmd, args, shell] = spawnCommand(how.command, how.args)
+    const child = spawn(cmd, args, { cwd: tmpdir(), env: how.env, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, ...shell })
+    let reply = ''
+    const connection = client({ name: 'cascade' })
+      .onNotification('session/update', ({ params }) => { const u = params.update; if (u.sessionUpdate === 'agent_message_chunk' && u.content.type === 'text') reply += u.content.text })
+      .onRequest('session/request_permission', async () => ({ outcome: { outcome: 'cancelled' as const } }))
+      .connect(ndJsonStream(Writable.toWeb(child.stdin!) as WritableStream<Uint8Array>, Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>))
+    const failed = new Promise<never>((_, reject) => {
+      child.once('error', reject)
+      child.once('exit', code => reject(new Error(`${l.name} exited (${code}).`)))
+      setTimeout(() => reject(new Error(`${l.name} didn't answer in time.`)), 30_000).unref()
+    })
+    try {
+      await Promise.race([connection.agent.request('initialize', { protocolVersion: PROTOCOL_VERSION, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: 'cascade', title: 'Cascade', version: '0.1.0' } }), failed])
+      const session = await Promise.race([connection.agent.request('session/new', { cwd: tmpdir(), mcpServers: [] }), failed])
+      await Promise.race([connection.agent.request<PromptResponse, PromptRequest>('session/prompt', { sessionId: session.sessionId, prompt: [{ type: 'text', text }] }), failed])
+      return reply
+    } catch (error) {
+      throw new Error(friendly(error, l))
+    } finally {
+      connection.close()
+      child.kill()
+    }
+  }
+
+  // OpenCode 2.x (`@opencode/cli`) and 1.x (stable releases, the ACP registry build) differ in stats output and
+  // credential storage, so commands branch on the major version of whichever binary `launch` picks.
+  type Launch = { command: string; args: string[]; env: NodeJS.ProcessEnv }
+  const runOpencode = (how: Launch, args: string[], input?: string) => {
+    const [cmd, argv, shell] = spawnCommand(how.command, args)
+    return output(cmd, argv, how.env, shell.shell, input)
+  }
+  const opencodeMajors = new Map<string, Promise<number>>()
+  async function opencode(): Promise<{ how: Launch; v2: boolean }> {
+    const how = await launch(LAUNCHERS.find(x => x.id === 'opencode')!)
+    if ('error' in how) throw new Error(how.error)
+    let major = opencodeMajors.get(how.command)
+    if (!major) {
+      // "opencode v2.1.2" (2.x) or "1.19.3" (1.x).
+      major = runOpencode(how, ['--version']).then(v => Number(/(\d+)\.\d+/.exec(v)?.[1] ?? 1))
+      opencodeMajors.set(how.command, major)
+      major.catch(() => opencodeMajors.delete(how.command))
+    }
+    return { how, v2: await major >= 2 }
+  }
+
+  async function opencodeStats(days: number): Promise<OpencodeStats> {
+    const { how, v2 } = await opencode()
+    // 2.x: --standalone reads the stats without starting OpenCode's background service. 1.x only prints a text report.
+    return v2
+      ? JSON.parse(await runOpencode(how, ['stats', '--standalone', '--json', '--models', '--days', String(days)])) as OpencodeStats
+      : parseOpencodeStatsText(await runOpencode(how, ['stats', '--models', '--days', String(days)]))
+  }
+
+  const usageCache = new Map<string, { at: number; usage: Promise<AgentUsage> }>()
+  function usage(providerId: string, fresh = false): Promise<AgentUsage> {
+    const l = LAUNCHERS.find(x => x.id === providerId)
+    if (!l) return Promise.reject(new Error(`Unknown agent ${providerId}`))
+    const cached = usageCache.get(providerId)
+    if (cached && !fresh && Date.now() - cached.at < 60_000) return cached.usage
+    const job = (async (): Promise<AgentUsage> => {
+      switch (providerId) {
+        case 'claude': return parseClaudeUsage(await command(l, '/usage'))
+        case 'codex': return parseCodexStatus(await command(l, '/status'))
+        case 'cursor': return fetchCursorUsage(options.home)
+        case 'opencode': {
+          // One at a time: two OpenCode processes opening a fresh database collide ("database is locked").
+          const today = await opencodeStats(0)
+          return opencodeUsage(today, await opencodeStats(7), await readModelCatalog(options.home))
+        }
+        default: throw new Error(`${l.name} doesn't report usage.`)
+      }
+    })()
+    usageCache.set(providerId, { at: Date.now(), usage: job })
+    job.catch(() => usageCache.delete(providerId))
+    return job
+  }
+
+  // OpenCode's /connect without its TUI: providers from the models.dev catalog; keys through `opencode auth` (2.x)
+  // or its auth.json (1.x, whose `auth login` is interactive only).
+  interface Integration { id: string; connections?: { type: string; id: string }[] }
+  const integrations = async (how: Launch) => JSON.parse(await runOpencode(how, ['auth', 'list', '--format', 'json', '--standalone'])) as Integration[]
+  const authFile = () => join(process.env.XDG_DATA_HOME || join(options.home, '.local', 'share'), 'opencode', 'auth.json')
+  const readAuth = async () => { try { return JSON.parse(await readFile(authFile(), 'utf8')) as Record<string, unknown> } catch { return {} } }
+  async function writeAuth(auth: Record<string, unknown>) {
+    await mkdir(join(authFile(), '..'), { recursive: true })
+    await writeFile(authFile(), JSON.stringify(auth, null, 2), { mode: 0o600 })
+  }
+  const catalogFallback = async () => { try { return await (await fetch('https://models.dev/api.json')).json() as ModelCatalog } catch { return null } }
+
+  async function keyProviders(providerId: string): Promise<KeyProvider[]> {
+    if (providerId !== 'opencode') return []
+    const { how, v2 } = await opencode()
+    const [catalog, saved] = await Promise.all([
+      readModelCatalog(options.home).then(c => c ?? catalogFallback()),
+      v2 ? integrations(how).then(list => list.filter(i => i.connections?.length).map(i => i.id)) : readAuth().then(Object.keys)
+    ])
+    const connected = new Set(saved)
+    const list = Object.entries(catalog ?? {}).map(([id, p]) => ({ id, name: p.name ?? id, connected: connected.has(id) }))
+    for (const id of connected) if (!list.some(p => p.id === id)) list.push({ id, name: id, connected: true })
+    const rank = (p: KeyProvider) => p.connected ? -1 : POPULAR.includes(p.id) ? POPULAR.indexOf(p.id) : POPULAR.length
+    return list.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name))
+  }
+
+  async function saveKey(providerId: string, target: string, key: string) {
+    if (providerId !== 'opencode') throw new Error('This agent manages its own sign-in.')
+    if (!key.trim()) throw new Error('Paste an API key.')
+    const { how, v2 } = await opencode()
+    if (!v2) return writeAuth({ ...await readAuth(), [target]: { type: 'api', key: key.trim() } })
+    const old = (await integrations(how)).find(i => i.id === target)?.connections?.filter(c => c.type === 'credential') ?? []
+    const credential = { id: `cred_${randomUUID().replace(/-/g, '')}`, integrationID: target, label: 'API key', active: true, value: { type: 'key', key: key.trim() } }
+    // The key goes over stdin, never argv.
+    await runOpencode(how, ['auth', 'import', '--standalone'], JSON.stringify([credential]))
+    // Replace, don't stack: the new key becomes active once the old ones are gone.
+    for (const c of old) await runOpencode(how, ['auth', 'logout', target, c.id, '--standalone'])
+  }
+
+  async function removeKey(providerId: string, target: string) {
+    if (providerId !== 'opencode') return
+    const { how, v2 } = await opencode()
+    if (!v2) { const auth = await readAuth(); delete auth[target]; return writeAuth(auth) }
+    for (const c of (await integrations(how)).find(i => i.id === target)?.connections ?? []) await runOpencode(how, ['auth', 'logout', target, c.id, '--standalone'])
+  }
+
+  return { providers, start, prompt, cancel, setOption, respond, close, install, usage, keyProviders, saveKey, removeKey, closeAll: () => Promise.all([...chats.keys()].map(close)) }
 }
 
 const authRequired = (error: unknown) => (error as { code?: number })?.code === -32000 || /auth/i.test(String((error as Error)?.message ?? error))
-/** Methods the agent completes itself (browser login), not env-var / terminal ones. */
-const interactive = (m: AuthMethod) => { const type = (m as { type?: string }).type; return type === undefined || type === 'agent' }
+/** Methods the agent completes itself (browser login), not env-var / terminal / API-key ones (Codex lists `api-key` first, untyped). */
+const interactive = (m: AuthMethod) => {
+  const type = (m as { type?: string }).type
+  return (type === undefined || type === 'agent') && !(m._meta && 'api-key' in m._meta)
+}
 
 const lastLines = (text: string) => text.trim().split('\n').slice(-3).join(' ').slice(0, 400)
 const LOGIN: Record<string, string> = { claude: 'claude', codex: 'codex login', cursor: 'cursor-agent login', opencode: 'opencode auth login' }
+/** Listed first in OpenCode's provider picker, after the connected ones. */
+const POPULAR = ['opencode', 'opencode-go', 'anthropic', 'openai', 'google', 'openrouter', 'xai', 'deepseek', 'groq', 'mistral']
 function friendly(error: unknown, launcher: AgentLauncher) {
   const message = error instanceof Error ? error.message : String(error)
   // ACP errors put the useful part (e.g. a login link) in data.message.
   const detail = (error as { data?: { message?: unknown; details?: unknown } })?.data
   const extra = typeof detail?.message === 'string' ? detail.message : typeof detail?.details === 'string' ? detail.details : ''
+  if (authRequired(error) && !extra && launcher.id === 'opencode') return 'OpenCode needs a model provider. Connect one with the key button in the model picker.'
   if (authRequired(error) && !extra) return `${launcher.name} needs you to sign in. Run \`${LOGIN[launcher.id] ?? launcher.command ?? launcher.id}\` in a terminal once, then retry.`
   return extra ? `${launcher.name}: ${extra}` : message
 }
 
+function output(command: string, args: string[], env: NodeJS.ProcessEnv, shell: boolean, input?: string) {
+  return new Promise<string>((done, fail) => {
+    const child = spawn(command, args, { env, shell, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'], windowsHide: true, timeout: 30_000 })
+    if (input !== undefined) child.stdin!.end(input)
+    let out = '', err = ''
+    child.stdout!.on('data', (b: Buffer) => { out += b.toString() })
+    child.stderr!.on('data', (b: Buffer) => { err = (err + b.toString()).slice(-1000) })
+    child.once('error', fail)
+    child.once('exit', code => code === 0 ? done(out) : fail(new Error(`${command} failed: ${lastLines(err) || code}`)))
+  })
+}
+
 function run(command: string, args: string[]) {
   return new Promise<void>((done, fail) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'ignore', 'pipe'] })
+    const child = spawn(command, args, { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true })
     let err = ''
     child.stderr.on('data', (b: Buffer) => { err = (err + b.toString()).slice(-1000) })
     child.once('error', fail)
@@ -329,6 +498,10 @@ export async function registerAgentsIpc(options: Omit<AgentHostOptions, 'emit'>,
   ipcMain.handle('agents:respond', (_e, id: string, requestId: string, optionId: string | null) => host.respond(id, requestId, optionId))
   ipcMain.handle('agents:close', (_e, id: string) => host.close(id))
   ipcMain.handle('agents:install', (_e, providerId: string) => host.install(providerId))
+  ipcMain.handle('agents:usage', (_e, providerId: string, fresh?: boolean) => host.usage(providerId, fresh))
+  ipcMain.handle('agents:keyProviders', (_e, providerId: string) => host.keyProviders(providerId))
+  ipcMain.handle('agents:saveKey', (_e, providerId: string, target: string, key: string) => host.saveKey(providerId, target, key))
+  ipcMain.handle('agents:removeKey', (_e, providerId: string, target: string) => host.removeKey(providerId, target))
   app.on('before-quit', () => { void host.closeAll() })
   return host
 }

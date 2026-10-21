@@ -69,6 +69,11 @@ async function boot() {
 
   const session = createSession(app)
   app.services.set('session', session)
+  host.window.onOpenFile((file) => void (async () => {
+    // Opening replaces the project; keep the current one (autosave would have caught it in a few seconds anyway).
+    if (session.screen() === 'editor' && app.doc.dirty && session.path()) await session.save()
+    await session.open(file)
+  })())
   render(() => <App app={app} session={session} />, document.getElementById('root')!)
   requestAnimationFrame(() => host.splash.ready())
 }

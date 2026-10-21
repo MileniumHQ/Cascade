@@ -1,13 +1,14 @@
 import { createStore, produce, unwrap } from 'solid-js/store'
 import { createSignal } from 'solid-js'
-import type { AgentAttachment, AgentEvent, AgentProvider, AgentSession, AgentsBridge, PermissionOption, SessionConfigOption, SessionUpdate, ToolCallUpdate } from '@shared/agents'
+import { describeTool, type ToolLabel } from './describe'
+import type { AgentAttachment, AgentEvent, AgentProvider, AgentSession, AgentsBridge, AgentUsage, KeyProvider, PermissionOption, SessionConfigOption, SessionUpdate, ToolCallUpdate } from '@shared/agents'
 
 export type ToolStatus = 'pending' | 'in_progress' | 'completed' | 'failed'
 export type Entry =
   | { kind: 'user'; text: string; attachments?: Shown[] }
   | { kind: 'assistant'; text: string }
   | { kind: 'thought'; text: string }
-  | { kind: 'tool'; id: string; title: string; toolKind: string; status: ToolStatus; detail: string }
+  | { kind: 'tool'; id: string; title: string; toolKind: string; status: ToolStatus; detail: string; label?: ToolLabel }
   | { kind: 'plan'; items: { content: string; status: string }[] }
   | { kind: 'notice'; text: string; tone: 'info' | 'error' }
 
@@ -38,6 +39,8 @@ export interface Chat {
   /** A fresh session replacing one that couldn't be reloaded; adopted (with its notice) on the next message,
    *  so merely opening the chat never overwrites a reloadable session id with an empty one. */
   fresh?: { sessionId: string; notice: string }
+  /** Context window fill and session cost, when the agent reports them (ACP usage_update). */
+  usage?: { used: number; size: number; cost?: number; currency?: string }
 }
 
 const STORE = 'cascade.agent.chats'
@@ -87,6 +90,26 @@ const [status, setStatus] = createSignal('')
 /** Download progress per provider while installing from the ACP registry. */
 const [installs, setInstalls] = createStore<Record<string, { received: number; total: number; error?: string } | undefined>>({})
 export { chats, activeId, setActiveId, providers, draftProvider, starting, askFirst, status, installs }
+
+/** Plan limits / token use for an agent, from the host. */
+export function fetchUsage(providerId: string, fresh = false): Promise<AgentUsage> {
+  if (!bridge) return Promise.reject(new Error('Agents are only available in the desktop app.'))
+  return bridge.usage(providerId, fresh)
+}
+
+/** Model providers an agent takes API keys for (OpenCode). */
+export function fetchKeyProviders(providerId: string): Promise<KeyProvider[]> {
+  if (!bridge) return Promise.reject(new Error('Agents are only available in the desktop app.'))
+  return bridge.keyProviders(providerId)
+}
+
+/** Save or remove a provider key; an unused chat restarts so its model list picks the change up. */
+export async function setProviderKey(providerId: string, target: string, key: string | null) {
+  if (!bridge) return
+  await (key === null ? bridge.removeKey(providerId, target) : bridge.saveKey(providerId, target, key))
+  const c = active()
+  if (c && c.providerId === providerId && !c.entries.length && !c.ended) { closeChat(c.id); await startChat(providerId) }
+}
 
 export async function installProvider(id: string) {
   if (!bridge || installs[id] && !installs[id]!.error) return
@@ -198,6 +221,10 @@ export function closeChat(id: string) {
   save()
 }
 
+/** Editor state appended to each prompt (playhead, selection), so "here" and "this clip" resolve. Set by the panel. */
+let editorContext: () => string = () => ''
+export const setEditorContext = (fn: () => string) => { editorContext = fn }
+
 let queueId = 0
 /** Send now, or queue it when the agent is busy. */
 export async function send(text: string, attachments: AgentAttachment[] = []) {
@@ -228,7 +255,8 @@ async function turn(startId: string, text: string, attachments: AgentAttachment[
   let next: Queued | undefined
   try {
     // Queued items come out of the store as proxies, which IPC can't clone.
-    const stop = await bridge.prompt(id, text, structuredClone(unwrap(attachments)))
+    const state = editorContext()
+    const stop = await bridge.prompt(id, state ? `${text}\n\n[Editor: ${state}]` : text, structuredClone(unwrap(attachments)))
     if (stop === 'refusal') edit(id, c => { c.entries.push({ kind: 'notice', tone: 'error', text: 'The agent declined this request.' }) })
     if (stop === 'max_tokens' || stop === 'max_turn_requests') edit(id, c => { c.entries.push({ kind: 'notice', tone: 'info', text: 'The agent stopped early (turn limit). Say “continue” to resume.' }) })
     if (stop === 'cancelled') edit(id, c => { if (c.queue.length) c.paused = true })
@@ -308,11 +336,13 @@ function apply(c: Chat, u: SessionUpdate) {
       else c.entries.push({ kind: 'thought', text: text(u.content) })
       break
     case 'tool_call':
-      c.entries.push({ kind: 'tool', id: u.toolCallId, title: u.title, toolKind: u.kind ?? 'other', status: u.status ?? 'pending', detail: toolDetail(u) })
+      c.entries.push({ kind: 'tool', id: u.toolCallId, title: u.title, toolKind: u.kind ?? 'other', status: u.status ?? 'pending', detail: toolDetail(u), label: describeTool(u) })
       break
     case 'tool_call_update': {
       const tool = c.entries.find((e): e is Extract<Entry, { kind: 'tool' }> => e.kind === 'tool' && e.id === u.toolCallId)
-      if (!tool) { c.entries.push({ kind: 'tool', id: u.toolCallId, title: u.title ?? 'Tool', toolKind: u.kind ?? 'other', status: u.status ?? 'pending', detail: toolDetail(u) }); break }
+      if (!tool) { c.entries.push({ kind: 'tool', id: u.toolCallId, title: u.title ?? 'Tool', toolKind: u.kind ?? 'other', status: u.status ?? 'pending', detail: toolDetail(u), label: describeTool(u) }); break }
+      // Updates often carry the real input (command, code, path) that the first call lacked.
+      if (u.rawInput || u.locations?.length || (u.title && !tool.label?.cascade)) tool.label = describeTool({ title: u.title ?? tool.title, kind: u.kind ?? tool.toolKind, rawInput: u.rawInput, locations: u.locations })
       if (u.title) tool.title = u.title
       if (u.kind) tool.toolKind = u.kind
       if (u.status) tool.status = u.status
@@ -332,6 +362,9 @@ function apply(c: Chat, u: SessionUpdate) {
       break
     case 'session_info_update':
       if (u.title) c.title = u.title
+      break
+    case 'usage_update':
+      c.usage = { used: u.used, size: u.size, ...(u.cost ? { cost: u.cost.amount, currency: u.cost.currency } : {}) }
       break
   }
 }

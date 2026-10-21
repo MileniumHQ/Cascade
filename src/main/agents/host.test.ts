@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, writeFileSync, chmodSync, mkdirSync } from '
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
-import { createAgentHost, LAUNCHERS, searchPath } from './index'
+import { createAgentHost, LAUNCHERS, searchPath, spawnCommand } from './index'
 import type { AgentEvent } from '../../shared/agents'
 
 const fixture = fileURLToPath(new URL('./fake-agent.mjs', import.meta.url))
@@ -117,4 +117,62 @@ test('PATH search adds common install locations GUI launches miss', async () => 
   expect(dirs[0]).toBe('/usr/bin')
   expect(dirs).toContain('/home/someone/.local/bin')
   expect(new Set(dirs).size).toBe(dirs.length)
+})
+
+test('Windows npm shims (.cmd) spawn through a quoted shell', () => {
+  expect(spawnCommand('/usr/bin/opencode', ['acp'])).toEqual(['/usr/bin/opencode', ['acp'], { shell: false }])
+  expect(spawnCommand('C:\\Users\\A B\\AppData\\Roaming\\npm\\opencode.cmd', ['acp'])).toEqual(['"C:\\Users\\A B\\AppData\\Roaming\\npm\\opencode.cmd"', ['acp'], { shell: true }])
+})
+
+test.skipIf(process.platform === 'win32')('OpenCode 2.x keys: lists catalog providers, replaces a saved key over stdin', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cascade-opencode-'))
+  const state = join(dir, 'state.json')
+  writeFileSync(state, JSON.stringify({ version: 'opencode v2.1.2', creds: [{ id: 'cred_old', integrationID: 'anthropic' }], argv: [] }))
+  // Fake `opencode auth` keeping its credentials in state.json.
+  writeFileSync(join(dir, 'fake.mjs'), `import { readFileSync, writeFileSync } from 'node:fs'
+const s = JSON.parse(readFileSync(${JSON.stringify(state)}, 'utf8')); const a = process.argv.slice(2); s.argv.push(a)
+if (a[0] === '--version') console.log(s.version)
+if (a[1] === 'list') console.log(JSON.stringify([...new Set(s.creds.map(c => c.integrationID))].map(id => ({ id, connections: s.creds.filter(c => c.integrationID === id).map(c => ({ type: 'credential', id: c.id })) }))))
+if (a[1] === 'import') s.creds.push(...JSON.parse(readFileSync(0, 'utf8')))
+if (a[1] === 'logout') s.creds = s.creds.filter(c => c.id !== a[3])
+writeFileSync(${JSON.stringify(state)}, JSON.stringify(s))`)
+  writeFileSync(join(dir, 'opencode'), `#!/bin/sh\nexec "${process.execPath}" "${join(dir, 'fake.mjs')}" "$@"\n`)
+  chmodSync(join(dir, 'opencode'), 0o755)
+  mkdirSync(join(dir, 'cache/opencode'), { recursive: true })
+  writeFileSync(join(dir, 'cache/opencode/models.json'), JSON.stringify({ zai: { name: 'Z.AI' }, anthropic: { name: 'Anthropic' }, openai: { name: 'OpenAI' } }))
+  const { PATH: path, XDG_CACHE_HOME: cache, XDG_DATA_HOME: data } = process.env
+  process.env.PATH = `${dir}:${path}`
+  process.env.XDG_CACHE_HOME = join(dir, 'cache')
+  try {
+    host = make([])
+    expect(await host.keyProviders('opencode')).toEqual([
+      { id: 'anthropic', name: 'Anthropic', connected: true },
+      { id: 'openai', name: 'OpenAI', connected: false },
+      { id: 'zai', name: 'Z.AI', connected: false }
+    ])
+    await host.saveKey('opencode', 'anthropic', ' sk-new \n')
+    const s = JSON.parse(readFileSync(state, 'utf8'))
+    expect(s.creds).toHaveLength(1)
+    expect(s.creds[0]).toMatchObject({ integrationID: 'anthropic', active: true, value: { type: 'key', key: 'sk-new' } })
+    expect(JSON.stringify(s.argv)).not.toContain('sk-new')
+    await host.removeKey('opencode', 'anthropic')
+    expect(JSON.parse(readFileSync(state, 'utf8')).creds).toEqual([])
+    expect(await host.keyProviders('claude')).toEqual([])
+
+    // 1.x (stable / registry build): no `auth import`, credentials live in auth.json.
+    process.env.XDG_DATA_HOME = join(dir, 'data')
+    writeFileSync(state, JSON.stringify({ version: '1.19.3', creds: [], argv: [] }))
+    host = make([])
+    mkdirSync(join(dir, 'data/opencode'), { recursive: true })
+    writeFileSync(join(dir, 'data/opencode/auth.json'), JSON.stringify({ openai: { type: 'oauth', refresh: 'r' } }))
+    expect((await host.keyProviders('opencode')).filter(p => p.connected).map(p => p.id)).toEqual(['openai'])
+    await host.saveKey('opencode', 'zai', 'sk-zai')
+    expect(JSON.parse(readFileSync(join(dir, 'data/opencode/auth.json'), 'utf8'))).toEqual({ openai: { type: 'oauth', refresh: 'r' }, zai: { type: 'api', key: 'sk-zai' } })
+    await host.removeKey('opencode', 'openai')
+    expect(Object.keys(JSON.parse(readFileSync(join(dir, 'data/opencode/auth.json'), 'utf8')))).toEqual(['zai'])
+    expect(JSON.parse(readFileSync(state, 'utf8')).argv).toEqual([['--version']])
+  } finally {
+    process.env.PATH = path
+    for (const [k, v] of [['XDG_CACHE_HOME', cache], ['XDG_DATA_HOME', data]] as const) { if (v === undefined) delete process.env[k]; else process.env[k] = v }
+  }
 })

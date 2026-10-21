@@ -20,7 +20,7 @@ export default async ({ win, shot, sleep }) => {
     if (!allowError) assert(!result.isError, `${name}: ${summary}`)
     return result
   }
-  const listed = await client.listTools(); assert.equal(listed.tools.length, 26)
+  const listed = await client.listTools(); assert.equal(listed.tools.length, 32)
   output.push(`tools=${listed.tools.length}`)
   await call('project_get', {}, true)
   await call('project_new', { name: 'MCP integration' })
@@ -79,7 +79,7 @@ export default async ({ win, shot, sleep }) => {
   const stdio = new Client({ name: 'stdio-e2e', version: '1' })
   const env = { ...process.env, CASCADE_USER_DATA: info.paths.userData }; delete env.ELECTRON_RUN_AS_NODE
   await stdio.connect(new StdioClientTransport({ command: resolve('node_modules/electron/dist/electron'), args: ['.', '--no-sandbox', '--mcp-stdio'], env, stderr: 'pipe' }))
-  assert.equal((await stdio.listTools()).tools.length, 26)
+  assert.equal((await stdio.listTools()).tools.length, 32)
   const stdioRegistry = await stdio.callTool({ name: 'registry_list', arguments: {} }); assert(!stdioRegistry.isError)
   await stdio.close(); output.push('PASS: stdio proxy SDK tools/list + registry_list; auth 401/403; settings disable 503; undo/redo; atomic rollback; plugin build errors and reload')
   await call('project_save')

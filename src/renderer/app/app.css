@@ -119,6 +119,11 @@
   background: var(--panel-2);
   color: var(--text);
 }
+.tb-update { margin-right: 8px; gap: 6px; color: var(--text); border-color: rgba(130, 203, 255, 0.35); background: rgba(130, 203, 255, 0.08); }
+.tb-update:hover { border-color: rgba(130, 203, 255, 0.6); background: rgba(130, 203, 255, 0.14); }
+.tb-update.busy { color: var(--text-2); border-color: var(--line); background: none; }
+.tb-update .spin { animation: tb-spin 0.9s linear infinite; }
+@keyframes tb-spin { to { transform: rotate(360deg); } }
 /* Room for the native window buttons (Electron titleBarOverlay). */
 .tb-controls {
   flex: none;
@@ -411,6 +416,56 @@
 .setting-text span {
   color: var(--muted);
   font-size: 11.5px;
+}
+.mcp-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 0 4px;
+  border-top: 1px solid var(--line);
+}
+.mcp-setup .hint {
+  margin: 0;
+}
+.mcp-setup-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mcp-setup-target {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+.mcp-setup-code {
+  position: relative;
+}
+.mcp-setup-code pre {
+  margin: 0;
+  padding: 10px 12px;
+  padding-right: 84px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+  max-height: 220px;
+  overflow: auto;
+}
+.mcp-setup-code .btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
 }
 .settings-plugins-head {
   display: flex;

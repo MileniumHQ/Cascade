@@ -95,7 +95,8 @@ export function Timeline(props: { ctx: PanelContext }) {
   const t1 = () => app.view.pxToTime(scrollX() + width() + 200)
   const x = (t: Flicks) => (t / FLICKS) * pps() - scrollX()
 
-  const contentW = () => (app.duration() / FLICKS) * pps()
+  // Read project() so this tracks edits; app.duration() isn't reactive.
+  const contentW = () => (project() && app.duration() / FLICKS) * pps()
   const maxScroll = () => Math.max(0, contentW() + width() * 0.5 - width())
   const setScroll = (v: number) => app.view.scrollX.set(Math.max(0, Math.min(maxScroll() + width() * 0.5, v)))
 
@@ -725,14 +726,15 @@ function ClipView(props: {
 }) {
   const app = props.app
   const doc = useProject(app)
-  // "2×", or the range of a keyframed speed ("0.5–3×"). Reads the project: a linked partner may own the speed.
+  // "2×", or the range of a keyframed speed ("0.5–3×"); "◀" when reversed. Reads the project: a linked partner may own the speed.
   const speedLabel = createMemo(() => {
     doc()
     const map = app.edit.timeMap(props.clip)
     const fmt = (v: number) => `${+v.toFixed(2)}`
-    if (map.constant !== null) return Math.abs(map.constant - 1) > 1e-6 ? `${fmt(map.constant)}×` : ''
+    const back = map.reversed ? '◀' : ''
+    if (map.constant !== null) return Math.abs(map.constant - 1) > 1e-6 ? `${back}${fmt(map.constant)}×` : back
     const [lo, hi] = [map.min, map.max]
-    return fmt(lo) === fmt(hi) ? `${fmt(lo)}×` : `${fmt(lo)}–${fmt(hi)}×`
+    return back + (fmt(lo) === fmt(hi) ? `${fmt(lo)}×` : `${fmt(lo)}–${fmt(hi)}×`)
   })
   const mt = () => app.registries.mediaTypes.get(props.clip.type)
   // Clamp the element to the visible window so hour-long clips stay cheap at any zoom.

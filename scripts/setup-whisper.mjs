@@ -1,4 +1,5 @@
 // Build a self-contained whisper-cli. No npm dependencies are installed.
+// `--target win32-x64` cross-compiles the Windows binary from Linux with llvm-mingw (downloaded into vendor/).
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, existsSync, readFileSync, writeFileSync, copyFileSync, chmodSync, renameSync } from 'node:fs'
 import { resolve, join } from 'node:path'
@@ -9,7 +10,12 @@ const tag = 'v1.9.5'
 const commit = 'd1be6fde11ac6e0407606b4e42fe72d34add8037'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const source = join(root, 'vendor/whisper.cpp')
-const output = join(root, `resources/whisper/${process.platform}-${process.arch}`)
+const host = `${process.platform}-${process.arch}`
+const targetArg = process.argv.indexOf('--target')
+const target = targetArg > 0 ? process.argv[targetArg + 1] : host
+const cross = target !== host
+if (cross && !(target === 'win32-x64' && host === 'linux-x64')) throw new Error(`Cross builds support linux-x64 → win32-x64 only (asked ${host} → ${target})`)
+const output = join(root, `resources/whisper/${target}`)
 const started = Date.now()
 function run(command, args, opts = {}) {
   const result = spawnSync(command, args, { cwd: root, stdio: 'inherit', ...opts })
@@ -40,10 +46,28 @@ struct whisper_token_data whisper_full_get_token_data(struct whisper_context * c
 const code = readFileSync(cpp, 'utf8')
 if (code.includes(original)) writeFileSync(cpp, code.replace(original, patched))
 else if (!code.includes(patched)) throw new Error('VAD timestamp patch no longer applies')
-let gpu = !process.argv.includes('--cpu')
+const LLVM_MINGW = '20261006'
+function crossArgs() {
+  if (!cross) return []
+  const name = `llvm-mingw-${LLVM_MINGW}-ucrt-ubuntu-22.04-x86_64`
+  const dir = join(root, 'vendor', name)
+  if (!existsSync(join(dir, 'bin'))) {
+    const archive = join(root, 'vendor', `${name}.tar.xz`)
+    run('curl', ['-fL', '--retry', '3', '-o', archive, `https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW}/${name}.tar.xz`])
+    run('tar', ['-xJf', archive, '-C', join(root, 'vendor')])
+  }
+  const bin = (tool) => join(dir, 'bin', `x86_64-w64-mingw32-${tool}`)
+  // Static: no libc++/libunwind DLLs to ship. ggml's own threadpool instead of OpenMP.
+  // v1.9.5's examples/common.cpp uses std::partial_sort without <algorithm>, which libc++ doesn't pull in transitively.
+  return ['-DCMAKE_CXX_FLAGS=-include algorithm', '-DCMAKE_SYSTEM_NAME=Windows', '-DCMAKE_SYSTEM_PROCESSOR=x86_64', `-DCMAKE_C_COMPILER=${bin('clang')}`, `-DCMAKE_CXX_COMPILER=${bin('clang++')}`,
+    `-DCMAKE_RC_COMPILER=${bin('windres')}`, '-DCMAKE_EXE_LINKER_FLAGS=-static', '-DGGML_OPENMP=OFF',
+    // CPU only for now (a Vulkan exe hard-links vulkan-1.dll and wouldn't start without GPU drivers); assume AVX2-era CPUs (2013+).
+    '-DGGML_AVX=ON', '-DGGML_AVX2=ON', '-DGGML_FMA=ON', '-DGGML_F16C=ON']
+}
+let gpu = !process.argv.includes('--cpu') && !cross
 function build(vulkan) {
-  const dir = join(source, vulkan ? 'build-cascade-vulkan' : 'build-cascade-cpu')
-  run('cmake', ['-S', source, '-B', dir, '-DCMAKE_BUILD_TYPE=Release', `-DGGML_VULKAN=${vulkan ? '1' : '0'}`,
+  const dir = join(source, `build-cascade-${target}-${vulkan ? 'vulkan' : 'cpu'}`)
+  run('cmake', ['-S', source, '-B', dir, '-DCMAKE_BUILD_TYPE=Release', `-DGGML_VULKAN=${vulkan ? '1' : '0'}`, ...crossArgs(),
     '-DBUILD_SHARED_LIBS=OFF', '-DGGML_NATIVE=OFF', '-DWHISPER_BUILD_TESTS=OFF', '-DWHISPER_BUILD_SERVER=OFF',
     '-DWHISPER_CURL=OFF'])
   run('cmake', ['--build', dir, '--config', 'Release', '--target', 'whisper-cli', '-j', String(Math.min(8, availableParallelism()))])
@@ -57,12 +81,12 @@ try { dir = build(gpu) } catch (error) {
   dir = build(false)
 }
 mkdirSync(output, { recursive: true })
-const exe = process.platform === 'win32' ? 'whisper-cli.exe' : 'whisper-cli'
+const exe = target.startsWith('win32') ? 'whisper-cli.exe' : 'whisper-cli'
 const binary = [join(dir, 'bin', exe), join(dir, 'bin/Release', exe)].find(existsSync)
 if (!binary) throw new Error('Build succeeded but whisper-cli was not found')
 copyFileSync(binary, join(output, `${exe}.tmp`))
 chmodSync(join(output, `${exe}.tmp`), 0o755)
 renameSync(join(output, `${exe}.tmp`), join(output, exe))
-writeFileSync(join(output, 'build.json'), JSON.stringify({ tag, commit, timestampPatch: 1, gpu, backend: gpu ? 'vulkan' : 'cpu', seconds: (Date.now() - started) / 1000 }, null, 2))
+writeFileSync(join(output, 'build.json'), JSON.stringify({ tag, commit, target, timestampPatch: 1, gpu, backend: gpu ? 'vulkan' : 'cpu', seconds: (Date.now() - started) / 1000 }, null, 2))
 copyFileSync(join(source, 'LICENSE'), join(output, 'LICENSE'))
 console.log(`whisper.cpp ${tag}: ${gpu ? 'Vulkan' : 'CPU'} build in ${((Date.now() - started) / 1000).toFixed(1)}s → ${output}`)

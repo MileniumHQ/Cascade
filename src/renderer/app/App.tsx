@@ -1,6 +1,6 @@
 import { createEffect, createSignal, Match, onCleanup, onMount, Show, Switch } from 'solid-js'
 import type { CascadeApp } from '@core/app'
-import { Button, MenuLayer, Modal, TextField, ToastLayer, TooltipLayer } from '../ui/kit'
+import { Button, MenuLayer, Modal, pushToast, TextField, ToastLayer, TooltipLayer } from '../ui/kit'
 import type { Session } from './session'
 import { TitleBar } from './TitleBar'
 import { ProjectSettingsModal } from './ProjectSettings'
@@ -26,8 +26,19 @@ export function App(props: { app: CascadeApp; session: Session }) {
     { id: 'project.rename', title: 'Rename project…', category: 'Project', run: () => setModal('rename'), enabled: editor },
     { id: 'app.settings', title: 'Settings…', category: 'App', run: () => setModal('settings') },
     { id: 'app.quit', title: 'Quit', category: 'App', run: () => app.host?.window.close() },
-    { id: 'plugins.openFolder', title: 'Open plugins folder', category: 'App', run: () => app.host?.plugins.openFolder() }
+    { id: 'plugins.openFolder', title: 'Open plugins folder', category: 'App', run: () => app.host?.plugins.openFolder() },
+    { id: 'app.checkUpdates', title: 'Check for updates', category: 'App', run: () => void checkUpdates() }
   ]
+  async function checkUpdates() {
+    const s = await app.host?.update.check()
+    if (!s) return
+    const toast = (kind: 'info' | 'success' | 'error', message: string, detail?: string) => pushToast({ id: Date.now(), kind, message, detail })
+    if (s.status === 'unsupported') toast('info', 'Updates aren’t available for this build', 'They work in the installed Windows app, the AppImage and the RPM.')
+    else if (s.status === 'error') toast('error', 'Couldn’t check for updates', s.error)
+    else if (s.status === 'ready') toast('success', `Cascade ${s.version} is ready`, 'Click “Restart to update” in the title bar.')
+    else if (s.status === 'downloading') toast('info', `Downloading Cascade ${s.version}…`)
+    else toast('success', `Cascade ${s.current} is up to date`)
+  }
   const appMenu: [string, string, string, number][] = [
     ['project.new', 'project', 'New Project', -30],
     ['project.open', 'project', 'Open Project…', -20],
@@ -41,6 +52,7 @@ export function App(props: { app: CascadeApp; session: Session }) {
     ...appCommands.map((c) => app.registries.commands.register(c, 'cascade.app', true)),
     ...appMenu.map(([command, group, label, order]) => app.registries.menus.register({ id: `menu:${command}`, location: 'app/file', group, command, label, order }, 'cascade.app', true)),
     app.registries.menus.register({ id: 'menu:plugins.openFolder', location: 'app/help', command: 'plugins.openFolder', label: 'Open Plugins Folder' }, 'cascade.app', true),
+    app.registries.menus.register({ id: 'menu:app.checkUpdates', location: 'app/help', command: 'app.checkUpdates', label: 'Check for Updates…', order: 100 }, 'cascade.app', true),
     app.registries.keybindings.register({ id: 'app.settings:Mod+,', command: 'app.settings', key: 'Mod+,' }, 'cascade.app', true),
     app.registries.keybindings.register({ id: 'app.quit:Mod+Q', command: 'app.quit', key: 'Mod+Q' }, 'cascade.app', true)
   ]

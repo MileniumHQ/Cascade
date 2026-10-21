@@ -13,14 +13,16 @@ export const MAX_SPEED = 100
  * time-remap property); the source position is its integral.
  */
 export interface TimeMap {
-  /** Speed if it never changes, else null. */
+  /** Speed if it never changes, else null. Always positive; see `reversed`. */
   readonly constant: number | null
+  /** The source plays backwards: `offset` decreases from 0 (sourceIn is the source time at clip start). */
+  readonly reversed?: boolean
   /** Slowest and fastest keyframed speed (equal when constant). */
   readonly min: number
   readonly max: number
   /** Speed at clip-local time. */
   speedAt(local: Flicks): number
-  /** Source flicks advanced since `sourceIn` at clip-local time (∫ speed). */
+  /** Source flicks advanced since `sourceIn` at clip-local time (∫ speed; negative when reversed). */
   offset(local: Flicks): Flicks
   /** Inverse of `offset`: clip-local time at which the source has advanced `offset` flicks. */
   localAt(offset: Flicks): Flicks
@@ -104,13 +106,29 @@ export function curveMap(base: number, kfs: Keyframe[], regs: EvalRegistries): T
   return { constant: null, min: Math.min(...speeds), max: Math.max(...speeds), speedAt, offset, localAt }
 }
 
+/** The same mapping played backwards: the source runs from `sourceIn` down. */
+export function reverseMap(m: TimeMap): TimeMap {
+  if (m.reversed) return m
+  return { ...m, reversed: true, offset: (t) => -m.offset(t), localAt: (o) => m.localAt(-o) }
+}
+
+/** Source range [lo, hi) a clip uses, in source flicks, whichever way it plays. */
+export function sourceSpan(clip: Clip, map: TimeMap): { lo: Flicks; hi: Flicks } {
+  const a = clip.sourceIn
+  const b = clip.sourceIn + map.offset(clip.duration)
+  return { lo: Math.min(a, b), hi: Math.max(a, b) }
+}
+
 /** The time-remap property instance and param driving a clip's speed, if any. */
-function remapParam(clip: Clip, regs: RemapRegistries): ParamValue | null {
+function remapParam(clip: Clip, regs: RemapRegistries): { pv: ParamValue; reversed: boolean } | null {
   for (const p of clip.properties) {
     if (!p.enabled) continue
     const contrib = regs.properties.get(p.type)
     const param = contrib?.timeRemap
-    if (param) return p.params[param] ?? { value: contrib.params.find((d) => d.id === param)?.default ?? 1 }
+    if (!param) continue
+    const rev = contrib.timeReverse
+    const reversed = !!rev && !!(p.params[rev]?.value ?? contrib.params.find((d) => d.id === rev)?.default)
+    return { pv: p.params[param] ?? { value: contrib.params.find((d) => d.id === param)?.default ?? 1 }, reversed }
   }
   return null
 }
@@ -122,14 +140,14 @@ const cache = new WeakMap<Clip, { partner: Clip | null; map: TimeMap }>()
  * time-remap (the audio of a video) follow their partner's, so picture and sound stay together.
  */
 export function clipTimeMap(clip: Clip, timeline: Timeline | undefined, regs: RemapRegistries): TimeMap {
-  let pv = remapParam(clip, regs)
+  let found = remapParam(clip, regs)
   let partner: Clip | null = null
-  if (!pv && clip.linkId && timeline) {
+  if (!found && clip.linkId && timeline) {
     for (const tr of timeline.tracks)
       for (const c of tr.clips)
         if (!partner && c !== clip && c.linkId === clip.linkId && remapParam(c, regs)) {
           partner = c
-          pv = remapParam(c, regs)
+          found = remapParam(c, regs)
         }
   }
   // Committed document objects are frozen (immutable), so they can be cached; drafts cannot.
@@ -139,8 +157,10 @@ export function clipTimeMap(clip: Clip, timeline: Timeline | undefined, regs: Re
   const base = clip.speed ?? 1
   // A partner's keyframes are in its own clip-local time.
   const shift = partner ? partner.start - clip.start : 0
+  const pv = found?.pv
   const kfs = pv?.keyframes?.length ? (shift ? pv.keyframes.map((k) => ({ ...k, t: k.t + shift })) : pv.keyframes) : null
-  const map = !pv ? constantMap(base) : kfs ? curveMap(base, kfs, regs) : constantMap(base * Number(pv.value ?? 1))
+  const forward = !pv ? constantMap(base) : kfs ? curveMap(base, kfs, regs) : constantMap(base * Number(pv.value ?? 1))
+  const map = found?.reversed ? reverseMap(forward) : forward
   if (cacheable) cache.set(clip, { partner, map })
   return map
 }

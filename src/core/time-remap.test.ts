@@ -9,7 +9,7 @@ import { videoPlugin } from '../plugins/builtin/media/video'
 import { timePropertiesPlugin } from '../plugins/builtin/properties/time'
 import { audioPropertiesPlugin } from '../plugins/builtin/properties/audio'
 import { audioPlan } from '../plugins/builtin/export-request'
-import { constantMap, curveMap } from './time-remap'
+import { constantMap, curveMap, sourceSpan } from './time-remap'
 
 const S = (s: number) => Math.round(s * FLICKS)
 const near = (a: number, b: number, tol = FLICKS / 1000) => expect(Math.abs(a - b)).toBeLessThan(tol)
@@ -93,4 +93,32 @@ test('export plan: time-stretch by default, resample when pitch follows speed', 
   expect(audioPlan(app, range).ca.mode).toBe('source')
   app.edit.setParam('ca', pitch, 'semitones', 12)
   expect(audioPlan(app, range).ca).toMatchObject({ mode: 'stretch', tempo: 2, pitch: 4 })
+})
+
+test('reverse: the pair plays its source range backwards; split, trim limits and export plan agree', async () => {
+  const app = await editor()
+  // 10 s at 2×, backwards from 100 s: uses source 80–100 s.
+  app.edit.updateClip('cv', { speed: 2 })
+  const prop = app.timeline().tracks.flatMap((t) => t.clips).find((c) => c.id === 'cv')!.properties.find((p) => p.type === 'speed')!
+  app.edit.setParam('cv', prop.id, 'reverse', true)
+  for (const id of ['cv', 'ca']) {
+    const m = app.edit.timeMap(id)
+    expect(m.reversed).toBe(true)
+    expect(m.offset(S(10))).toBe(-S(20))
+    expect(m.localAt(-S(20))).toBe(S(10))
+  }
+  const audioClip = () => app.timeline().tracks.flatMap((t) => t.clips).find((c) => c.id === 'ca')!
+  expect(sourceSpan(audioClip(), app.edit.timeMap('ca'))).toEqual({ lo: S(80), hi: S(100) })
+  const plan = audioPlan(app, { start: 0, end: S(30) }).ca
+  expect(plan).toMatchObject({ mode: 'stretch', reverse: true, tempo: 2, sourceStart: 80, sourceEnd: 100 })
+  // Split at 15 s: the right half starts 10 s further down the source.
+  const [right] = app.edit.splitAt(S(15), ['cv'])!
+  expect(app.timeline().tracks.flatMap((t) => t.clips).find((c) => c.id === right)!.sourceIn).toBe(S(90))
+  // Extending the start is limited by the source end (600 s), the end by source 0.
+  app.edit.trimClip('cv', 'start', 0)
+  expect(audioClip().start).toBe(0)
+  expect(audioClip().sourceIn).toBe(S(120))
+  app.edit.trimClip(right, 'end', S(500))
+  const r = app.timeline().tracks.flatMap((t) => t.clips).find((c) => c.id === right)!
+  expect(r.sourceIn + app.edit.timeMap(r).offset(r.duration)).toBe(0)
 })

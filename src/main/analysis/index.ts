@@ -86,11 +86,9 @@ export function createAnalysisService(userData: string, resourcesPath = process.
     if (await getFFmpegTools().then(() => true, () => false)) available.push('prosody', 'shots')
     const missing = speech.models.filter(m => !m.installed).map(m => ({ part: 'speech' as AnalysisPart, id: m.id, name: m.name, sizeBytes: m.sizeBytes }))
     if (speech.binary && !missing.length) available.unshift('speech')
-    // The pinned Linux addon is packaged as a dependency; model presence is checked independently.
+    // The pinned native addon (sherpa-onnx-linux-x64 / -win-x64) is packaged as a dependency; model presence is checked independently.
     let runtime = false
-    if (process.platform === 'linux' && process.arch === 'x64') {
-      try { createRequire(import.meta.url).resolve('sherpa-onnx-linux-x64/sherpa-onnx.node'); runtime = true } catch { /* Native package missing. */ }
-    }
+    try { createRequire(import.meta.url).resolve(`sherpa-onnx-${process.platform === 'win32' ? 'win' : process.platform}-${process.arch}/sherpa-onnx.node`); runtime = true } catch { /* Native package missing. */ }
     for (const model of MODELS) {
       if (await installed(model)) { if (runtime) available.push(model.part) }
       else missing.push({ part: model.part, id: model.id, name: model.name, sizeBytes: model.sizeBytes })

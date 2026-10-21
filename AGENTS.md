@@ -6,7 +6,12 @@ DOM-powered video editor. Electron 44 + TypeScript (TS 7 / tsgo) + SolidJS + pla
 - `bun run typecheck` — must pass (`tsc --noEmit`).
 - `bun run test` — vitest, tests live next to code as `*.test.ts`.
 - `bun run build` — electron-vite build to `out/`.
-- `bun run dist:linux` — packaged Linux x64 build (AppImage + `dist/linux-unpacked/`); builds whisper first if missing (`bun run setup:whisper`). Only Linux x64 is targeted for now.
+- `bun run dist:linux` — packaged Linux x64 build (AppImage + RPM + `dist/linux-unpacked/`); builds whisper first if missing (`bun run setup:whisper`). The RPM needs `rpmbuild` (Arch: `rpm-tools`).
+- `bun run release [patch|minor|x.y.z] [--no-win] [--dry-run]` — builds the pushed HEAD in a clean worktree (`vendor/release-<tag>`), tags it and publishes a GitHub release with the `latest*.yml` files that installed copies auto-update from (`src/main/updater.ts`: NSIS, AppImage, RPM via polkit). The version comes from the newest `v*` tag; package.json isn't bumped. `CASCADE_UPDATE_URL=http://…` points the updater at a local folder of builds for testing.
+- Platform `files:` lists in `electron-builder.yml` replace the top-level list: keep `out/**` + `package.json` in them, or the whole repo gets packed.
+- `bun run dist:win` — Windows x64 NSIS installer, cross-built from Linux (`scripts/dist-win.mjs`): cross-compiles a CPU-only (AVX2) `whisper-cli.exe` with llvm-mingw (`setup-whisper.mjs --target win32-x64`, toolchain downloaded to `vendor/`), fetches Windows prebuilts that a Linux install skips (`scripts/fetch-win-deps.mjs`: sherpa-onnx, esbuild, Claude/Codex agent binaries, ffmpeg.exe — placed beside the Linux ones in `node_modules`), then electron-builder with wine. Each platform's `files` in `electron-builder.yml` excludes the other's binaries; add new native deps to both lists. Unsigned, so SmartScreen warns. Windows smoke test: `WINEDEBUG=-all wine resources/whisper/win32-x64/whisper-cli.exe --help`.
+- `.cascade` file association: `fileAssociations` in `electron-builder.yml` (NSIS registers `resources/file-icon.ico`); on Linux `src/main/desktop-integration.ts` installs the per-user mime icon (+ a desktop entry when running as an AppImage) because electron-builder's mime XML names a generic icon. Opened files arrive via argv / `second-instance` / `open-file` → `HostBridge.window.onOpenFile`. Edit `resources/file-icon.svg`, then `node scripts/gen-file-icon.mjs` (needs `rsvg-convert`).
+- Platform code: no `/`-only path handling (split on `/[\\/]/`), resolve CLIs with PATHEXT and spawn `.cmd` shims via `spawnCommand` (`src/main/agents/index.ts`), no Unix-only tools (`unzip`, `fc-list`) without a Windows branch.
 - `bun run dev` — dev app. **This environment sets `ELECTRON_RUN_AS_NODE=1`; unset it** (`env -u ELECTRON_RUN_AS_NODE bun run dev`) or Electron starts as plain Node.
 
 ## Driving the real app (screenshots / e2e)
@@ -15,11 +20,11 @@ DOM-powered video editor. Electron 44 + TypeScript (TS 7 / tsgo) + SolidJS + pla
 - Test footage: `~/wwdc.webm` (1h48m AV1 1080p 29.97 + Opus). The first ~5s are black; seek to e.g. 600s for content.
 
 ## Agent editing
-- MCP tools are documented in `docs/mcp.md`. Content-aware editing (`media_analyze` → `transcript_get`, then ordinary ops with word anchors like `w12.end+80ms`) lives in `src/plugins/builtin/mcp/transcript.ts`, built on the `SourceAnalysis` contract in `src/shared/analysis.ts`. Keep agent tools as information + primitives; don't add hard-coded editing macros.
+- MCP tools are documented in `docs/mcp.md`. Content-aware editing (`media_analyze` → `transcript_get`, then ordinary ops with word anchors like `w12.end+80ms`, or source anchors like `m1:w12` in `add_clip` sourceIn/sourceOut) lives in `src/plugins/builtin/mcp/transcript.ts`, built on the `SourceAnalysis` contract in `src/shared/analysis.ts`. `audio_check` renders the mix through the WAV exporter and measures/transcribes it (`mcp/loudness.ts`). Keep agent tools as information + primitives; don't add hard-coded editing macros.
 - Resource limits: run one GPU-heavy job at a time (whisper Vulkan, export, Electron test instance); the machine has crashed under load.
 
 ## Agent panel
-- Left sidebar "Agent" panel runs Claude Code / Codex / Cursor / OpenCode over ACP (Cursor installable in-app from the ACP registry) with Cascade's MCP attached. See `docs/agents.md`; host in `src/main/agents/`, UI in `src/plugins/builtin/panels/agent/`.
+- Left sidebar "Agent" panel runs Claude Code / Codex / Cursor / OpenCode over ACP (Cursor and OpenCode installable in-app from the ACP registry) with Cascade's MCP attached. See `docs/agents.md`; host in `src/main/agents/`, UI in `src/plugins/builtin/panels/agent/`.
 
 ## User plugins
 - `.ts/.tsx/.js/.mjs` files in `<userData>/plugins` are bundled with esbuild and hot-reloaded on save. Default-export a `PluginDefinition`. Example: `examples/plugins/wiggle.ts` (typecheck with `tsc -p tsconfig.examples.json`).
@@ -35,9 +40,10 @@ DOM-powered video editor. Electron 44 + TypeScript (TS 7 / tsgo) + SolidJS + pla
 
 ## Rules
 - Time is integer **flicks** (`FLICKS = 705_600_000`/s). Never store seconds or frames in the document.
-- Clip speed is the keyframeable Speed property (`timeRemap`); linked audio follows its video. Map timeline ↔ source with `app.edit.timeMap(clip)` / `ClipFrameState.remap`, never `clip.speed` (a legacy multiplier).
+- Clip speed is the keyframeable Speed property (`timeRemap`, plus a `timeReverse` toggle); linked audio follows its video. A reversed clip's `TimeMap.offset` is negative (sourceIn is the source time at clip start); use `sourceSpan()` for the used source range. Map timeline ↔ source with `app.edit.timeMap(clip)` / `ClipFrameState.remap`, never `clip.speed` (a legacy multiplier).
 - The stage never uses px. Spatial values are stored as frame fractions; plugins emit CSS via `StageUnits` (`cqw`/`cqh`). The UI can show px (reference resolution) freely.
 - All document mutations go through `app.edit.*` / `doc.transact` (undoable). Never mutate project objects directly (they're frozen).
 - The core must not know specific media types/properties — those belong in plugins.
 - UI contribution points are framework-agnostic `mount(el, ctx) => cleanup`.
+- Icons: Material Symbols (Rounded, weight 300), inlined as SVG paths in the generated `src/renderer/ui/material-icons.ts`; never load the icon font or the whole set. `<Icon name>` / `iconMarkup()` / plugin `icon` fields take Cascade names (Lucide-style, e.g. `film`) or a bundled Material name. To add one: pick a symbol at fonts.google.com/icons (Rounded), check `node_modules/@material-symbols/svg-300/rounded/<name>.svg` exists (append `-fill` for filled), add `'my-name': 'material_name'` to `MAP` in `scripts/gen-icons.mjs`, run `node scripts/gen-icons.mjs`, commit both files. Unknown names render a "?" glyph. Missing from Material: hand-drawn glyphs go in `CUSTOM` in the same script (960-unit grid, `viewBox 0 -960 960 960`).
 - Visual design: dark neutral greys (not blue-tinted), glassy popovers, no marketing taglines. Accents: neutral white (`--accent`), light blue `#82cbff` secondary at reduced opacity. Font: Inter. Custom title bar (`src/renderer/app/TitleBar.tsx`) with in-app File/Edit/… menus built from `app/*` menu contributions (`src/renderer/app/menu.ts`); the OS window buttons come from Electron's `titleBarOverlay`.

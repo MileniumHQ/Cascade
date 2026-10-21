@@ -14,11 +14,15 @@ export const timePropertiesPlugin = definePlugin({
       description: 'Playback speed; keyframe it for speed ramps',
       icon: 'gauge',
       category: 'Time',
-      keywords: ['time', 'slow motion', 'fast forward', 'ramp', 'retime', 'rate'],
+      keywords: ['time', 'slow motion', 'fast forward', 'ramp', 'retime', 'rate', 'reverse', 'backwards', 'rewind'],
       appliesTo: timeBased,
-      params: [{ id: 'speed', label: 'Speed', type: 'number', unit: 'x', default: 1, min: 0.05, max: 16, softMin: 0.25, softMax: 4, step: 0.05 }],
+      params: [
+        { id: 'speed', label: 'Speed', type: 'number', unit: 'x', default: 1, min: 0.05, max: 16, softMin: 0.25, softMax: 4, step: 0.05 },
+        { id: 'reverse', label: 'Reverse', type: 'toggle', default: false, animatable: false }
+      ],
       timeRemap: 'speed',
-      summary: (v) => `${+n(v.speed).toFixed(2)}×`
+      timeReverse: 'reverse',
+      summary: (v) => `${v.reverse ? '◀ ' : ''}${+n(v.speed).toFixed(2)}×`
     })
   }
 })

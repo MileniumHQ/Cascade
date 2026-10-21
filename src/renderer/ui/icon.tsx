@@ -1,31 +1,22 @@
-import { icons } from 'lucide'
 import { createMemo, type JSX } from 'solid-js'
-
-type IconNode = [string, Record<string, string | number>][]
+import { ICON_ALIASES, MATERIAL_ICONS } from './material-icons'
 
 const cache = new Map<string, string>()
 
-const pascal = (name: string) =>
-  name
-    .split(/[-_\s]/)
-    .filter(Boolean)
-    .map((p) => p[0].toUpperCase() + p.slice(1))
-    .join('')
-
-/** Resolve a Lucide name ("film", "Film") or raw <svg> into inner SVG markup. */
+/**
+ * Resolve an icon name or raw <svg> into SVG markup. Names are Cascade's Lucide-style names ("film") or the
+ * Material Symbol names they map to ("movie"); see scripts/gen-icons.mjs to add one. `strokeWidth` is the
+ * Lucide-era weight (1.75 = regular); heavier values thicken the glyph with an outline.
+ */
 export function iconMarkup(icon: string | undefined, strokeWidth = 1.75): string {
   if (!icon) return ''
   if (icon.trim().startsWith('<svg')) return icon
   const key = `${icon}|${strokeWidth}`
   const hit = cache.get(key)
   if (hit) return hit
-  const node = ((icons as unknown as Record<string, IconNode>)[pascal(icon)] ??
-    (icons as unknown as Record<string, IconNode>)[icon]) as IconNode | undefined
-  if (!node) return iconMarkup('circle-help', strokeWidth)
-  const inner = node
-    .map(([tag, attrs]) => `<${tag} ${Object.entries(attrs).map(([k, v]) => `${k}="${v}"`).join(' ')}/>`)
-    .join('')
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`
+  const glyph = MATERIAL_ICONS[ICON_ALIASES[icon] ?? icon] ?? MATERIAL_ICONS.help
+  const bold = strokeWidth > 1.75 ? ` stroke="currentColor" stroke-width="${Math.round((strokeWidth - 1.75) * 40)}" stroke-linejoin="round"` : ''
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor"${bold}>${glyph}</svg>`
   cache.set(key, svg)
   return svg
 }

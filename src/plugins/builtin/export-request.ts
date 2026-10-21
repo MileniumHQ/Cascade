@@ -26,8 +26,8 @@ const MAX_COMMANDS = 400
 
 /**
  * Audio processing for every audible clip in the range. Unchanged or "match speed" clips are
- * resampled by the render worker; others are time-stretched by ffmpeg so pitch matches the
- * preview (where the media element preserves pitch).
+ * resampled by the render worker; others (and reversed clips) are time-stretched by ffmpeg so
+ * pitch matches the preview (where the media element preserves pitch).
  */
 export function audioPlan(app: CascadeAPI, range: { start: Flicks; end: Flicks }): Record<string, ClipAudioPlan> {
   const project = app.project()
@@ -45,10 +45,12 @@ export function audioPlan(app: CascadeAPI, range: { start: Flicks; end: Flicks }
       const map = app.edit.timeMap(clip)
       const { semitones, matchSpeed } = pitchOf(clip)
       const o0 = map.offset(from)
-      const sourceStart = Math.max(0, (clip.sourceIn + o0) / FLICKS)
-      const sourceEnd = Math.max(sourceStart, (clip.sourceIn + map.offset(to)) / FLICKS)
+      // A reversed clip covers the same source range, read from its end down.
+      const a = (clip.sourceIn + o0) / FLICKS, b = (clip.sourceIn + map.offset(to)) / FLICKS
+      const sourceStart = Math.max(0, Math.min(a, b))
+      const sourceEnd = Math.max(sourceStart, a, b)
       const base = { mediaId: media.id, sourceStart, sourceEnd }
-      if (semitones === 0 && (matchSpeed || map.constant === 1)) {
+      if (!map.reversed && semitones === 0 && (matchSpeed || map.constant === 1)) {
         plan[clip.id] = { mode: 'source', ...base }
         continue
       }
@@ -62,10 +64,10 @@ export function audioPlan(app: CascadeAPI, range: { start: Flicks; end: Flicks }
         const n = Math.min(MAX_COMMANDS, Math.max(2, Math.ceil(((to - from) / FLICKS) * 10)))
         for (let i = 1; i < n; i++) {
           const t = from + ((to - from) * i) / n
-          commands.push({ t: (map.offset(t) - o0) / FLICKS, ...at(t) })
+          commands.push({ t: Math.abs(map.offset(t) - o0) / FLICKS, ...at(t) })
         }
       }
-      plan[clip.id] = { mode: 'stretch', ...base, localStart: from / FLICKS, ...at(from), commands }
+      plan[clip.id] = { mode: 'stretch', ...base, localStart: from / FLICKS, ...at(from), commands, ...(map.reversed ? { reverse: true } : {}) }
     }
   }
   return plan

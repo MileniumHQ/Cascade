@@ -1,8 +1,10 @@
 # Cascade MCP
 
-Cascade exposes **26 tools** that inspect and edit the project open in its editor. Edits appear immediately in preview and use the same editing APIs as the UI. A successful `timeline_apply_edits` batch is one undo step labeled `Agent: apply N edits` (or `Agent: split`, etc.). No additional packages are required: this implementation uses the installed `@modelcontextprotocol/sdk` v1 and Zod.
+Cascade exposes **30 tools** that inspect and edit the project open in its editor. Edits appear immediately in preview and use the same editing APIs as the UI. A successful `timeline_apply_edits` batch is one undo step labeled `Agent: apply N edits` (or `Agent: split`, etc.). No additional packages are required: this implementation uses the installed `@modelcontextprotocol/sdk` v1 and Zod.
 
 ## Connect Claude Code
+
+**Settings → Agents (MCP) → Connect an agent** shows ready-to-paste setups for Claude Code, Codex, Cursor, OpenCode, VS Code and generic `mcpServers` JSON, with the live URL, token and executable path filled in. Choose **In project** (`.mcp.json`, `.cursor/mcp.json`, `.codex/config.toml`, `opencode.json`, `.vscode/mcp.json`) or **Global** (user-level config), and HTTP or stdio. The snippet builder is `src/renderer/app/mcp-setup.ts`.
 
 Start Cascade first. The existing **Settings → Agents (MCP) → MCP server** setting (`mcp.enabled`, default true) enables calls. Main prints the complete connection command, including the actual selected port and token, on every startup:
 
@@ -42,23 +44,26 @@ Calls execute in the renderer via the existing `mcp.onCall` / `mcp:reply` bridge
 2. See the edit with `timeline_preview_sheet` or a range `contact_sheet`. Use `media_contact_sheet` to inspect raw sources before adding them.
 3. Apply edits in batches with `timeline_apply_edits`.
 4. Verify visually with sheets and inspect the resulting timeline. Undo mistakes with `timeline_undo`.
-5. Save with `project_save`; export with `export_start`, poll `job_get`, and optionally `export_cancel`.
+5. Listen with `audio_check`: it reports peaks, loudness, clipping and the words actually audible in the render.
+6. Save with `project_save`; export with `export_start`, wait with `job_get` (`wait` up to 120 s), and optionally `export_cancel`.
 
 **All times are integer flicks: 705600000 = one second.** Keyframe times are clip-local; placement, split, trim, marker and range times are timeline time. Ranges are half open `[start,end)`. Spatial values are frame fractions; e.g. position `[0.25, 0]` is one quarter frame width right of center. Use `registry_list` to discover units, ranges and property definitions. Never put floating-point seconds or pixel lengths in the document.
 
-Tools are listed in deterministic order and accept `detail: "concise" | "detailed"` (concise by default). `project_get`, `media_list` and `timeline_get` expose additional document details in detailed mode. Other tools return their compact domain-specific result. IDs such as `m1`, `c1`, `t1`, `p1` are stable aliases for the current editor lifetime; full document ids also work. Refresh ids after opening another project or restarting the editor. A batch `ref` is a temporary name usable by subsequent operations in that batch.
+Tools are listed in deterministic order and accept `detail: "concise" | "detailed"` (concise by default). `project_get`, `media_list` and `timeline_get` expose additional document details in detailed mode. Concise `timeline_get` starts with a `user:` line (playhead timecode and flicks, whether it's playing, selected clip ids; `project_get` has the same as `editor`), then prints one line per clip: id, timecodes, `[start, end)` in flicks, source and source range, effective speed (`speed 2×`, `reversed`, `(from linked clip)` when a partner owns it), `linked=` partner ids, and only the parameters that differ from their defaults. Other tools return their compact domain-specific result. IDs such as `m1`, `c1`, `t1`, `p1` are stable aliases for the current editor lifetime; full document ids also work. Refresh ids after opening another project or restarting the editor. A batch `ref` is a temporary name usable by subsequent operations in that batch.
 
 | Tools | Purpose |
 | --- | --- |
 | `project_get`, `project_new`, `project_open`, `project_save`, `project_settings_set` | Session and undoable project settings |
 | `media_list`, `media_import`, `media_probe` | Sources; paths must be absolute or `~/…` |
 | `timeline_get`, `timeline_apply_edits` | Inspect and edit the active timeline |
+| `playhead_get`, `playhead_set` | Where the user is (playhead, playing, selection, clips under the playhead with clip-local/source times); move the playhead (flicks or anchor) and play/pause so the user sees a moment |
 | `timeline_undo`, `timeline_redo`, `history_get` | Undo/redo and recent observed changes |
 | `registry_list` | Media types, property parameters, easings, generators, exporters |
 | `frame_get`, `contact_sheet`, `timeline_preview_sheet`, `media_contact_sheet` | Visual inspection |
 | `plugin_write`, `plugin_list`, `plugin_remove`, `plugin_api_docs` | Property plugin authoring and hot reload |
-| `export_start`, `job_get`, `export_cancel` | Asynchronous export jobs |
-| `media_analyze`, `transcript_get`, `transcript_search` | Edit by content: words, fillers, pauses, loudness, pitch and stress, sound events and shot cuts. See [Editing by transcript](#editing-by-transcript) |
+| `export_start`, `job_get`, `export_cancel` | Asynchronous export jobs; `job_get(wait)` blocks until a job finishes (any job kind) |
+| `audio_check` | Render the mix of a range as export does; peak/loudness/clipping overall and per clip, plus a transcript of what is audible |
+| `media_analyze`, `transcript_get`, `transcript_search` | Edit by content: words, fillers, pauses, loudness, pitch and stress, sound events and shot cuts, on the timeline or in a source (`mediaId`). See [Editing by transcript](#editing-by-transcript) |
 | `captions_generate`, `job_get` | Local Whisper captions for a clip (`clipId`) or source (`mediaId`); asynchronous, poll `job_get`. See [captions.md](captions.md) |
 
 ## Batch example
@@ -92,7 +97,36 @@ Result (trimmed):
 One undo step committed.
 ```
 
-Supported operations: `add_clip`, `add_text`, `move`, `trim`, `split`, `delete`, `ripple_delete`, `set_param`, `add_keyframe`, `add_property`, `remove_property`, `add_marker`. Each operation has a strict schema in `tools/list`. `trim.time` is the desired absolute timeline edge. `propertyId` accepts an instance id or a property type (first instance if stacked). Use instance ids for stacked effects. An `add_property` ref can name the new instance for later operations.
+Supported operations: `add_clip`, `add_text`, `move`, `trim`, `split`, `delete`, `ripple_delete`, `set_param`, `add_keyframe`, `add_keyframes`, `wiggle`, `add_property`, `remove_property`, `add_marker`. Each operation has a strict schema in `tools/list`.
+
+### Placing source ranges
+
+`add_clip` takes the source range directly. `sourceIn`/`sourceOut` are source flicks or **source anchors** (`m1:w1043.start-40ms`, see below), and the timeline duration is derived as `(sourceOut − sourceIn) / speed` in whole frames (`sourceOut` defaults to the end of the source). Give `duration` instead of `sourceOut` to set the timeline length yourself. Other fields:
+
+- `speed` (constant, 0.05–16) and `reverse: true` apply to the picture and its linked audio. A reversed clip starts at the end of its range and plays down to `sourceIn`.
+- `start` omitted → append right after the last clip on the destination track (and the linked audio's track).
+- `repeat: n` places n copies back to back. Refs are `ref`, `ref.2`, `ref.3`…
+- The linked audio clip is reported (`+ linked audio c6 (v.audio)`) and named `ref.audio` (`ref.2.audio`…) for later ops; `audioTrackId` picks its track.
+
+Each `add_clip`/`add_text` result shows the placed `[start, end)` in flicks.
+
+```json
+{"ops":[
+  {"op":"add_clip","mediaId":"m1","start":0,"sourceIn":"m1:w1043.start-40ms","sourceOut":"m1:w1047.end+60ms","speed":1.25,"ref":"line"},
+  {"op":"add_clip","mediaId":"m1","sourceIn":"m1:w1045.start","sourceOut":"m1:w1045.end","repeat":4,"ref":"stutter"},
+  {"op":"set_param","clipId":"stutter.4.audio","propertyId":"volume","paramId":"gain","value":6},
+  {"op":"add_clip","mediaId":"m1","sourceIn":"m1:s88","sourceOut":"m1:s88.end","reverse":true}
+]}
+```
+
+**Speed belongs to the linked pair.** It is the Speed property (`speed`, plus a `reverse` toggle) of the pair's picture clip, and the linked audio follows it. `set_param`/`add_keyframe`/`add_property` for `speed` on either clip of a pair edit that one instance; the result says `(on linked c5; applies to both)`. Setting speed on a clip that has none adds the property where the UI would.
+
+### Keyframes in bulk
+
+- `add_keyframes {clipId, propertyId, paramId, keys:[{time, value, easing?}]}` sets many keyframes in one op.
+- `wiggle {clipId, propertyId, paramId, amplitude, frequency, from?, to?, seed?, easing?}` adds random keyframes around the parameter's current (possibly animated) value. Use it for camera shake (`transform.position`, amplitude `[0.02,0.015]`, 12 Hz), rotation or scale jitter. The first and last keys sit on the original value so the wiggle blends in. `easing: "linear"` gives jitter, `"hold"` snappy jumps.
+
+Font parameters must name an installed family; `registry_list` returns `fonts`. An unknown font is rejected with similar installed names, rather than silently falling back. `trim.time` is the desired absolute timeline edge. `propertyId` accepts an instance id or a property type (first instance if stacked). Use instance ids for stacked effects. An `add_property` ref can name the new instance for later operations.
 
 Placement overwrites the destination range, matching UI behavior. Video source placement also creates linked audio when the media type requests it. Move, trim, split and delete respect linked clips. `ripple_delete` removes the interval across unlocked tracks, shifts later clips equally (including across gaps), and adjusts markers; locked tracks stay fixed. Operations that would alter a locked linked counterpart fail.
 
@@ -141,12 +175,27 @@ s2 00:00:04.06–00:00:05.03 w6–w7 [lively] ↗ *Really* great!
    - Mark a reaction: `{"op":"add_marker","time":"s14.start","name":"applause"}`.
    - Punch in on a word: `add_keyframe` scale 1 at `w40.start-200ms` and 1.1 at `w40.start`, on the clip under it.
 4. `transcript_search("phrase")` finds spoken phrases (case- and punctuation-insensitive), and `regex:true` matches sentence text. Results are word-id ranges usable as anchors.
+5. **Read a source without placing it.** `transcript_get(mediaId)` / `transcript_search(query, mediaId)` work in source time. Their ids are source anchors numbered by position: `m1:w1043`, `m1:s88`, with the same `.start`/`.end`/offset forms. Use them in `add_clip` `sourceIn`/`sourceOut` to cut by sentence or word with no timecode arithmetic. Timeline fields reject source anchors, and vice versa.
+
+The words view shows each word's start and end (`w12 00:00:04.06–00:00:04.18`). The same source words placed several times on a track (stutters) get distinct ids in timeline order.
 
 `timeline_get` ends with a hint showing whether a transcript is available, or which sources to analyze.
 
+## Listening: audio_check
+
+`audio_check(start?, end?, transcribe = true)` renders the timeline audio for the range (at most 10 minutes) through the WAV exporter, exactly as an export would: speed, reverse, pitch, volume and other audio properties included. It then measures the render:
+
+- the whole range: sample peak (dBFS), integrated loudness and loudest 400 ms (LUFS, BS.1770 K-weighted and gated), and clipped samples with their timecodes. There is a warning above -1 dBFS.
+- per audio clip: the same readings for the mix while that clip plays.
+- `transcribe`: the render is transcribed locally. The heard sentences are listed in timeline time, so a cut that clips a syllable shows up as a missing or garbled word.
+
+It is asynchronous: `job_get(jobId, wait: 60)` returns the report when done. It runs one heavy job at a time and refuses to start while an export or analysis is running.
+
 ## Frames and sheets
 
-`frame_get(time,width?)` returns a PNG image plus its timecode. Both dimensions are constrained to a maximum long edge of 1568px. `contact_sheet(start?,end?,count?|interval?,columns?)` and `timeline_preview_sheet(count?,columns?)` return **one JPEG grid**, at most 1568px on its long edge, with timecode labels and a cell → timecode/flicks mapping. Defaults are nine cells, three columns. Counts are bounded to 1–24; choose count or interval, not both. The end point is exclusive; the last evenly spaced frame sits before it. Timeline sheets capture a single project snapshot for consistency across cells.
+`frame_get(time,width?)` returns a PNG image plus its timecode. Both dimensions are constrained to a maximum long edge of 1568px. `contact_sheet(start?,end?,count?|interval?,columns?)` and `timeline_preview_sheet(start?,end?,count?,columns?)` return **one JPEG grid**, at most 1568px on its long edge, with timecode labels and a cell → timecode/flicks mapping. Defaults are nine cells, three columns. Counts are bounded to 1–24; choose count or interval, not both. The end point is exclusive; the last evenly spaced frame sits before it. Timeline sheets capture a single project snapshot for consistency across cells.
+
+`shots: true` (on `contact_sheet` and `media_contact_sheet`) puts one cell per shot instead of even spacing: the mid-shot frame, labeled with the shot's range. On a source the shots come from `media_analyze`; on the timeline they are shot cuts plus visual clip starts. Shots are taken from `start` (up to `count`, default 24), and the text says where to continue. Use it to see what is on screen in each shot (a person at a desk, a wallpaper, a chip graphic) and find visual gags. Cascade does no visual captioning itself; you describe what you see.
 
 `media_contact_sheet(mediaId,…)` samples ffmpeg posters directly, without requiring a timeline clip. It works independently of the frame export service. Canvas images use anonymous CORS with the existing `media://` protocol so the returned JPEG remains readable.
 
@@ -167,7 +216,9 @@ bun run test -- src/main/mcp/server.test.ts src/plugins/builtin/mcp/edits.test.t
 CASCADE_USER_DATA=/tmp/cascade-mcp-profile CASCADE_PROJECTS=/tmp/cascade-mcp-projects node scripts/drive.mjs /tmp/cascade-mcp-shots src/main/mcp/verify.mjs
 ```
 
-The driver connects using the installed SDK, lists 26 tools, creates a project, imports `~/wwdc.webm`, adds an animated title, splits and ripple-deletes a range, verifies a failed batch is atomic, generates a real source sheet, writes the documented plugin and confirms registration, checks build failure reporting, undoes/redoes, tests authentication and disabling the setting, and connects a second SDK client through the stdio proxy. Unit tests also cover direct calls without initialization, tolerated legacy session headers, progress notifications and locked linked audio.
+`src/main/mcp/agent-editing.steps.mjs` drives the content-editing features end to end on `~/wwdc.webm`: source transcripts and anchors, linked speed, reverse, repeat/append, wiggle, font checks, shot sheets and `audio_check`. It needs the analysis models in the profile, e.g. `ln -s ~/.config/Cascade/models <profile>/models`.
+
+The driver connects using the installed SDK, lists 30 tools, creates a project, imports `~/wwdc.webm`, adds an animated title, splits and ripple-deletes a range, verifies a failed batch is atomic, generates a real source sheet, writes the documented plugin and confirms registration, checks build failure reporting, undoes/redoes, tests authentication and disabling the setting, and connects a second SDK client through the stdio proxy. Unit tests also cover direct calls without initialization, tolerated legacy session headers, progress notifications and locked linked audio.
 
 Artifacts: `/tmp/cascade-mcp-verification.txt`, `/tmp/cascade-mcp-shots/agent-edit.png`, `/tmp/cascade-mcp-source-sheet.jpg`, and `/tmp/cascade-mcp-contact-sheet-mock.jpg` when the real frame service is unavailable.
 

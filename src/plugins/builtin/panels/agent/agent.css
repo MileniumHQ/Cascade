@@ -114,6 +114,12 @@
   user-select: text;
 }
 pre.ag-work-detail { font-family: ui-monospace, 'JetBrains Mono', monospace; }
+.ag-mono { font-family: ui-monospace, 'JetBrains Mono', monospace; font-size: 11.5px; }
+.ag-thought { color: var(--muted); }
+
+/* A run of tool calls / thoughts collapsed into one row. */
+.ag-group-body { margin: 1px 0 2px 9px; padding-left: 9px; border-left: 1px solid var(--line); display: flex; flex-direction: column; }
+.ag-group-head .ag-work-label { color: var(--text-2); }
 
 .ag-plan { display: flex; flex-direction: column; gap: 3px; padding: 6px 8px; border-radius: var(--r); border: 1px solid var(--line); font-size: 12px; }
 .ag-plan-item { display: flex; gap: 7px; align-items: flex-start; color: var(--text-2); }
@@ -232,6 +238,24 @@ pre.ag-work-detail { font-family: ui-monospace, 'JetBrains Mono', monospace; }
 
 /* Popovers: option menus and the agent/model picker. */
 .ag-pop { min-width: 200px; max-width: 300px; }
+/* Usage popover: plan limit bars, then token/cost rows. */
+.ag-usage { width: 280px; max-width: 280px; padding-bottom: 6px; }
+.ag-usage-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 2px 9px; font-size: 11px; font-weight: 500; color: var(--muted); }
+.ag-meter { padding: 5px 9px; display: flex; flex-direction: column; gap: 4px; }
+.ag-meter-row { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+.ag-meter-pct { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.ag-meter-bar { height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.ag-meter-bar span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.ag-meter-bar.hot span { background: #ffb4b4; }
+.ag-meter small, .ag-usage-note { color: var(--muted); font-size: 11px; }
+.ag-stats { padding: 4px 9px; display: flex; flex-direction: column; gap: 3px; }
+.ag-stat { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
+.ag-stat > span:first-child { color: var(--muted); white-space: nowrap; }
+.ag-stat > span:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.ag-stat.sub { font-size: 11px; padding-left: 10px; }
+.ag-stat.sub > span:first-child { overflow: hidden; text-overflow: ellipsis; }
+.ag-usage-note { margin: 4px 9px 0; line-height: 1.35; }
+.ag-usage-chat { margin-top: 4px; border-top: 1px solid rgba(255, 255, 255, 0.06); padding-top: 6px; }
 .ag-pop-head, .ag-picker-head { padding: 5px 9px 4px; font-size: 11px; font-weight: 500; color: var(--muted); }
 .ag-pick { width: 100%; justify-content: space-between; text-align: left; white-space: normal; }
 .ag-pick:hover { background: rgba(255, 255, 255, 0.05); }
@@ -287,3 +311,27 @@ pre.ag-work-detail { font-family: ui-monospace, 'JetBrains Mono', monospace; }
 .ag-dismiss { display: flex; align-items: flex-start; gap: 4px; }
 .ag-dismiss > span { flex: 1; min-width: 0; overflow-wrap: anywhere; user-select: text; }
 .ag-dismiss a { color: var(--sky); }
+
+/* Long agent job (captions, analysis, export) pinned above the thread. */
+.ag-job { padding: 8px 12px 7px; border-bottom: 1px solid var(--line, rgba(255,255,255,0.06)); display: flex; flex-direction: column; gap: 5px; font-size: 11.5px; }
+.ag-job-text { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.ag-job-label { color: var(--text); font-weight: 500; flex: none; }
+.ag-job-message { color: var(--muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ag-job-pct { color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
+.ag-job-track { height: 3px; border-radius: 2px; background: rgba(255,255,255,0.08); overflow: hidden; position: relative; }
+.ag-job-fill { height: 100%; background: var(--sky); opacity: 0.8; border-radius: 2px; transition: width 0.3s ease; }
+.ag-job-indeterminate .ag-job-fill { position: absolute; width: 35%; animation: ag-job-slide 1.2s ease-in-out infinite; }
+@keyframes ag-job-slide { from { left: -35%; } to { left: 100%; } }
+
+/* OpenCode provider keys (/connect) */
+.ag-picker-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.ag-head-btn { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 6px; border: 0; border-radius: 5px; background: none; color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; }
+.ag-head-btn:hover, .ag-head-btn.on { background: rgba(255, 255, 255, 0.06); color: var(--text); }
+.ag-key { display: flex; flex-direction: column; gap: 8px; padding: 2px 6px 6px; }
+.ag-key-back { align-self: flex-start; display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px 2px 0; border: 0; background: none; color: var(--text); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; }
+.ag-key-back:hover { color: var(--accent); }
+.ag-key-input { height: 28px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; outline: 0; background: rgba(0, 0, 0, 0.2); color: var(--text); font: inherit; font-size: 12px; }
+.ag-key-input:focus { border-color: var(--sky-line); }
+.ag-key .ag-picker-note { padding: 0; }
+.ag-key-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.ag-key-note { color: var(--muted); font-size: 11px; line-height: 1.35; }

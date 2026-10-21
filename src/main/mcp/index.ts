@@ -5,7 +5,14 @@ import { join } from 'node:path'
 import { loadToken } from './auth'
 import { startHttp } from './server'
 
-export const mcpInfo = { url: '', enabled: false, token: '', command: '' }
+export const mcpInfo: { url: string; enabled: boolean; token: string; command: string; stdio?: { command: string; args: string[]; env?: Record<string, string> } } = { url: '', enabled: false, token: '', command: '' }
+
+/** How a client launches the stdio proxy against this same executable and profile. */
+function stdioLaunch() {
+  const args = [...(app.isPackaged ? [] : [app.getAppPath()]), '--mcp-stdio']
+  const env = process.env.CASCADE_USER_DATA ? { CASCADE_USER_DATA: app.getPath('userData') } : undefined
+  return { command: process.execPath, args, ...(env ? { env } : {}) }
+}
 export async function startMcp(window: () => BrowserWindow | null): Promise<void> {
   const root = app.getPath('userData')
   const token = await loadToken(root)
@@ -30,7 +37,7 @@ export async function startMcp(window: () => BrowserWindow | null): Promise<void
     target.webContents.send('mcp:call', { id, tool, args })
   }))
   await enabled()
-  Object.assign(mcpInfo, { url, token, command: `claude mcp add --transport http cascade ${url} --header "Authorization: Bearer ${token}"` })
+  Object.assign(mcpInfo, { url, token, stdio: stdioLaunch(), command: `claude mcp add --transport http cascade ${url} --header "Authorization: Bearer ${token}"` })
   await writeFile(join(root, 'mcp-endpoint.json'), JSON.stringify({ url, token }), { mode: 0o600 })
   await chmod(join(root, 'mcp-endpoint.json'), 0o600)
   console.log(`[mcp] ${mcpInfo.enabled ? 'Enabled' : 'Disabled (enable mcp.enabled in Settings)'}: ${mcpInfo.command}`)

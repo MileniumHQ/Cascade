@@ -135,13 +135,14 @@ export function trimClip(track: Track, clipId: Id, edge: 'start' | 'end', t: Fli
   if (edge === 'start') {
     const prev = track.clips[i - 1]
     let min = prev ? clipEnd(prev) : 0
-    if (limits.sourceDuration !== undefined) min = Math.max(min, c.start + map.localAt(-c.sourceIn))
+    // Reversed clips run down from sourceIn, so extending the start raises it towards the source end.
+    if (limits.sourceDuration !== undefined) min = Math.max(min, c.start + map.localAt(map.reversed ? limits.sourceDuration - c.sourceIn : -c.sourceIn))
     const max = clipEnd(c) - MIN_CLIP
     trimStartTo(c, Math.round(Math.min(max, Math.max(min, t))))
   } else {
     const next = track.clips[i + 1]
     let max = next ? next.start : Number.MAX_SAFE_INTEGER
-    if (limits.sourceDuration !== undefined) max = Math.min(max, c.start + map.localAt(limits.sourceDuration - c.sourceIn))
+    if (limits.sourceDuration !== undefined) max = Math.min(max, c.start + map.localAt(map.reversed ? -c.sourceIn : limits.sourceDuration - c.sourceIn))
     const min = c.start + MIN_CLIP
     trimEndTo(c, Math.round(Math.max(min, Math.min(max, t))))
   }

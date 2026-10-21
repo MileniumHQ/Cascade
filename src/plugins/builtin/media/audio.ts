@@ -1,4 +1,4 @@
-import { definePlugin, type ClipBodyContext } from '@core/plugin-api'
+import { definePlugin, type ClipBodyContext, type ClipFrameState, type ClipMountContext } from '@core/plugin-api'
 import { FLICKS } from '@shared/time'
 import { pitchOf } from '../properties/audio'
 import { frameSeconds, MediaSync } from './common'
@@ -55,9 +55,10 @@ export const audioPlugin = definePlugin({
                   // Resample: the source plays at the clip's (possibly varying) speed, so pitch follows it.
                   const map = s.remap
                   const F = FLICKS
-                  const o0 = map.offset(local * F)
-                  const srcFrom = s.clip.sourceIn / F + o0 / F
-                  const buf = await audio.getBuffer(s.media, srcFrom, (map.offset((to - clipStart) * F) - o0) / F)
+                  const a = (s.clip.sourceIn + map.offset(local * F)) / F
+                  const b = (s.clip.sourceIn + map.offset((to - clipStart) * F)) / F
+                  const decoded = await audio.getBuffer(s.media, Math.min(a, b), Math.abs(b - a))
+                  const buf = decoded && map.reversed ? reversed(audio.context, decoded) : decoded
                   if (!buf) return
                   scheduled = audio.context.createBufferSource()
                   scheduled.buffer = buf
@@ -85,12 +86,23 @@ export const audioPlugin = definePlugin({
           el.src = m.mediaUrl(m.media?.proxyPath ?? m.media?.path ?? '')
           const sync = new MediaSync(el)
           let source: MediaElementAudioSourceNode | undefined
+          let out: GainNode | undefined
           if (audio && 'createMediaElementSource' in audio.context) {
             source = (audio.context as AudioContext).createMediaElementSource(el)
+            out = audio.context.createGain()
+            source.connect(out)
           }
+          // A media element can't play backwards: reversed clips play a decoded, reversed buffer.
+          const backwards = audio && out ? new ReversePlayer(audio, out) : undefined
           return {
-            audioOut: source,
+            audioOut: out,
             update(s) {
+              if (s.remap.reversed && backwards) {
+                if (!el.paused) el.pause()
+                backwards.update(s)
+                return
+              }
+              backwards?.stop()
               // Pitch is preserved unless the clip's Pitch property says it follows speed.
               const keep = !pitchOf(s.clip).matchSpeed
               if (el.preservesPitch !== keep) el.preservesPitch = keep
@@ -98,6 +110,7 @@ export const audioPlugin = definePlugin({
             },
             dispose() {
               el.pause()
+              backwards?.dispose()
               source?.disconnect()
               el.removeAttribute('src')
               el.load()
@@ -112,6 +125,79 @@ export const audioPlugin = definePlugin({
     })
   }
 })
+
+/** A copy of `buf` with its samples in reverse order. */
+function reversed(context: BaseAudioContext, buf: AudioBuffer): AudioBuffer {
+  const out = context.createBuffer(buf.numberOfChannels, buf.length, buf.sampleRate)
+  for (let c = 0; c < buf.numberOfChannels; c++) out.getChannelData(c).set(buf.getChannelData(c).toReversed())
+  return out
+}
+
+/**
+ * Preview playback of a reversed clip: its whole source range, decoded once and reversed, played
+ * from the playhead's position and restarted when it drifts (seeks, speed changes).
+ */
+class ReversePlayer {
+  private buffer: Promise<AudioBuffer | null> | null = null
+  private key = ''
+  private node: AudioBufferSourceNode | null = null
+  /** Context time and buffer position (s) when the node started, and its rate. */
+  private anchor = { at: 0, pos: 0, rate: 1 }
+  private disposed = false
+  constructor(private audio: NonNullable<ClipMountContext['audio']>, private out: AudioNode) {}
+
+  update(s: ClipFrameState) {
+    const map = s.remap
+    if (!s.playing || !s.media || !this.audio.getBuffer) return this.stop()
+    const hi = s.clip.sourceIn / FLICKS
+    const lo = Math.max(0, (s.clip.sourceIn + map.offset(s.clip.duration)) / FLICKS)
+    const key = `${s.media.id}:${lo}:${hi}`
+    if (key !== this.key) {
+      this.stop()
+      this.key = key
+      const ctx = this.audio.context
+      this.buffer = this.audio.getBuffer(s.media, lo, hi - lo).then((b) => (b ? reversed(ctx, b) : null)).catch(() => null)
+    }
+    // Position in the reversed buffer: how far the source has run down from sourceIn.
+    const pos = -map.offset(s.local) / FLICKS
+    const rate = Math.abs(s.rate)
+    const now = this.audio.context.currentTime
+    if (this.node) {
+      const expected = this.anchor.pos + (now - this.anchor.at) * this.anchor.rate
+      if (Math.abs(expected - pos) < 0.12 && Math.abs(rate - this.anchor.rate) < 0.01) return
+      this.stop()
+    }
+    const pending = this.buffer
+    void pending?.then((buffer) => {
+      if (!buffer || this.disposed || this.node || pending !== this.buffer) return
+      const node = this.audio.context.createBufferSource()
+      node.buffer = buffer
+      node.playbackRate.value = rate
+      node.connect(this.out)
+      // Account for decode latency: the playhead moved on while the buffer loaded.
+      const start = pos + (this.audio.context.currentTime - now) * rate
+      if (start >= buffer.duration) return
+      node.start(0, Math.max(0, start))
+      this.node = node
+      this.anchor = { at: this.audio.context.currentTime, pos: start, rate }
+    })
+  }
+
+  stop() {
+    const node = this.node
+    this.node = null
+    if (!node) return
+    try {
+      node.stop()
+      node.disconnect()
+    } catch {}
+  }
+
+  dispose() {
+    this.disposed = true
+    this.stop()
+  }
+}
 
 const peakCache = new Map<string, Promise<{ rate: number; peaks: Float32Array } | null>>()
 
@@ -163,8 +249,10 @@ function mountWaveform(el: HTMLElement, c: ClipBodyContext) {
     const n = peaks.length / 2
     const mid = h / 2
     for (let x = 0; x < w; x++) {
-      const s0 = src(startPx + x)
-      const s1 = src(startPx + x + 1)
+      const a = src(startPx + x)
+      const b = src(startPx + x + 1)
+      const s0 = Math.min(a, b)
+      const s1 = Math.max(a, b)
       let i0 = Math.floor(s0 * data.rate)
       const i1 = Math.max(i0 + 1, Math.floor(s1 * data.rate))
       let lo = 0

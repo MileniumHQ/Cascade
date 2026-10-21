@@ -12,7 +12,9 @@ const extensions = ['.ts', '.tsx', '.js', '.mjs']
 // it can't be spawned from inside the archive. esbuild reads this at module load, hence the lazy import.
 const here = fileURLToPath(import.meta.url)
 if (!process.env.ESBUILD_BINARY_PATH && here.includes('app.asar')) {
-  process.env.ESBUILD_BINARY_PATH = join(here.replace(/app\.asar(?=[/\\]|$).*$/, 'app.asar.unpacked'), 'node_modules', '@esbuild', `${process.platform}-${process.arch}`, 'bin', 'esbuild')
+  // @esbuild/linux-x64/bin/esbuild, but @esbuild/win32-x64/esbuild.exe.
+  process.env.ESBUILD_BINARY_PATH = join(here.replace(/app\.asar(?=[/\\]|$).*$/, 'app.asar.unpacked'), 'node_modules', '@esbuild', `${process.platform}-${process.arch}`,
+    ...(process.platform === 'win32' ? ['esbuild.exe'] : ['bin', 'esbuild']))
 }
 let esbuild: typeof import('esbuild') | undefined
 const loadEsbuild = async () => (esbuild ??= await import('esbuild'))

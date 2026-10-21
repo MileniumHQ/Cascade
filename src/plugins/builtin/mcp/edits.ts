@@ -1,11 +1,12 @@
 import { CascadeApp, type CascadeAPI } from '@core/app'
-import { clipEnd, findClip, type Project, type Clip } from '@shared/project'
+import { clipEnd, findClip, type Project, type Clip, type Id, type PropertyInstance } from '@shared/project'
 import { MIN_CLIP } from '@core/timeline-ops'
-import type { TimeMap } from '@core/time-remap'
-import { ANCHOR, editSchema, type Edit } from '../../../main/mcp/catalog'
+import { sourceSpan, type TimeMap } from '@core/time-remap'
+import { evaluateParam } from '@core/evaluate'
+import { ANCHOR, SOURCE_ANCHOR, editSchema, type Edit } from '../../../main/mcp/catalog'
 import type { ParamDef } from '@core/plugin-api'
-import { FLICKS } from '@shared/time'
-import { buildIndex, type Analyses } from './transcript'
+import { FLICKS, frameToFlicks, type Flicks, type FrameRate } from '@shared/time'
+import { buildIndex, buildSourceIndex, type Analyses } from './transcript'
 
 /** Stable aliases for this editor lifetime; full document ids also work. */
 export class Ids {
@@ -24,8 +25,16 @@ export class Ids {
 /** An edit with every anchor resolved to integer flicks. */
 type Resolved = Edit extends infer E ? E extends unknown ? { [K in keyof E]: K extends 'start' | 'end' | 'time' ? Extract<E[K], number | undefined> : E[K] } : never : never
 
+/** Signed anchor offset (+80ms, -0.5s, +2f) in flicks. */
+function anchorOffset(sign: string | undefined, amount: string | undefined, unit: string | undefined, fps: FrameRate) {
+  if (!amount) return 0
+  const per = unit === 'ms' ? FLICKS / 1000 : unit === 'f' ? FLICKS * fps.den / fps.num : FLICKS
+  return Math.round(Number(amount) * per) * (sign === '-' ? -1 : 1)
+}
+
 /** Timeline flicks for a transcript anchor (w12, w12.end, s3.start, w12.end+80ms, s3.end+2f) in `project`. */
 export function resolveAnchor(project: Project, analyses: Analyses | undefined, ids: Ids, value: string, timeMap?: (clip: Clip) => TimeMap): number {
+  if (SOURCE_ANCHOR.test(value)) throw new Error(`${value} is a source anchor; use it in add_clip sourceIn/sourceOut. Timeline times take w#/s# ids from transcript_get without mediaId`)
   const match = ANCHOR.exec(value)
   if (!match) throw new Error(`Invalid anchor ${value}`)
   const [, id, edge, sign, amount, unit] = match
@@ -33,10 +42,23 @@ export function resolveAnchor(project: Project, analyses: Analyses | undefined, 
   const index = buildIndex(project, analyses ?? new Map(), timeMap)
   const item = index.sentences.find(x => x.key === key) ?? index.words.find(x => x.key === key)
   if (!item) throw new Error(`${id} is not on the timeline (cut already, or not an id from transcript_get/transcript_search)`)
-  const fps = project.settings.fps
-  const per = unit === 'ms' ? FLICKS / 1000 : unit === 'f' ? FLICKS * fps.den / fps.num : FLICKS
-  const offset = amount ? Math.round(Number(amount) * per) * (sign === '-' ? -1 : 1) : 0
-  return Math.max(0, (edge === 'end' ? item.end : item.start) + offset)
+  return Math.max(0, (edge === 'end' ? item.end : item.start) + anchorOffset(sign, amount, unit, project.settings.fps))
+}
+
+/** Source flicks for a source anchor (m1:w12, m1:s3.end-40ms) from transcript_get with mediaId. */
+export function resolveSourceAnchor(project: Project, analyses: Analyses | undefined, ids: Ids, value: string): { mediaId: Id; t: Flicks } {
+  const match = SOURCE_ANCHOR.exec(value)
+  if (!match) throw new Error(`Invalid source anchor ${value}`)
+  const [, media, id, edge, sign, amount, unit] = match
+  const mediaId = ids.resolve(media)
+  const m = project.media[mediaId]
+  if (!m?.path) throw new Error(`${media} in ${value} is not a file-backed source from media_list`)
+  const index = buildSourceIndex(mediaId, analyses?.get(m.path))
+  const n = Number(id.slice(1))
+  const item = id[0] === 'w' ? index.words[n - 1] : index.sentences[n - 1]
+  if (!item) throw new Error(`${value}: ${media} has no ${id}. Run media_analyze, then read ids with transcript_get mediaId=${media}`)
+  const t = (edge === 'end' ? item.end : item.start) + anchorOffset(sign, amount, unit, project.settings.fps)
+  return { mediaId, t: Math.max(0, Math.min(m.meta.duration ?? Number.MAX_SAFE_INTEGER, t)) }
 }
 
 export function staging(app: CascadeAPI): CascadeApp {
@@ -48,7 +70,7 @@ export function staging(app: CascadeAPI): CascadeApp {
 export function commit(app: CascadeAPI, project: Project, label: string) {
   app.doc.transact(`Agent: ${label}`, draft => { Object.assign(draft, project) })
 }
-function validateValue(def: ParamDef, value: unknown) {
+function validateValue(def: ParamDef, value: unknown, fonts?: string[]) {
   if (['number', 'angle'].includes(def.type)) {
     if (typeof value !== 'number' || !Number.isFinite(value) || (def.min !== undefined && value < def.min) || (def.max !== undefined && value > def.max)) throw new Error(`Invalid ${def.id}; expected finite number in ${def.min ?? '-∞'}..${def.max ?? '∞'}`)
   } else if (def.type === 'vec2') {
@@ -56,10 +78,39 @@ function validateValue(def: ParamDef, value: unknown) {
   } else if (def.type === 'toggle' && typeof value !== 'boolean') throw new Error(`${def.id} needs a boolean`)
   else if (['text', 'font', 'color', 'select'].includes(def.type) && typeof value !== 'string') throw new Error(`${def.id} needs a string`)
   if (def.options && !def.options.some(o => o.value === value)) throw new Error(`Unknown ${def.id} option; inspect registry_list`)
+  // A missing font silently falls back to another face; refuse it instead.
+  if (def.type === 'font' && fonts?.length && !fonts.some(f => f.toLowerCase() === String(value).toLowerCase())) {
+    const words = String(value).toLowerCase().split(/\s+/).filter(Boolean)
+    const close = fonts.filter(f => words.some(w => f.toLowerCase().includes(w))).slice(0, 12)
+    throw new Error(`Font "${value}" is not installed${close.length ? `; similar: ${close.join(', ')}` : ''}. registry_list lists every font`)
+  }
 }
-export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?: Analyses) {
-  const ops = editSchema.array().min(1).max(200).parse((input as { ops: unknown }).ops)
+/** Whole frames (at least one) that fit in `d`. */
+function floorFrames(d: number, fps: FrameRate): Flicks {
+  return frameToFlicks(Math.max(1, Math.floor(d * fps.num / (FLICKS * fps.den) + 1e-9)), fps)
+}
+/** Deterministic PRNG for wiggle (mulberry32). */
+function random(seed: number) {
+  let a = seed >>> 0
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+export interface ApplyOptions {
+  /** Installed font families; font params must name one. */
+  fonts?: string[]
+}
+
+export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?: Analyses, options: ApplyOptions = {}) {
+  const ops = editSchema.array().min(1).max(300).parse((input as { ops: unknown }).ops)
   const copy = staging(app)
+  const fps = copy.project().settings.fps
+  // Edits replace clip objects, so untouched clips keep their identity.
+  const untouched = new Set(copy.timeline().tracks.flatMap(t => t.clips))
   const refs = new Map<string, string>()
   const resolve = (v: string) => refs.get(v) ?? ids.resolve(v)
   const editable = (id: string) => {
@@ -74,6 +125,24 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
     if (!tr || tr.locked || tr.kind !== kind) throw new Error(`Invalid/locked destination track ${value ?? kind}`)
     return tr.id
   }
+  const trackEnd = (trackId: string) => Math.max(0, ...(copy.timeline().tracks.find(t => t.id === trackId)?.clips.map(clipEnd) ?? []))
+  const remapType = copy.registries.properties.all().find(p => p.timeRemap)
+  const partners = (clip: Clip) => clip.linkId ? copy.timeline().tracks.flatMap(t => t.clips.filter(c => c.id !== clip.id && c.linkId === clip.linkId)) : []
+  // Speed (the time-remap property) belongs to the link pair: a partner's instance serves both clips.
+  const findProperty = (clip: Clip, propertyId: string): { clip: Clip; prop: PropertyInstance } | null => {
+    const match = (p: PropertyInstance) => p.id === resolve(propertyId) || p.type === propertyId
+    const own = clip.properties.find(match)
+    if (own) return { clip, prop: own }
+    for (const c of partners(clip)) {
+      const p = c.properties.find(p => match(p) && p.type === remapType?.id)
+      if (p) return { clip: c, prop: p }
+    }
+    return null
+  }
+  // Like the UI, a linked pair's speed lives on its picture clip.
+  const pictureOf = (clip: Clip) => remapType && copy.registries.mediaTypes.get(clip.type)?.track !== 'visual'
+    ? partners(clip).find(c => copy.registries.mediaTypes.get(c.type)?.track === 'visual' && copy.edit.propertyApplies(remapType, c))
+    : undefined
   // Split boundaries explicitly, then remove the interval and shift all unlocked tracks equally (including gaps).
   const ripple = (start: number, end: number) => {
     for (const t of [end, start]) {
@@ -90,6 +159,18 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
   }
   // Transcript anchors (w12.end+80ms) resolve against the staged timeline as edited so far.
   const anchor = (value: string) => resolveAnchor(copy.project(), analyses, ids, value, (c) => copy.edit.timeMap(c))
+  /** Clip-local flicks: numbers as given, anchors converted from timeline time. */
+  const local = (value: number | string, clip: Clip) => {
+    const t = typeof value === 'string' ? anchor(value) - clip.start : value
+    if (t < 0) throw new Error(`${value} is before the clip start`)
+    return t
+  }
+  const sourceTime = (value: number | string, mediaId: Id) => {
+    if (typeof value === 'number') return value
+    const r = resolveSourceAnchor(copy.project(), analyses, ids, value)
+    if (r.mediaId !== mediaId) throw new Error(`${value} belongs to another source than this clip's mediaId`)
+    return r.t
+  }
   let retargeted = ''
   const resolveTimes = (raw: Edit): Resolved => {
     retargeted = ''
@@ -111,45 +192,99 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
     if (typeof op.time === 'number' && op.time < 0) throw new Error(`${raw.op} time resolves before the clip start`)
     return op as Resolved
   }
+  const setRef = (name: string | undefined, id: string) => {
+    if (!name) return
+    if (refs.has(name) || ids.resolve(name) !== name) throw new Error(`Duplicate/reserved ref ${name}`)
+    refs.set(name, id)
+  }
+  const span = (clip: Clip) => `[${clip.start}, ${clipEnd(clip)})`
   const results: string[] = []
   for (const [index, raw] of ops.entries()) {
     try {
       const op = resolveTimes(raw)
       let created: string | null | undefined
+      let note = ''
       if ('ref' in op && op.ref && (refs.has(op.ref) || ids.resolve(op.ref) !== op.ref)) throw new Error(`Duplicate/reserved ref ${op.ref}`)
-      if (op.op === 'add_clip' || op.op === 'add_text') {
-        let clip: Clip | null
-        if (op.op === 'add_clip') {
-          const media = copy.project().media[resolve(op.mediaId)]
-          if (!media) throw new Error(`Unknown media ${op.mediaId}`)
-          clip = copy.edit.buildClip(media, op.start)
+      if (op.op === 'add_clip') {
+        const media = copy.project().media[resolve(op.mediaId)]
+        if (!media) throw new Error(`Unknown media ${op.mediaId}`)
+        if (op.duration !== undefined && op.sourceOut !== undefined) throw new Error('Give duration or sourceOut, not both')
+        const mt = copy.registries.mediaTypes.get(media.type)
+        const sourceDuration = mt?.timeBased ? media.meta.duration : undefined
+        const speed = op.speed ?? 1
+        const sourceIn = op.sourceIn === undefined ? 0 : sourceTime(op.sourceIn, media.id)
+        const sourceOut = op.sourceOut === undefined ? undefined : sourceTime(op.sourceOut, media.id)
+        if (sourceOut !== undefined && sourceOut <= sourceIn) throw new Error('sourceOut must be after sourceIn')
+        if (sourceDuration !== undefined && (sourceOut ?? sourceIn) > sourceDuration) throw new Error('Source range exceeds the source duration')
+        if ((op.speed !== undefined || op.reverse) && !mt?.timeBased) throw new Error('speed/reverse need time-based media')
+        if (op.reverse && !remapType?.timeReverse) throw new Error('Reverse needs the Speed property; inspect registry_list')
+        // Timeline duration: given, or the source range played at `speed`, in whole frames.
+        let duration = op.duration
+        if (duration === undefined) {
+          const out = sourceOut ?? sourceDuration
+          duration = out !== undefined ? floorFrames((out - sourceIn) / speed, fps) : copy.edit.buildClip(media, 0)?.duration
+          if (!duration) throw new Error('Media type unavailable; inspect registry_list')
+        }
+        const used = Math.round(duration * speed)
+        if (sourceDuration !== undefined && sourceIn + used > sourceDuration + 1) throw new Error(`Clip exceeds source duration (needs ${sourceIn + used}, source ends at ${sourceDuration}); shorten duration or lower speed`)
+        const audioType = media.meta.hasAudio ? mt?.linkedAudioType : undefined
+        const videoTrack = track(op.trackId, media.type)
+        const audioTrack = audioType ? track(op.audioTrackId, audioType) : undefined
+        let start = op.start ?? Math.max(trackEnd(videoTrack), audioTrack ? trackEnd(audioTrack) : 0)
+        const placed: string[] = []
+        for (let i = 0; i < (op.repeat ?? 1); i++) {
+          const name = op.ref && (i === 0 ? op.ref : `${op.ref}.${i + 1}`)
+          const clip = copy.edit.buildClip(media, start)
           if (!clip) throw new Error('Media type unavailable; inspect registry_list')
-          clip.sourceIn = op.sourceIn ?? 0
-          if (media.meta.duration && copy.registries.mediaTypes.get(media.type)?.timeBased && clip.sourceIn + op.duration > media.meta.duration) throw new Error('Clip exceeds source duration')
-        } else {
-          const mediaId = copy.edit.addGenerated('text')
-          if (!mediaId) throw new Error('Text generator unavailable')
-          clip = copy.edit.buildClip(copy.project().media[mediaId], op.start)
-          if (!clip) throw new Error('Text media type unavailable')
-          const text = clip.properties.find(p => p.type === 'text')
-          if (!text) throw new Error('Text property unavailable')
-          text.params.text = { value: op.text }; clip.name = op.text.slice(0, 80) || 'Text'
-        }
-        clip.start = op.start; clip.duration = op.duration
-        created = copy.edit.insertClip(clip, track(op.trackId, clip.type))
-        // Match the UI's linked audio behavior, using the requested trimmed source range.
-        const media = clip.mediaId ? copy.project().media[clip.mediaId] : undefined
-        const audioType = copy.registries.mediaTypes.get(clip.type)?.linkedAudioType
-        if (media?.meta.hasAudio && audioType && created) {
-          const audio = copy.edit.buildClip(media, op.start, audioType)
-          if (audio) {
-            const linkId = `agent_${created}`
-            copy.doc.transact('Link audio', d => { findClip(d.timelines[d.activeTimeline], created!)!.clip.linkId = linkId })
-            audio.start = op.start; audio.duration = op.duration; audio.sourceIn = clip.sourceIn; audio.linkId = linkId
-            const audioId = copy.edit.insertClip(audio, track(undefined, audioType))
-            if (audioId) copy.doc.transact('Link audio', d => { findClip(d.timelines[d.activeTimeline], audioId)!.clip.linkId = linkId })
+          // A reversed clip starts at the end of its source range and runs down to sourceIn.
+          clip.sourceIn = op.reverse ? sourceIn + used : sourceIn
+          clip.start = start; clip.duration = duration
+          const id = copy.edit.insertClip(clip, videoTrack)
+          if (!id) throw new Error('Could not place the clip')
+          setRef(name, id)
+          let line = `${ids.show(id, 'c')}${name ? ` (${name})` : ''} ${span(clip)}`
+          // Match the UI's linked audio behavior, using the requested trimmed source range.
+          if (audioType && audioTrack) {
+            const audio = copy.edit.buildClip(media, start, audioType)
+            if (audio) {
+              const linkId = `agent_${id}`
+              copy.doc.transact('Link audio', d => { findClip(d.timelines[d.activeTimeline], id)!.clip.linkId = linkId })
+              audio.start = start; audio.duration = duration; audio.sourceIn = clip.sourceIn; audio.linkId = linkId
+              const audioId = copy.edit.insertClip(audio, audioTrack)
+              if (audioId) {
+                copy.doc.transact('Link audio', d => { findClip(d.timelines[d.activeTimeline], audioId)!.clip.linkId = linkId })
+                setRef(name && `${name}.audio`, audioId)
+                line += ` + linked audio ${ids.show(audioId, 'c')}${name ? ` (${name}.audio)` : ''}`
+              }
+            }
           }
+          // Speed lives on the pair's picture clip; the linked audio follows it.
+          if (op.speed !== undefined || op.reverse) {
+            copy.edit.updateClip(id, { speed })
+            if (op.reverse) {
+              const owner = findProperty(findClip(copy.timeline(), id)!.clip, remapType!.id)
+              if (!owner) throw new Error('Could not add the Speed property')
+              copy.edit.setParam(owner.clip.id, owner.prop.id, remapType!.timeReverse!, true, { at: 0 })
+            }
+          }
+          placed.push(line)
+          start += duration
         }
+        results.push(`${index + 1}. add_clip: ok ${placed.join('; ')}`)
+        continue
+      } else if (op.op === 'add_text') {
+        const mediaId = copy.edit.addGenerated('text')
+        if (!mediaId) throw new Error('Text generator unavailable')
+        const destination = track(op.trackId, copy.project().media[mediaId].type)
+        const start = op.start ?? trackEnd(destination)
+        const clip = copy.edit.buildClip(copy.project().media[mediaId], start)
+        if (!clip) throw new Error('Text media type unavailable')
+        const text = clip.properties.find(p => p.type === 'text')
+        if (!text) throw new Error('Text property unavailable')
+        text.params.text = { value: op.text }; clip.name = op.text.slice(0, 80) || 'Text'
+        clip.start = start; clip.duration = op.duration ?? 5 * FLICKS
+        created = copy.edit.insertClip(clip, destination)
+        note = ` ${span(clip)}`
       } else if (op.op === 'add_marker') copy.edit.addMarker(op.time, op.name)
       else if (op.op === 'ripple_delete') {
         if (op.end <= op.start) throw new Error('end must be after start')
@@ -172,31 +307,92 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
         else if (op.op === 'add_property') {
           const def = copy.registries.properties.get(op.type)
           if (!def || !copy.edit.propertyApplies(def, clip)) throw new Error(`Property ${op.type} unavailable or incompatible`)
-          if (!def.stackable && clip.properties.some(p => p.type === op.type)) throw new Error('Property already exists')
-          created = copy.edit.addProperty(clip.id, op.type)
+          const shared = def.timeRemap ? findProperty(clip, op.type) : null
+          if (shared && shared.clip.id !== clip.id) {
+            // One speed per linked pair: reuse the partner's instance rather than adding a second.
+            created = shared.prop.id
+            note = ` (shared with linked ${ids.show(shared.clip.id, 'c')}; speed applies to both)`
+          } else {
+            const picture = def.timeRemap ? pictureOf(clip) : undefined
+            const target = picture ?? clip
+            if (!def.stackable && target.properties.some(p => p.type === op.type)) throw new Error('Property already exists')
+            created = copy.edit.addProperty(target.id, op.type)
+            if (picture) note = ` (on linked ${ids.show(picture.id, 'c')}; speed applies to both)`
+            else if (def.timeRemap && partners(clip).length) note = ' (linked clips follow this speed)'
+          }
         } else {
-          const prop = clip.properties.find(p => p.id === resolve(op.propertyId) || p.type === op.propertyId)
-          if (!prop) throw new Error(`Unknown property ${op.propertyId}`)
-          if (op.op === 'remove_property') copy.edit.removeProperty(clip.id, prop.id)
+          let found = findProperty(clip, op.propertyId)
+          // Setting speed on a clip without one adds it where the UI would: the pair's picture clip.
+          if (!found && op.op !== 'remove_property' && remapType && op.propertyId === remapType.id && copy.edit.propertyApplies(remapType, clip)) {
+            copy.edit.addProperty((pictureOf(clip) ?? clip).id, remapType.id)
+            found = findProperty(findClip(copy.timeline(), clip.id)!.clip, op.propertyId)
+          }
+          if (!found) throw new Error(`Unknown property ${op.propertyId}`)
+          const { prop } = found, owner = found.clip
+          // Clip-local times of the addressed clip, in the owner's clip-local time.
+          const shift = clip.start - owner.start
+          if (owner.id !== clip.id) note = ` (on linked ${ids.show(owner.id, 'c')}; applies to both)`
+          if (op.op === 'remove_property') copy.edit.removeProperty(owner.id, prop.id)
           else {
             const def = copy.edit.paramDef(prop.type, op.paramId)
             if (!def) throw new Error(`Unknown parameter ${op.paramId}`)
-            validateValue(def, op.value)
-            if (op.time !== undefined && op.time > clip.duration) throw new Error('Keyframe/parameter time exceeds clip duration')
-            if (op.op === 'add_keyframe') {
+            const keyframe = (t: Flicks, value: unknown, easing?: string) => {
+              validateValue(def, value, options.fonts)
               if (def.animatable === false) throw new Error('Parameter is not animatable')
+              if (t > clip.duration) throw new Error('Keyframe time exceeds clip duration')
+              if (easing && !copy.registries.easings.get(easing)) throw new Error('Unknown easing')
+              copy.edit.addKeyframe(owner.id, prop.id, op.paramId, t + shift, value, easing ? { id: easing } : undefined)
+            }
+            if (op.op === 'add_keyframe') keyframe(op.time, op.value, op.easing)
+            else if (op.op === 'set_param') {
+              validateValue(def, op.value, options.fonts)
+              if (op.time !== undefined && op.time > clip.duration) throw new Error('Keyframe/parameter time exceeds clip duration')
+              copy.edit.setParam(owner.id, prop.id, op.paramId, op.value, { at: (op.time ?? 0) + shift })
+            } else if (op.op === 'add_keyframes') {
+              for (const k of op.keys) keyframe(local(k.time, clip), k.value, k.easing)
+              note += ` ${op.keys.length} keyframes`
+            } else if (op.op === 'wiggle') {
+              if (def.type !== 'number' && def.type !== 'angle' && def.type !== 'vec2') throw new Error('wiggle needs a number or vec2 parameter')
+              const from = op.from === undefined ? 0 : local(op.from, clip)
+              const to = op.to === undefined ? clip.duration : local(op.to, clip)
+              if (to <= from) throw new Error('wiggle to must be after from')
+              const step = FLICKS / op.frequency
+              const n = Math.floor((to - from) / step)
+              if (n > 2000) throw new Error('wiggle would add more than 2000 keyframes; lower frequency or shorten the range')
               if (op.easing && !copy.registries.easings.get(op.easing)) throw new Error('Unknown easing')
-              copy.edit.addKeyframe(clip.id, prop.id, op.paramId, op.time, op.value, op.easing ? { id: op.easing } : undefined)
-            } else copy.edit.setParam(clip.id, prop.id, op.paramId, op.value, { at: op.time ?? 0 })
+              const amp = Array.isArray(op.amplitude) ? op.amplitude : [op.amplitude, op.amplitude]
+              const rnd = random(op.seed ?? 1)
+              const clamp = (v: number) => Math.min(def.max ?? Infinity, Math.max(def.min ?? -Infinity, v))
+              const pv = prop.params[op.paramId]
+              // Sample the current animation first, then offset it; the ends stay on it so the wiggle blends in.
+              const times = Array.from({ length: n + 1 }, (_, k) => Math.round(from + k * step))
+              if (times.at(-1)! < to) times.push(to)
+              const keys = times.map((t, k) => {
+                const base = evaluateParam(copy.registries, def, pv, t + shift)
+                const edge = k === 0 || k === times.length - 1
+                const jitter = (a: number) => edge ? 0 : (rnd() * 2 - 1) * a
+                const value = def.type === 'vec2' ? (base as [number, number]).map((v, i) => v + jitter(amp[i])) : clamp(Number(base) + jitter(amp[0]))
+                return { t, value }
+              })
+              if (def.animatable === false) throw new Error('Parameter is not animatable')
+              for (const k of keys) copy.edit.addKeyframe(owner.id, prop.id, op.paramId, k.t + shift, k.value, { id: op.easing ?? 'ease-in-out' })
+              note += ` ${keys.length} keyframes`
+            }
           }
         }
       }
       if ('ref' in op && op.ref && created) refs.set(op.ref, created)
-      results.push(`${index + 1}. ${op.op}: ok${created ? ` ${ids.show(created, op.op === 'add_property' ? 'p' : 'c')}${'ref' in op && op.ref ? ` (${op.ref})` : ''}` : ''}${retargeted ? `, on ${retargeted}` : ''}`)
+      results.push(`${index + 1}. ${op.op}: ok${created ? ` ${ids.show(created, op.op === 'add_property' ? 'p' : 'c')}${'ref' in op && op.ref ? ` (${op.ref})` : ''}` : ''}${note}${retargeted ? `, on ${retargeted}` : ''}`)
     } catch (e) { throw new Error(`Operation ${index + 1} (${raw.op}): ${e instanceof Error ? e.message : e}. No edits applied.`) }
   }
   for (const tr of copy.timeline().tracks) for (const clip of tr.clips) {
     if (clip.duration < MIN_CLIP || !Number.isSafeInteger(clip.start + clip.duration) || clip.sourceIn < 0) throw new Error('Result contains an invalid clip duration/range. No edits applied.')
+    const media = clip.mediaId ? copy.project().media[clip.mediaId] : undefined
+    if (!untouched.has(clip) && media?.meta.duration && copy.registries.mediaTypes.get(clip.type)?.timeBased) {
+      const { lo, hi } = sourceSpan(clip, copy.edit.timeMap(clip))
+      const slack = frameToFlicks(1, fps)
+      if (lo < -slack || hi > media.meta.duration + slack) throw new Error(`Clip ${ids.show(clip.id, 'c')} would play past the ${lo < 0 ? 'start' : 'end'} of its source (speed too high for its duration?). No edits applied.`)
+    }
   }
   commit(app, copy.project(), ops.length === 1 ? ops[0].op.replaceAll('_', ' ') : `apply ${ops.length} edits`)
   return results.join('\n') + '\nOne undo step committed.'

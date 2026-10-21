@@ -1,5 +1,5 @@
 /**
- * Agent panel contract: external coding agents (Claude Code, Codex, OpenCode…) driven over
+ * Agent panel contract: external coding agents (Claude, Codex, OpenCode…) driven over
  * the Agent Client Protocol by the main process. Each chat is one agent subprocess + one ACP session,
  * with Cascade's MCP server attached so the agent can edit the open project.
  */
@@ -52,6 +52,16 @@ export interface StartOptions {
   resume?: string
 }
 
+/** A plan limit: share used so far (0–100) and when it resets, in the agent's own wording. */
+export interface UsageMeter { label: string; percent: number; resets?: string }
+/** `sub` rows break down the row above them. */
+export interface UsageStat { label: string; value: string; sub?: boolean }
+/** Plan usage for one agent, as far as it reports it. */
+export interface AgentUsage { meters: UsageMeter[]; stats: UsageStat[]; note?: string }
+
+/** A model provider an agent can take an API key for (OpenCode's /connect). */
+export interface KeyProvider { id: string; name: string; connected: boolean }
+
 export type AgentEvent =
   | { chatId: string; type: 'update'; update: SessionUpdate }
   | { chatId: string; type: 'permission'; requestId: string; toolCall: ToolCallUpdate; options: PermissionOption[] }
@@ -75,5 +85,13 @@ export interface AgentsBridge {
   close(chatId: string): Promise<void>
   /** Download a registry agent into Cascade's data folder (progress via `install` events). */
   install(providerId: string): Promise<void>
+  /** Plan limits / token use for an agent (cached briefly; `fresh` refetches). */
+  usage(providerId: string, fresh?: boolean): Promise<AgentUsage>
+  /** Model providers the agent can be given an API key for (empty when it manages its own sign-in). */
+  keyProviders(providerId: string): Promise<KeyProvider[]>
+  /** Save (or replace) the agent's API key for a model provider. */
+  saveKey(providerId: string, target: string, key: string): Promise<void>
+  /** Remove the agent's saved credentials for a model provider. */
+  removeKey(providerId: string, target: string): Promise<void>
   onEvent(fn: (event: AgentEvent) => void): () => void
 }
