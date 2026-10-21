@@ -501,16 +501,12 @@ body.ins-reordering * {
   padding: 4px 5px 6px;
 }
 .ins-add-cat {
-  position: sticky;
-  top: -4px;
-  z-index: 1;
   padding: 9px 9px 4px;
   font-size: 9.5px;
   text-transform: uppercase;
   letter-spacing: 0.09em;
   font-weight: 700;
   color: var(--dim);
-  background: linear-gradient(var(--glass-strong) 70%, transparent);
 }
 .ins-add-item {
   display: flex;
