@@ -1,0 +1,11 @@
+// Landing page: a static-assets-only Worker serving site/. Deploy with `bunx wrangler deploy`.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cascade-site",
+  "compatibility_date": "2026-10-20",
+  "assets": {
+    "directory": "./site",
+    "run_worker_first": false
+  },
+  "workers_dev": true
+}
