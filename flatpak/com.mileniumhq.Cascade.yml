@@ -1,0 +1,55 @@
+# Flathub manifest. Repackages the release's Cascade-linux-x64.tar.gz (electron-builder `tar.gz` target);
+# Flathub's external-data-checker bumps the url/sha256 when a new GitHub release appears.
+# Local build + install: `node scripts/flatpak.mjs` (uses dist/ instead of the release).
+app-id: com.mileniumhq.Cascade
+runtime: org.freedesktop.Platform
+runtime-version: '26.08'
+sdk: org.freedesktop.Sdk
+base: org.electronjs.Electron2.BaseApp
+base-version: '26.08'
+command: cascade
+separate-locales: false
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  # Vulkan transcription (whisper) and GPU compositing.
+  - --device=dri
+  # Media, projects and exports live anywhere in home; agents (Claude Code, Codex) read their logins from ~/.claude, ~/.codex.
+  - --filesystem=home
+  - --talk-name=org.freedesktop.Notifications
+modules:
+  - name: cascade
+    buildsystem: simple
+    # Prebuilt binaries: stripping cuts the payload off the Bun-compiled Claude Code executable.
+    build-options:
+      strip: false
+      no-debuginfo: true
+    build-commands:
+      - cp -a cascade /app/cascade
+      - install -Dm755 cascade.sh /app/bin/cascade
+      - install -Dm644 com.mileniumhq.Cascade.desktop -t /app/share/applications
+      - install -Dm644 com.mileniumhq.Cascade.metainfo.xml -t /app/share/metainfo
+      - install -Dm644 com.mileniumhq.Cascade.mime.xml /app/share/mime/packages/com.mileniumhq.Cascade.xml
+      - install -Dm644 cascade/resources/icons/icon.png /app/share/icons/hicolor/512x512/apps/com.mileniumhq.Cascade.png
+      - install -Dm644 cascade/resources/icons/file-icon.png /app/share/icons/hicolor/512x512/mimetypes/com.mileniumhq.Cascade-application-x-cascade-project.png
+    sources:
+      - type: archive
+        dest: cascade
+        url: https://github.com/MileniumHQ/Cascade/releases/download/v0.1.2/Cascade-linux-x64.tar.gz
+        sha256: 'set when v0.1.2 is released'
+        x-checker-data:
+          type: json
+          url: https://api.github.com/repos/MileniumHQ/Cascade/releases/latest
+          version-query: .tag_name | sub("^v"; "")
+          url-query: .assets[] | select(.name == "Cascade-linux-x64.tar.gz") | .browser_download_url
+      - type: file
+        path: cascade.sh
+      - type: file
+        path: com.mileniumhq.Cascade.desktop
+      - type: file
+        path: com.mileniumhq.Cascade.metainfo.xml
+      - type: file
+        path: com.mileniumhq.Cascade.mime.xml

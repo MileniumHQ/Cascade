@@ -45,14 +45,11 @@ linux:
   artifactName: ${productName}-linux-${arch}.${ext}
   target:
     - AppImage
-    # Fedora/openSUSE; needs rpmbuild on the build machine (Arch: rpm-tools). Off until packages cover
-    # every big distro; the updater still handles RPM installs (src/main/updater.ts).
-    # - rpm
+    # Source archive for the Flathub build (flatpak/), which repackages it.
+    - tar.gz
     - dir
   icon: resources/icon.png
   category: AudioVideo
-  # RPM needs a maintainer (otherwise taken from the author's email).
-  maintainer: Milenium
   # WM_CLASS matches cascade.desktop, so docks group the window under Cascade's icon.
   syncDesktopName: true
   # A platform `files` list replaces the top-level one, so it repeats the includes; with only
@@ -78,9 +75,6 @@ linux:
     - from: resources
       to: icons
       filter: ["file-icon.png", "icon.png"]
-rpm:
-  # Updates install the downloaded .rpm through dnf behind a polkit prompt.
-  packageName: cascade
 win:
   # Built from Linux with wine (rcedit, NSIS): `bun run dist:win`.
   artifactName: ${productName}-windows-${arch}-setup.${ext}

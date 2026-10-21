@@ -27,7 +27,6 @@ const sh = (command, argv, opts = {}) => {
 const out = (command, argv, opts) => sh(command, argv, { ...opts, quiet: true })
 
 sh('gh', ['auth', 'status'], { quiet: true })
-// RPM is off for now (see electron-builder.yml); add 'rpmbuild' back here and its file below to re-enable.
 if (!flags.has('--no-win') && spawnSync('which', ['wine']).status !== 0) throw new Error('wine not found (needed for the Windows installer, or pass --no-win).')
 
 // Next version from the newest v* tag.
@@ -66,7 +65,8 @@ try {
   if (!flags.has('--no-win')) sh('node', ['scripts/dist-win.mjs', '--publish', 'never', meta], inWork)
 
   const dist = join(work, 'dist')
-  const files = ['Cascade-linux-x86_64.AppImage', /* 'Cascade-linux-x86_64.rpm', */ 'latest-linux.yml']
+  // The tar.gz is the Flathub manifest's source (flatpak/); its x-checker-data picks up new releases.
+  const files = ['Cascade-linux-x86_64.AppImage', 'Cascade-linux-x64.tar.gz', 'latest-linux.yml']
   if (!flags.has('--no-win')) files.push('Cascade-windows-x64-setup.exe', 'Cascade-windows-x64-setup.exe.blockmap', 'latest.yml')
   for (const f of files) if (!existsSync(join(dist, f))) throw new Error(`Missing build output ${f}`)
   const appImage = join(dist, 'Cascade-linux-x86_64.AppImage')

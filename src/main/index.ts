@@ -153,7 +153,8 @@ function registerWindowIpc(): void {
 
 async function initialize(): Promise<void> {
   Menu.setApplicationMenu(null)
-  if (process.platform === 'linux' && app.isPackaged) void registerLinuxDesktop(process.resourcesPath).catch((error: unknown) => console.warn('Desktop integration:', error))
+  // Flatpak exports its own desktop entry and mime type.
+  if (process.platform === 'linux' && app.isPackaged && !process.env.FLATPAK_ID) void registerLinuxDesktop(process.resourcesPath).catch((error: unknown) => console.warn('Desktop integration:', error))
   registerWindowIpc()
   registerStoreIpc()
   registerExportIpc()

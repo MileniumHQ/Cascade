@@ -33,7 +33,8 @@ export function App(props: { app: CascadeApp; session: Session }) {
     const s = await app.host?.update.check()
     if (!s) return
     const toast = (kind: 'info' | 'success' | 'error', message: string, detail?: string) => pushToast({ id: Date.now(), kind, message, detail })
-    if (s.status === 'unsupported') toast('info', 'Updates aren’t available for this build', 'They work in the installed Windows app, the AppImage and the RPM.')
+    if (s.managedBy === 'flatpak') toast('info', 'Cascade updates through Flathub', 'Your software center installs new versions (or run flatpak update).')
+    else if (s.status === 'unsupported') toast('info', 'Updates aren’t available for this build', 'They work in the installed Windows app and the AppImage.')
     else if (s.status === 'error') toast('error', 'Couldn’t check for updates', s.error)
     else if (s.status === 'ready') toast('success', `Cascade ${s.version} is ready`, 'Click “Restart to update” in the title bar.')
     else if (s.status === 'downloading') toast('info', `Downloading Cascade ${s.version}…`)

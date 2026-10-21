@@ -188,10 +188,12 @@ export interface HostInfo {
   }
 }
 
-/** In-app update progress (packaged Windows / AppImage / RPM builds; `unsupported` elsewhere). */
+/** In-app update progress (packaged Windows / AppImage builds; `unsupported` elsewhere). */
 export interface UpdateState {
   status: 'unsupported' | 'idle' | 'checking' | 'downloading' | 'ready' | 'error'
   current: string
+  /** Updates come from outside the app (Flathub). */
+  managedBy?: 'flatpak'
   /** The version being downloaded or ready to install. */
   version?: string
   percent?: number

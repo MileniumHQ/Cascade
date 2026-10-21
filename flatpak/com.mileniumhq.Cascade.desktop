@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Cascade
+Comment=Edit video with an AI copilot
+Exec=cascade %U
+Terminal=false
+Type=Application
+Icon=com.mileniumhq.Cascade
+StartupWMClass=cascade
+MimeType=application/x-cascade-project;
+Categories=AudioVideo;Video;AudioVideoEditing;
+Keywords=video;editor;timeline;transcript;

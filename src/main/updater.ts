@@ -1,20 +1,15 @@
-// In-app updates from GitHub releases (electron-updater): the Windows installer, the AppImage in place,
-// and the RPM through dnf/zypper behind a polkit password prompt. Downloads in the background; the
-// title bar offers "Restart to update" once it's ready.
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+// In-app updates from GitHub releases (electron-updater): the Windows installer and the AppImage in place.
+// Downloads in the background; the title bar offers "Restart to update" once it's ready. Flatpak copies
+// update through Flathub (the software center / `flatpak update`), so they only report that.
 import { app, ipcMain, type BrowserWindow } from 'electron'
 import type { UpdateState } from '../shared/ipc'
 
 /** How this copy was installed, if it can update itself. */
-export function updateKind(platform = process.platform, env = process.env, resources = process.resourcesPath): 'nsis' | 'appimage' | 'rpm' | 'deb' | null {
+export function updateKind(platform = process.platform, env = process.env): 'nsis' | 'appimage' | 'flatpak' | null {
   if (platform === 'win32') return 'nsis'
   if (platform !== 'linux') return null
-  if (env.APPIMAGE) return 'appimage'
-  // electron-builder writes resources/package-type into rpm/deb/pacman builds.
-  let type = ''
-  try { type = readFileSync(join(resources, 'package-type'), 'utf8').trim() } catch { /* Unpacked dir build. */ }
-  return type === 'rpm' || type === 'deb' ? type : null
+  if (env.FLATPAK_ID) return 'flatpak'
+  return env.APPIMAGE ? 'appimage' : null
 }
 
 const HOURS = 60 * 60 * 1000
@@ -28,7 +23,8 @@ export async function startUpdater(window: () => BrowserWindow | null) {
   }
   ipcMain.handle('update:state', () => state)
   const kind = app.isPackaged ? updateKind() : null
-  if (!kind) {
+  if (kind === 'flatpak') state = { ...state, managedBy: 'flatpak' }
+  if (!kind || kind === 'flatpak') {
     ipcMain.handle('update:check', () => state)
     ipcMain.handle('update:install', () => {})
     return
@@ -38,8 +34,6 @@ export async function startUpdater(window: () => BrowserWindow | null) {
   // Testing: point at a local folder of builds (`python -m http.server`) instead of GitHub releases.
   if (process.env.CASCADE_UPDATE_URL) autoUpdater.setFeedURL({ provider: 'generic', url: process.env.CASCADE_UPDATE_URL })
   autoUpdater.autoDownload = true
-  // Installing an RPM needs a password prompt; only do that when the user clicks.
-  autoUpdater.autoInstallOnAppQuit = kind !== 'rpm' && kind !== 'deb'
   autoUpdater.logger = { info: () => {}, warn: console.warn, error: () => {}, debug: () => {} } as never
   autoUpdater.on('checking-for-update', () => { if (state.status !== 'ready' && state.status !== 'downloading') set({ status: 'checking', error: undefined }) })
   autoUpdater.on('update-not-available', () => set({ status: 'idle', checkedAt: Date.now() }))

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.mileniumhq.Cascade</id>
+  <name>Cascade</name>
+  <summary>Edit video with an AI copilot</summary>
+  <developer id="com.mileniumhq">
+    <name>Milenium</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <description>
+    <p>Cascade is a video editor built on the web platform. Titles, lower thirds and effects are live HTML and CSS, so anything a browser can draw can go on your timeline.</p>
+    <p>An agent panel runs Claude Code, Codex, Cursor or OpenCode with full access to the editor. It can read transcripts, cut on words and build titles while you stay in charge.</p>
+    <ul>
+      <li>Multitrack timeline with keyframes, custom easing and speed ramps</li>
+      <li>Local transcription with whisper, on the GPU when available</li>
+      <li>Export to MP4, WebM, ProRes, GIF, WAV and more</li>
+      <li>Plugins written in TypeScript, reloaded as you save</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">com.mileniumhq.Cascade.desktop</launchable>
+  <url type="homepage">https://cascade.mileniumhq.com</url>
+  <url type="bugtracker">https://github.com/MileniumHQ/Cascade/issues</url>
+  <url type="vcs-browser">https://github.com/MileniumHQ/Cascade</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>The editor with a clip, an animated lower third and the timeline</caption>
+      <image>https://raw.githubusercontent.com/MileniumHQ/Cascade/main/flatpak/screenshots/editor.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Claude Code adding a title card from the Agent panel</caption>
+      <image>https://raw.githubusercontent.com/MileniumHQ/Cascade/main/flatpak/screenshots/agent.png</image>
+    </screenshot>
+  </screenshots>
+  <branding>
+    <color type="primary" scheme_preference="light">#d4d4d8</color>
+    <color type="primary" scheme_preference="dark">#18181b</color>
+  </branding>
+  <content_rating type="oars-1.1"/>
+  <requires>
+    <display_length compare="ge">1024</display_length>
+  </requires>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <releases>
+    <release version="0.1.2" date="2026-10-21"/>
+    <release version="0.1.1" date="2026-10-21"/>
+    <release version="0.1.0" date="2026-10-20"/>
+  </releases>
+</component>

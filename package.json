@@ -17,6 +17,7 @@
     "test": "vitest run",
     "setup:whisper": "node scripts/setup-whisper.mjs",
     "dist:win": "node scripts/dist-win.mjs",
+    "flatpak": "node scripts/flatpak.mjs",
     "release": "node scripts/release.mjs",
     "dist:linux": "(test -x resources/whisper/linux-x64/whisper-cli || node scripts/setup-whisper.mjs) && electron-vite build && electron-builder --linux"
   },
