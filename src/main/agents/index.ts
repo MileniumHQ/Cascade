@@ -14,11 +14,16 @@ import { tools as cascadeTools } from '../mcp/catalog'
 import type { AgentAttachment, AgentEvent, AgentProvider, KeyProvider, AgentSession, AgentUsage, StartOptions, SessionConfigOption, StopReason } from '../../shared/agents'
 import { fetchCursorUsage, opencodeUsage, parseClaudeUsage, parseCodexStatus, parseOpencodeStatsText, readModelCatalog, type ModelCatalog, type OpencodeStats } from './usage'
 
-/** How to launch an agent. `script` = a bundled Node entry run with Electron-as-Node; `registry` = ACP registry id Cascade can download. */
-export interface AgentLauncher { id: string; name: string; icon: AgentProvider['icon']; script?: string; command?: string; args?: string[]; registry?: string }
+/**
+ * How to launch an agent. `script` = a bundled Node entry run with Electron-as-Node; `registry` = ACP registry id Cascade can download.
+ * `native`: env vars naming the adapter's native binaries (module paths, resolved to the unpacked copy). Such scripts run from
+ * inside app.asar, where their JS dependencies are; only the binaries need unpacking.
+ */
+export interface AgentLauncher { id: string; name: string; icon: AgentProvider['icon']; script?: string; native?: Record<string, string>; command?: string; args?: string[]; registry?: string }
 
 export const LAUNCHERS: AgentLauncher[] = [
-  { id: 'claude', name: 'Claude', icon: 'claude', script: '@agentclientprotocol/claude-agent-acp/dist/index.js' },
+  // The adapter imports zod, the MCP SDK and more from app.asar; run unpacked it can't find them ("ACP connection closed").
+  { id: 'claude', name: 'Claude', icon: 'claude', script: '@agentclientprotocol/claude-agent-acp/dist/index.js', native: { CLAUDE_CODE_EXECUTABLE: `@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}/claude${process.platform === 'win32' ? '.exe' : ''}` } },
   { id: 'codex', name: 'Codex', icon: 'codex', script: '@agentclientprotocol/codex-acp/dist/index.js' },
   { id: 'cursor', name: 'Cursor', icon: 'cursor', command: 'cursor-agent', args: ['acp'], registry: 'cursor' },
   { id: 'opencode', name: 'OpenCode', icon: 'opencode', command: 'opencode', args: ['acp'], registry: 'opencode' }
@@ -72,8 +77,8 @@ export interface AgentHostOptions {
   /** Cascade MCP endpoint, read at session start (it may start after the host). */
   mcp: () => { url: string; token: string }
   emit: (event: AgentEvent) => void
-  /** Resolve a bundled module path (overridable for tests). */
-  resolve?: (specifier: string) => string
+  /** Resolve a bundled module path, by default to its app.asar.unpacked copy (overridable for tests). */
+  resolve?: (specifier: string, unpacked?: boolean) => string
   /** Node runtime for bundled scripts: Electron with ELECTRON_RUN_AS_NODE. */
   node?: string
   /** Where registry agents are downloaded (`<userData>/agents`). */
@@ -90,8 +95,8 @@ interface Installed { version: string; command: string; args: string[] }
 
 export function createAgentHost(options: AgentHostOptions) {
   const require = createRequire(import.meta.url)
-  // Packaged: run the unpacked copy so adapters find their native binaries next to them.
-  const resolve = options.resolve ?? ((s: string) => require.resolve(s).replace(/app\.asar(?=[/\\])/, 'app.asar.unpacked'))
+  // Packaged: native binaries only run from the unpacked copy.
+  const resolve = options.resolve ?? ((s: string, unpacked = true) => unpacked ? require.resolve(s).replace(/app\.asar(?=[/\\])/, 'app.asar.unpacked') : require.resolve(s))
   const chats = new Map<string, Chat>()
 
   const installedFile = (l: AgentLauncher) => options.dataDir && l.registry ? join(options.dataDir, l.registry, 'installed.json') : null
@@ -113,7 +118,10 @@ export function createAgentHost(options: AgentHostOptions) {
     const own = await installed(l)
     if (own) return { command: own.command, args: own.args, env }
     if (l.script) {
-      try { return { command: options.node ?? process.execPath, args: [resolve(l.script)], env: { ...env, ELECTRON_RUN_AS_NODE: '1' } } } catch { return { error: 'Bundled adapter missing; reinstall Cascade.' } }
+      try {
+        const native = Object.fromEntries(Object.entries(l.native ?? {}).map(([k, v]) => [k, resolve(v)]))
+        return { command: options.node ?? process.execPath, args: [resolve(l.script, !l.native)], env: { ...env, ...native, ELECTRON_RUN_AS_NODE: '1' } }
+      } catch { return { error: 'Bundled adapter missing; reinstall Cascade.' } }
     }
     const path = await which(l.command!, dirs)
     if (path) return { command: path, args: l.args ?? [], env }
