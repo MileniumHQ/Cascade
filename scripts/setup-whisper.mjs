@@ -64,10 +64,65 @@ function crossArgs() {
     // CPU only for now (a Vulkan exe hard-links vulkan-1.dll and wouldn't start without GPU drivers); assume AVX2-era CPUs (2013+).
     '-DGGML_AVX=ON', '-DGGML_AVX2=ON', '-DGGML_FMA=ON', '-DGGML_F16C=ON']
 }
+// Linux: runs on glibc 2.34+ (Ubuntu 22.04, the Flatpak runtime), not just the build machine's glibc. Static
+// libstdc++/libgcc, ggml's threadpool instead of libgomp, sqrtf inlined (glibc 2.43 versioned it) and glibc 2.38's
+// C23 __isoc23_strto* redirects wrapped back to the plain functions. Checked after the build.
+const MAX_GLIBC = '2.34'
+function portableArgs(vulkan) {
+  if (cross || process.platform !== 'linux') return []
+  const dir = join(source, 'cascade-compat')
+  mkdirSync(dir, { recursive: true })
+  const names = ['strtol', 'strtoul', 'strtoll', 'strtoull']
+  const types = { strtol: 'long', strtoul: 'unsigned long', strtoll: 'long long', strtoull: 'unsigned long long' }
+  // C11 without _GNU_SOURCE, so strtol here binds to the original symbol. Static libstdc++'s random_device
+  // calls arc4random (glibc 2.36); getrandom is 2.25.
+  writeFileSync(join(dir, 'compat.c'), `#include <stdlib.h>\n#include <stdint.h>\n#include <sys/random.h>
+${names.map(n => `${types[n]} __wrap___isoc23_${n}(const char *s, char **end, int base) { return ${n}(s, end, base); }`).join('\n')}
+uint32_t __wrap_arc4random(void) { uint32_t v = 0; while (getrandom(&v, sizeof v, 0) != sizeof v) {} return v; }\n`)
+  run('cc', ['-std=c11', '-O2', '-fPIC', '-c', join(dir, 'compat.c'), '-o', join(dir, 'compat.o')])
+  // libgcc stays shared: its static unwinder needs _dl_find_object (glibc 2.35), and every distro has libgcc_s.
+  const wraps = [...names.map(n => `__isoc23_${n}`), 'arc4random'].map(n => `-Wl,--wrap=${n}`).join(' ')
+  return ['-DCMAKE_C_FLAGS=-fno-math-errno', '-DCMAKE_CXX_FLAGS=-fno-math-errno', '-DGGML_OPENMP=OFF', ...(vulkan ? vulkanHeaders() : []),
+    `-DCMAKE_EXE_LINKER_FLAGS=-static-libstdc++ ${join(dir, 'compat.o')} ${wraps}`]
+}
+// Header-only, so missing system packages (Arch: vulkan-headers, spirv-headers) are downloaded into a vendor/
+// prefix instead of required. Same Vulkan SDK release as the loader.
+const VULKAN_SDK = '1.4.363'
+function vulkanHeaders() {
+  const prefix = join(root, 'vendor', `vulkan-${VULKAN_SDK}`)
+  const fetch = (repo, tag, check) => {
+    if (existsSync(check)) return
+    const src = join(root, 'vendor', `${repo}-${tag.replace(/^v(?=\d)/, '')}`) // GitHub drops the tag's v
+    if (!existsSync(join(src, 'CMakeLists.txt'))) {
+      const archive = `${src}.tar.gz`
+      run('curl', ['-fL', '--retry', '3', '-o', archive, `https://github.com/KhronosGroup/${repo}/archive/refs/tags/${tag}.tar.gz`])
+      run('tar', ['-xzf', archive, '-C', join(root, 'vendor')])
+    }
+    run('cmake', ['-S', src, '-B', join(src, 'build'), `-DCMAKE_INSTALL_PREFIX=${prefix}`, '-DBUILD_TESTS=OFF'])
+    run('cmake', ['--install', join(src, 'build')])
+  }
+  const args = []
+  if (!existsSync('/usr/include/vulkan/vulkan.h')) {
+    fetch('Vulkan-Headers', `v${VULKAN_SDK}`, join(prefix, 'include/vulkan/vulkan.h'))
+    args.push(`-DVulkan_INCLUDE_DIR=${join(prefix, 'include')}`)
+  }
+  if (!existsSync('/usr/share/cmake/SPIRV-Headers') && !existsSync('/usr/lib/cmake/SPIRV-Headers')) {
+    fetch('SPIRV-Headers', `vulkan-sdk-${VULKAN_SDK}.0`, join(prefix, 'share/cmake/SPIRV-Headers'))
+    args.push(`-DCMAKE_PREFIX_PATH=${prefix}`)
+  }
+  return args
+}
+function checkPortable(binary) {
+  if (cross || process.platform !== 'linux') return
+  const symbols = spawnSync('objdump', ['-T', binary], { encoding: 'utf8' }).stdout ?? ''
+  const newer = [...new Set(symbols.match(/GLIBC_2\.\d+/g) ?? [])].filter(v => Number(v.split('.')[1]) > Number(MAX_GLIBC.split('.')[1]))
+  const runtime = [...new Set(symbols.match(/(GLIBCXX|CXXABI|GOMP|OMP)_[\d.]+/g) ?? [])]
+  if (newer.length || runtime.length) throw new Error(`whisper-cli isn't portable: needs ${[...newer, ...runtime].join(', ')} (max glibc ${MAX_GLIBC}, no libstdc++/libgomp)`)
+}
 let gpu = !process.argv.includes('--cpu') && !cross
 function build(vulkan) {
   const dir = join(source, `build-cascade-${target}-${vulkan ? 'vulkan' : 'cpu'}`)
-  run('cmake', ['-S', source, '-B', dir, '-DCMAKE_BUILD_TYPE=Release', `-DGGML_VULKAN=${vulkan ? '1' : '0'}`, ...crossArgs(),
+  run('cmake', ['-S', source, '-B', dir, '-DCMAKE_BUILD_TYPE=Release', `-DGGML_VULKAN=${vulkan ? '1' : '0'}`, ...crossArgs(), ...portableArgs(vulkan),
     '-DBUILD_SHARED_LIBS=OFF', '-DGGML_NATIVE=OFF', '-DWHISPER_BUILD_TESTS=OFF', '-DWHISPER_BUILD_SERVER=OFF',
     '-DWHISPER_CURL=OFF'])
   run('cmake', ['--build', dir, '--config', 'Release', '--target', 'whisper-cli', '-j', String(Math.min(8, availableParallelism()))])
@@ -84,6 +139,7 @@ mkdirSync(output, { recursive: true })
 const exe = target.startsWith('win32') ? 'whisper-cli.exe' : 'whisper-cli'
 const binary = [join(dir, 'bin', exe), join(dir, 'bin/Release', exe)].find(existsSync)
 if (!binary) throw new Error('Build succeeded but whisper-cli was not found')
+checkPortable(binary)
 copyFileSync(binary, join(output, `${exe}.tmp`))
 chmodSync(join(output, `${exe}.tmp`), 0o755)
 renameSync(join(output, `${exe}.tmp`), join(output, exe))
