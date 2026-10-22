@@ -196,6 +196,8 @@ export class SelectionService {
   readonly targets = new Value<Partial<Record<TrackKind, Id>>>({})
   /** Property instance focused in the inspector (keyframe panel highlights it). */
   readonly property = new Value<Id | null>(null)
+  /** Param of the focused property that a direct-editing overlay should target (see ParamTypeContribution.directEdit). */
+  readonly param = new Value<string | null>(null)
 
   constructor() {
     // Direct Value writes by existing panels/plugins obey the same selection exclusivity.

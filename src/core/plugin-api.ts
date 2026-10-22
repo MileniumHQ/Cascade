@@ -344,6 +344,11 @@ export interface ParamTypeContribution<T = any> extends Contribution {
   format?(v: T, def: ParamDef): string
   /** Numeric channels for the graph editor (e.g. vec2 → 2). */
   channels?(v: T): number[]
+  /**
+   * Id of the preview overlay that edits params of this type directly (e.g. `path-editor`). The
+   * overlay finds its targets by this capability and the focused param in `app.selection.param`.
+   */
+  directEdit?: string
 }
 
 export interface EasingContribution extends Contribution {
@@ -590,6 +595,18 @@ export interface OverlayContext {
   clipElement(clipId: Id): HTMLElement | null
   /** Called every rendered frame and on resize. */
   onFrame(fn: () => void): Cleanup
+  /** The clip's corners (TL, TR, BR, BL) in overlay-local px, honoring its full CSS transform; null while it isn't rendered. */
+  clipCorners(clipId: Id): { x: number; y: number }[] | null
+  /**
+   * Input ownership: an overlay that edits something directly (path handles, a crop box…) calls this
+   * while it is active, and returns the release function. Overlays that would fight for the same
+   * pointer / keys (the transform gizmo) check `inputClaimedByOther()` and hide while it is true.
+   */
+  claimInput(): Cleanup
+  /** True while another overlay holds a claim (this overlay's own claims don't count). */
+  inputClaimedByOther(): boolean
+  /** Fires when any overlay claims or releases input. */
+  onInputClaims(fn: () => void): Cleanup
 }
 
 export interface OverlayContribution extends Contribution {

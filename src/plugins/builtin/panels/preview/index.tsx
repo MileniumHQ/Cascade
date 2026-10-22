@@ -8,7 +8,6 @@ import { solidMount } from '../../solid'
 import { PreviewEngine } from './engine'
 import { safeAreasOverlay, transformOverlay } from './overlays'
 import './preview.css'
-import { registerPathEditing } from './path-overlay'
 
 /** The mounted preview panel root, fullscreened by `preview.fullscreen`. */
 let previewRoot: HTMLElement | null = null
@@ -173,7 +172,6 @@ export const previewPlugin = definePlugin({
     ctx.menus.register({ id: 'menu:preview.fullscreen', location: 'app/view', group: 'preview', command: 'preview.fullscreen', label: 'Full Screen Preview', order: 10000 })
     ctx.overlays.register(transformOverlay)
     ctx.overlays.register(safeAreasOverlay)
-    registerPathEditing(ctx)
   }
 })
 

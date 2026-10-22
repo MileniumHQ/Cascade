@@ -4,6 +4,7 @@ import type { PluginDefinition } from '@core/plugin-api'
 import { exportersPlugin } from './exporters'
 import { exportPresetsPlugin } from './export-presets'
 import { paramsPlugin } from './params'
+import { pathEditorPlugin } from './params/path-editor'
 import { easingsPlugin } from './easings'
 import { settingsPlugin } from './settings'
 import { commandsPlugin } from './commands'
@@ -48,6 +49,7 @@ export const builtinPlugins: PluginDefinition[] = [
   exportersPlugin,
   exportPresetsPlugin,
   paramsPlugin,
+  pathEditorPlugin,
   easingsPlugin,
   settingsPlugin,
   commandsPlugin,

@@ -7,12 +7,12 @@ import { ellipsePath, interpolatePath, rectanglePath, type PathValue } from '@sh
 import { defaultCurves, interpolateCurves } from '@shared/curve'
 import { maskProperty, masksPlugin } from './index'
 import { curvesProperty } from '../color/curves'
-import { selectedPath } from '../panels/preview/path-target'
+import { selectedPath } from '../params/path-target'
 
 async function editor() {
   const app = new CascadeApp('editor', null), host = new PluginHost(app)
   await host.activateAll([{ def: masksPlugin, builtin: true }])
-  app.registries.paramTypes.register({ id: 'path', interpolate: interpolatePath, editor() {} }, 'test', true)
+  app.registries.paramTypes.register({ id: 'path', interpolate: interpolatePath, directEdit: 'path-editor', editor() {} }, 'test', true)
   app.registries.paramTypes.register({ id: 'curve', interpolate: interpolateCurves, editor() {} }, 'test', true)
   app.registries.properties.register(curvesProperty, 'test', true)
   app.registries.mediaTypes.register({ id: 'third-party-visual', name: 'Visual', icon: 'film', color: '#fff', track: 'visual', pixels: true, stage: { mount() { return { update() {}, dispose() {} } } } }, 'test', true)
@@ -59,7 +59,7 @@ describe('path/curve integration with editing', () => {
     app.registries.properties.register({ ...maskProperty, id: 'example.path', params: [{ id: 'first', label: 'First', type: 'path', default: ellipsePath() }, { id: 'second', label: 'Second', type: 'path', default: rectanglePath() }] }, 'test', true)
     const id = app.edit.addProperty('clip', 'example.path')!; app.selection.property.set(id)
     expect(selectedPath(app)?.paramId).toBe('first')
-    app.services.set('cascade.path.param', 'second')
+    app.selection.param.set('second')
     expect(selectedPath(app)?.value).toEqual(rectanglePath())
     app.edit.updateTrack(app.timeline().tracks[0].id, { locked: true })
     expect(selectedPath(app)).toBeNull()

@@ -1,15 +1,15 @@
-import type { OverlayContribution, PluginContext } from '@core/plugin-api'
+import { definePlugin, type OverlayContribution, type PluginContext } from '@core/plugin-api'
 import { clonePath, cubicPoint, hitPathSegment, insertPathPoint, pathSegment, segmentCount, togglePathSmooth, type PathValue, type Point } from '@shared/path'
 import { quadMapping } from '@shared/path-space'
-import type { PreviewEngine } from './engine'
-import { corners } from './overlays'
-import { selectedPath } from './path-target'
-import './path-overlay.css'
+import { PATH_EDITOR_OVERLAY, selectedPath } from './path-target'
+import './path-editor.css'
 
 const SVG = 'http://www.w3.org/2000/svg'
 const SERVICE = 'cascade.path.editor'
 interface PathEditorActions { focus(): void; remove(): void; deselect(): void; hasPoint(): boolean }
-export function registerPathEditing(ctx: PluginContext) {
+/** Path handles on the preview for any param type declaring `directEdit: 'path-editor'`. Editor only. */
+export const pathEditorPlugin = definePlugin({ id: 'cascade.params.path-editor', name: 'Path editing', dependsOn: ['cascade.params'], activate: registerPathEditing })
+function registerPathEditing(ctx: PluginContext) {
   const editor = () => ctx.app.services.get(SERVICE) as PathEditorActions | undefined
   ctx.overlays.register(pathOverlay)
   ctx.commands.register({ id: 'path.edit', title: 'Edit path on preview', category: 'Path', enabled: app => !!selectedPath(app), run: () => editor()?.focus() })
@@ -20,13 +20,13 @@ export function registerPathEditing(ctx: PluginContext) {
   ctx.menus.register({ id: 'menu:path.delete', location: 'app/edit', group: 'path', label: 'Delete path point', command: 'path.deletePoint', when: () => !!editor()?.hasPoint() })
 }
 export const pathOverlay: OverlayContribution = {
-  id: 'path-editor', name: 'Path handles', defaultEnabled: true,
+  id: PATH_EDITOR_OVERLAY, name: 'Path handles', defaultEnabled: true,
   mount(el, ctx) {
     const app = ctx.app, svg = document.createElementNS(SVG, 'svg')
     svg.classList.add('path-overlay'); svg.setAttribute('tabindex', '0'); svg.dataset.panel = 'path-editor'
     svg.setAttribute('aria-label', 'Path editor'); el.append(svg)
     let lastClick: { index: number; at: number; point: Point } | undefined
-    let selected: number | null = null, identity = '', finish: (() => void) | undefined
+    let selected: number | null = null, identity = '', finish: (() => void) | undefined, release: (() => void) | undefined
     const node = (tag: string, attrs: Record<string, string | number>, cls: string) => {
       const n = document.createElementNS(SVG, tag)
       for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v))
@@ -35,12 +35,15 @@ export const pathOverlay: OverlayContribution = {
     const set = (t: NonNullable<ReturnType<typeof selectedPath>>, value: PathValue, gesture?: 'start' | 'update' | 'end', at?: number) => app.edit.setParam(t.clipId, t.propertyId, t.paramId, value, { gesture, at })
     const localEvent = (e: MouseEvent): Point => { const r = el.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top } }
     const draw = () => {
-      const t = selectedPath(app), eng = app.services.get('preview') as PreviewEngine | undefined
+      const t = selectedPath(app)
+      // While a path is the edit target the transform gizmo yields (pointer and Delete/Escape belong to the path).
+      if (t && !release) release = ctx.claimInput()
+      else if (!t && release) { release(); release = undefined }
       const id = t ? `${t.clipId}:${t.propertyId}:${t.paramId}` : ''
       if (id !== identity) { finish?.(); identity = id; selected = null; lastClick = undefined }
       svg.replaceChildren()
-      if (!t || !eng) return
-      const clip = ctx.clipElement(t.clipId), quad = clip && corners(clip, eng), map = quad && quadMapping(quad)
+      if (!t) return
+      const quad = ctx.clipCorners(t.clipId), map = quad && quadMapping(quad)
       if (!map) return
       const value = t.value, screen = map.toScreen
       if (selected !== null && selected >= value.points.length) selected = null
@@ -125,6 +128,6 @@ export const pathOverlay: OverlayContribution = {
     svg.addEventListener('keydown', key)
     const offFrame = ctx.onFrame(draw), offDoc = app.doc.onChange.on(draw), offSel = app.selection.property.subscribe(draw), offClip = app.selection.clips.subscribe(draw)
     draw()
-    return () => { finish?.(); offFrame(); offDoc.dispose(); offSel.dispose(); offClip.dispose(); svg.removeEventListener('keydown', key); svg.remove(); if (app.services.get(SERVICE) === actions) app.services.delete(SERVICE) }
+    return () => { finish?.(); release?.(); offFrame(); offDoc.dispose(); offSel.dispose(); offClip.dispose(); svg.removeEventListener('keydown', key); svg.remove(); if (app.services.get(SERVICE) === actions) app.services.delete(SERVICE) }
   }
 }

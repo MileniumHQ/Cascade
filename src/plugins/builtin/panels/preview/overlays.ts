@@ -2,7 +2,6 @@ import type { CascadeAPI } from '@core/app'
 import type { OverlayContribution, OverlayContext } from '@core/plugin-api'
 import { findClip, type Id } from '@shared/project'
 import type { PreviewEngine } from './engine'
-import { selectedPath } from './path-target'
 
 type Pt = { x: number; y: number }
 const SVG = 'http://www.w3.org/2000/svg'
@@ -113,7 +112,7 @@ export const transformOverlay: OverlayContribution = {
     let snapLines: { x: number[]; y: number[] } = { x: [], y: [] }
 
     const target = (): { clipId: Id; el: HTMLElement } | null => {
-      if (selectedPath(app) && app.services.has('cascade.path.editor')) return null
+      if (ctx.inputClaimedByOther()) return null
       const id = app.selection.primaryClip
       if (!id) return null
       const f = findClip(app.timeline(), id)
@@ -275,10 +274,12 @@ export const transformOverlay: OverlayContribution = {
     }
 
     const offFrame = ctx.onFrame(draw)
+    const offClaims = ctx.onInputClaims(draw)
     const offSel = app.selection.clips.subscribe(draw)
     draw()
     return () => {
       offFrame()
+      offClaims()
       offSel.dispose()
       svg.remove()
     }
