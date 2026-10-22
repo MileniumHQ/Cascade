@@ -5,6 +5,7 @@ import { clipEnd, findClip, type Clip, type PropertyInstance } from '@shared/pro
 import { FLICKS as S } from '@shared/time'
 import { timePropertiesPlugin } from '../plugins/builtin/properties/time'
 import { constantMap, curveMap, reverseMap } from './time-remap'
+import { clipboardPlugin } from '../plugins/builtin/clipboard'
 import { audioPlan } from '../plugins/builtin/export-request'
 import type { PropertyContribution } from './plugin-api'
 
@@ -58,12 +59,13 @@ describe('undoable linked tools', () => {
     app.edit.deleteClips(['v2'], true)
     expect(JSON.stringify(app.project())).toBe(before)
   })
-  it('ripple mode drives ordinary trim, cut and Delete without touching other tracks', async () => {
+  it('explicit ripple options drive ordinary trim and Delete; the clipboard plugin resolves the setting for cut', async () => {
     const app = await editor()
+    await new PluginHost(app).activate(clipboardPlugin, true)
     app.settings.set('timeline.rippleMode', true)
-    app.edit.trimClip('v1', 'end', 5 * S)
+    app.edit.trimClip('v1', 'end', 5 * S, { ripple: true })
     expect([get(app, 'v2').start, get(app, 'a2').start]).toEqual([5 * S, 5 * S])
-    app.edit.deleteClips(['v1'])
+    app.edit.deleteClips(['v1'], { ripple: true })
     expect([get(app, 'v2').start, get(app, 'a2').start]).toEqual([0, 0])
     app.selection.setClips(['v2'])
     await app.clipboard.cut()

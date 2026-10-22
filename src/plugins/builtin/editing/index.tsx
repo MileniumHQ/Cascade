@@ -6,6 +6,7 @@ import { definePlugin, type CommandContribution, type MenuLocation, type Propert
 import type { CascadeAPI } from '@core/app'
 import { clipEnd, findClip } from '@shared/project'
 import { Button, Modal } from '@ui/kit'
+import { rippleOptions } from '../ripple'
 
 /** Modal state belongs to this plugin, so hot-unloading it also closes any open dialog. */
 export const editingPlugin = definePlugin({
@@ -55,14 +56,14 @@ export const editingPlugin = definePlugin({
       { id: 'timeline.toggleRippleMode', title: 'Ripple mode', key: 'Shift+R', icon: 'ripple-trim', run: (a) => a.settings.set('timeline.rippleMode', !a.settings.get<boolean>('timeline.rippleMode')), locations: ['app/timeline'] },
       { id: 'timeline.closeGap', title: 'Close gap', run: (a, target?: { trackId: string; t: number }) => {
         const track = target?.trackId ?? a.selection.track.get() ?? a.timeline().tracks.find((tr) => !tr.locked)?.id
-        if (track) a.edit.closeGap(track, target?.t)
+        if (track) a.edit.closeGap(track, target?.t, rippleOptions(a))
       }, locations: ['app/timeline', 'timeline/context'] },
-      { id: 'timeline.closeAllGaps', title: 'Close all gaps', run: (a) => a.edit.closeAllGaps(), locations: ['app/timeline'] },
+      { id: 'timeline.closeAllGaps', title: 'Close all gaps', run: (a) => a.edit.closeAllGaps(undefined, rippleOptions(a)), locations: ['app/timeline'] },
       { id: 'clip.freezeFrame', title: 'Freeze frame', key: 'Shift+F', icon: 'pause', run: (a) => {
         const t = a.playback.time.get()
         const selected = a.selection.clips.get().map((id) => findClip(a.timeline(), id)).filter((f) => f && f.track.kind === 'visual' && !f.track.locked && f.clip.start <= t && clipEnd(f.clip) > t)
         const clip = selected.at(-1)?.clip ?? a.timeline().tracks.filter((tr) => tr.kind === 'visual' && !tr.hidden && !tr.locked).reverse().flatMap((tr) => tr.clips.filter((c) => c.start <= t && clipEnd(c) > t))[0]
-        if (clip) a.edit.freezeFrame(clip.id, t)
+        if (clip) a.edit.freezeFrame(clip.id, t, undefined, rippleOptions(a))
       }, locations: ['app/timeline', 'clip/context'] }
     ]
     for (const [index, { key, locations, ...command }] of commands.entries()) {

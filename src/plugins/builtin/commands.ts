@@ -1,6 +1,7 @@
 import { definePlugin, type CommandContribution, type KeybindingContribution, type MenuItemContribution, type MenuLocation } from '@core/plugin-api'
 import type { CascadeAPI } from '@core/app'
 import { clipEnd, findClip } from '@shared/project'
+import { rippleOptions } from './ripple'
 
 interface SessionLike {
   save(): Promise<unknown>
@@ -68,8 +69,8 @@ export const commandsPlugin = definePlugin({
 
       // timeline editing
       { id: 'timeline.split', title: 'Split at playhead', icon: 'scissors', category: 'Timeline', run: (a) => void a.edit.splitAt(a.playback.time.get()) },
-      { id: 'timeline.delete', title: 'Delete', icon: 'trash-2', category: 'Timeline', run: (a) => a.selection.markers.get().length ? a.edit.removeMarkers(a.selection.markers.get()) : a.selection.transitions.get().length ? a.edit.removeTransitions(a.selection.transitions.get()) : a.edit.deleteClips(sel(a)), enabled: (a) => sel(a).length > 0 || a.selection.markers.get().length > 0 || a.selection.transitions.get().length > 0 },
-      { id: 'timeline.rippleDelete', title: 'Ripple delete', icon: 'trash', category: 'Timeline', run: (a) => a.edit.deleteClips(sel(a), true), enabled: (a) => sel(a).length > 0 },
+      { id: 'timeline.delete', title: 'Delete', icon: 'trash-2', category: 'Timeline', run: (a) => a.selection.markers.get().length ? a.edit.removeMarkers(a.selection.markers.get()) : a.selection.transitions.get().length ? a.edit.removeTransitions(a.selection.transitions.get()) : a.edit.deleteClips(sel(a), rippleOptions(a)), enabled: (a) => sel(a).length > 0 || a.selection.markers.get().length > 0 || a.selection.transitions.get().length > 0 },
+      { id: 'timeline.rippleDelete', title: 'Ripple delete', icon: 'trash', category: 'Timeline', run: (a) => a.edit.deleteClips(sel(a), { ...rippleOptions(a), ripple: true }), enabled: (a) => sel(a).length > 0 },
       { id: 'timeline.duplicate', title: 'Duplicate', icon: 'copy-plus', category: 'Timeline', run: (a) => a.edit.duplicateClips(sel(a)), enabled: (a) => sel(a).length > 0 },
       {
         id: 'timeline.selectAll',
@@ -273,6 +274,6 @@ function trimToPlayhead(a: CascadeAPI, edge: 'start' | 'end') {
     : tl.tracks.filter((tr) => !tr.locked).flatMap((tr) => tr.clips.filter((c) => c.start < t && clipEnd(c) > t).map((c) => c.id))
   for (const id of ids) {
     const f = findClip(tl, id)
-    if (f && f.clip.start < t && clipEnd(f.clip) > t) a.edit.trimClip(id, edge, t, { linked: true })
+    if (f && f.clip.start < t && clipEnd(f.clip) > t) a.edit.trimClip(id, edge, t, { linked: true, ...rippleOptions(a) })
   }
 }

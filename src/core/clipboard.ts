@@ -186,11 +186,11 @@ export class ClipboardService {
     return []
   }
   /** Existing clip placement behavior, also used by the built-in clips format. */
-  pasteClipPayload(payload: ClipClipboardPayload, insert = false): Id[] {
+  pasteClipPayload(payload: ClipClipboardPayload, insert = false, rippleMarkers = true): Id[] {
     const at = this.app.playback.time.get()
     let ids: Id[] | null = null
     this.app.doc.transact(insert ? 'Paste insert' : 'Paste', d => {
-      ids = withTimeMaps(c => clipTimeMap(c, d.timelines[d.activeTimeline], this.app.registries), () => pasteClips(d, payload, at, this.app.selection.track.get(), insert, this.app.settings.get('timeline.rippleMarkers') !== false))
+      ids = withTimeMaps(c => clipTimeMap(c, d.timelines[d.activeTimeline], this.app.registries), () => pasteClips(d, payload, at, this.app.selection.track.get(), insert, rippleMarkers))
     })
     if (!ids) { this.app.notify('warning', 'Paste blocked by a locked track or an incompatible linked clip boundary'); return [] }
     this.app.selection.setClips(ids)

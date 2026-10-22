@@ -42,6 +42,17 @@ export interface GestureOpts {
   gesture?: 'start' | 'update' | 'end'
 }
 
+/**
+ * Ripple behavior is always an explicit argument: core primitives never read UI settings.
+ * Editor plugins resolve their settings (Ripple mode, Ripple markers) and pass them here.
+ */
+export interface RippleOptions {
+  /** Close/open time on the affected tracks. Default false. */
+  ripple?: boolean
+  /** Shift timeline markers along with rippled time. Default true. */
+  rippleMarkers?: boolean
+}
+
 export interface PlaceSourceOpts {
   /** Source range to use (offsets into the media); unset = the whole media. */
   sourceIn?: Flicks
@@ -52,6 +63,8 @@ export interface PlaceSourceOpts {
   targets?: Partial<Record<TrackKind, Id | null>>
   /** Place exactly here, ignoring the timeline's in/out points (drag and drop). Unset = in/out, else the playhead. */
   at?: Flicks
+  /** Shift timeline markers when inserting (default true). */
+  rippleMarkers?: boolean
 }
 
 export interface PlaceSourceResult {
@@ -379,8 +392,8 @@ export class Editing {
     })
   }
 
-  trimClip(clipId: Id, edge: 'start' | 'end', t: Flicks, opts?: GestureOpts & { linked?: boolean }) {
-    if (this.app.settings.get<boolean>('timeline.rippleMode')) return this.rippleTrim(clipId, edge, t, opts)
+  trimClip(clipId: Id, edge: 'start' | 'end', t: Flicks, opts?: GestureOpts & RippleOptions & { linked?: boolean }) {
+    if (opts?.ripple) return this.rippleTrim(clipId, edge, t, opts)
     const key = `trim:${clipId}:${edge}`
     this.doc.transact(
       'Trim clip',
@@ -439,14 +452,15 @@ export class Editing {
     return newIds
   }
 
-  deleteClips(ids: Id[], ripple = this.app.settings.get<boolean>('timeline.rippleMode') ?? false) {
+  deleteClips(ids: Id[], rippleOpts: boolean | RippleOptions = false) {
     if (!ids.length) return
+    const { ripple = false, rippleMarkers = true } = typeof rippleOpts === 'boolean' ? { ripple: rippleOpts } : rippleOpts
     const tl0 = this.app.timeline()
     const all = ops.expandLinked(tl0, ids)
     if ([...all].some((id) => findClip(tl0, id)?.track.locked)) return
     this.doc.transact(ripple ? 'Ripple delete' : 'Delete', (d) => {
       if (ripple) {
-        if (!deleteWithRipple(this.tl(d) as Timeline, all, this.app.settings.get('timeline.rippleMarkers') !== false)) this.app.notify('warning', 'Ripple delete blocked by linked clips or locked tracks')
+        if (!deleteWithRipple(this.tl(d) as Timeline, all, rippleMarkers)) this.app.notify('warning', 'Ripple delete blocked by linked clips or locked tracks')
       } else ops.deleteClips(this.tl(d) as Timeline, all)
     })
   }
@@ -598,9 +612,9 @@ export class Editing {
   }
 
   /** Ripple an edge, keeping linked members and downstream partner tracks synchronized. */
-  rippleTrim(clipId: Id, edge: 'start' | 'end', t: Flicks, opts?: GestureOpts & { linked?: boolean }) {
+  rippleTrim(clipId: Id, edge: 'start' | 'end', t: Flicks, opts?: GestureOpts & Pick<RippleOptions, 'rippleMarkers'> & { linked?: boolean }) {
     this.doc.transact('Ripple trim', (d) => {
-      ops.rippleTrim(this.tl(d) as Timeline, clipId, edge, t, { rippleMarkers: this.app.settings.get('timeline.rippleMarkers') !== false, linked: opts?.linked, limits: (c) => sourceLimits(this.app, c) })
+      ops.rippleTrim(this.tl(d) as Timeline, clipId, edge, t, { rippleMarkers: opts?.rippleMarkers !== false, linked: opts?.linked, limits: (c) => sourceLimits(this.app, c) })
     }, this.gesture(`ripple:${clipId}:${edge}`, opts))
     this.endGesture(opts)
   }
@@ -618,13 +632,13 @@ export class Editing {
   slipClip(clipId: Id, delta: Flicks, opts?: GestureOpts & { linked?: boolean }) { this.trimTool('slip', clipId, delta, opts) }
   slideClip(clipId: Id, delta: Flicks, opts?: GestureOpts & { linked?: boolean }) { this.trimTool('slide', clipId, delta, opts) }
 
-  closeGap(trackId: Id, t = this.app.playback.time.get()) {
+  closeGap(trackId: Id, t = this.app.playback.time.get(), opts: Pick<RippleOptions, 'rippleMarkers'> = {}) {
     this.doc.transact('Close gap', (d) => {
-      if (!ops.closeLinkedGap(this.tl(d) as Timeline, trackId, t, this.app.settings.get('timeline.rippleMarkers') !== false)) this.app.notify('info', 'No gap can be closed here without changing linked or locked clips')
+      if (!ops.closeLinkedGap(this.tl(d) as Timeline, trackId, t, opts.rippleMarkers !== false)) this.app.notify('info', 'No gap can be closed here without changing linked or locked clips')
     })
   }
 
-  closeAllGaps(trackIds?: Id[]) {
+  closeAllGaps(trackIds?: Id[], opts: Pick<RippleOptions, 'rippleMarkers'> = {}) {
     const selectedTracks = new Set(this.app.selection.clips.get().map((id) => findClip(this.app.timeline(), id)?.track.id).filter(Boolean))
     const ids = trackIds ? new Set(trackIds) : selectedTracks.size ? selectedTracks : new Set(this.app.timeline().tracks.filter((tr) => !tr.locked).map((tr) => tr.id))
     let skipped = false
@@ -634,7 +648,7 @@ export class Editing {
         // Each successful closure changes positions; inspect the current gap before each clip.
         for (let i = 0; i < tr.clips.length; i++) {
           const start = i ? clipEnd(tr.clips[i - 1]) : 0
-          if (tr.clips[i].start > start && !ops.closeLinkedGap(tl, tr.id, start, this.app.settings.get('timeline.rippleMarkers') !== false)) skipped = true
+          if (tr.clips[i].start > start && !ops.closeLinkedGap(tl, tr.id, start, opts.rippleMarkers !== false)) skipped = true
         }
       }
     })
@@ -664,7 +678,7 @@ export class Editing {
   }
 
   /** Insert a zero-speed segment. Audio-kind partners receive an empty interval (silence). */
-  freezeFrame(clipId: Id, t = this.app.playback.time.get(), duration = this.seconds(this.app.settings.get<number>('timeline.freezeDuration') ?? 2)): Id | null {
+  freezeFrame(clipId: Id, t = this.app.playback.time.get(), duration = this.seconds(this.app.settings.get<number>('timeline.freezeDuration') ?? 2), opts: Pick<RippleOptions, 'rippleMarkers'> = {}): Id | null {
     const f = findClip(this.app.timeline(), clipId)
     const existingRemap = f?.clip.properties.find((p) => p.enabled && this.app.registries.properties.get(p.type)?.timeRemap)
     const type = existingRemap?.type ?? this.app.registries.properties.all().find((p) => p.timeRemap && f && this.propertyApplies(p, f.clip))?.id
@@ -692,7 +706,7 @@ export class Editing {
     let inserted = false
     this.doc.transact('Freeze frame', (d) => {
       const tl = this.tl(d) as Timeline
-      if (!ops.insertTime(tl, tracks, t, duration, this.app.settings.get('timeline.rippleMarkers') !== false)) return
+      if (!ops.insertTime(tl, tracks, t, duration, opts.rippleMarkers !== false)) return
       ops.placeClip(tl.tracks.find((tr) => tr.id === f.track.id)!, hold)
       inserted = true
     })
@@ -1106,7 +1120,7 @@ export class Editing {
     let placed: Id[] = []
     this.doc.transact(`${verb} ${media.name}`, (d) => {
       const dl = this.tl(d) as Timeline
-      placed = (mode === 'insert' ? insertClips(dl, placements, range.start, range.duration, this.app.settings.get('timeline.rippleMarkers') !== false) : overwriteClips(dl, placements)).placed
+      placed = (mode === 'insert' ? insertClips(dl, placements, range.start, range.duration, opts.rippleMarkers !== false) : overwriteClips(dl, placements)).placed
     })
     if (!placed.length) return null
     const ids = placements.map((p) => p.clip.id).filter((id) => placed.includes(id))

@@ -5,6 +5,7 @@ import { formatTimecode, snapToFrame } from '@shared/time'
 import { expandLinked } from '@core/timeline-ops'
 import type { Disposable } from '@core/disposable'
 import { linkedSelection } from './state'
+import { rippleOptions } from '../../ripple'
 
 /** Live operations use incremental deltas; edge targets remain anchored to the original cut. */
 function trimDrag(tool: 'ripple' | 'roll' | 'slip' | 'slide', e: PointerEvent, ctx: TimelineToolContext, hit: TimelineToolHit) {
@@ -32,7 +33,7 @@ function trimDrag(tool: 'ripple' | 'roll' | 'slip' | 'slide', e: PointerEvent, c
   const move = (ev: PointerEvent) => {
     const raw = original + ctx.timeAt(ev.clientX) - anchor
     const desired = tool === 'slip' || tool === 'slide' ? snapToFrame(raw, app.fps()) - original : ctx.snap(raw, exclude, ev.altKey) - original
-    const opts = { gesture: phase, linked }
+    const opts = { gesture: phase, linked, rippleMarkers: rippleOptions(app).rippleMarkers }
     const current = findClip(app.timeline(), id)?.clip
     if (!current) return cleanup()
     if (tool === 'ripple') {
@@ -74,7 +75,7 @@ export function registerTimelineTools(ctx: PluginContext) {
       if (!hit?.clipId) return
       c.selectClip(hit.clipId, e)
       // Shift at an edge requests ripple; Alt continues to disable snapping/linked selection.
-      if (hit.edge && (e.shiftKey || c.app.settings.get<boolean>('timeline.rippleMode'))) return trimDrag('ripple', e, c, hit)
+      if (hit.edge && (e.shiftKey || rippleOptions(c.app).ripple)) return trimDrag('ripple', e, c, hit)
       if (hit.edge) return c.trimClip(e, hit.clipId, hit.edge)
       return c.moveClip(e, hit.clipId)
     } },

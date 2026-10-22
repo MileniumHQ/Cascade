@@ -6,6 +6,7 @@ import { solidMount } from '../../solid'
 import { markedRange, marksOf } from './marks'
 import { SourceMonitor } from './service'
 import { SourceMonitorView } from './SourceMonitor'
+import { rippleOptions } from '../../ripple'
 
 const monitor = (app: CascadeAPI) => app.services.get('source') as SourceMonitor
 
@@ -18,7 +19,7 @@ function place(app: CascadeAPI, mode: PlaceMode) {
   if (!id) return
   const mon = monitor(app)
   const marks = mon.mediaId.get() === id ? mon.marks.get() : marksOf(app.project(), id)
-  const res = app.edit.placeSource(mode, id, { sourceIn: marks.in, sourceOut: marks.out, lanes: mon.lanes.get() })
+  const res = app.edit.placeSource(mode, id, { sourceIn: marks.in, sourceOut: marks.out, lanes: mon.lanes.get(), rippleMarkers: rippleOptions(app).rippleMarkers })
   if (!res) return
   app.playback.pause()
   app.playback.seek(res.end)

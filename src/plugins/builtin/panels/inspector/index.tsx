@@ -14,6 +14,7 @@ import { MediaInfo } from './MediaInfo'
 import { PropertyCard } from './PropertyCard'
 import './inspector.css'
 import { TransitionInspector } from './TransitionInspector'
+import { rippleOptions } from '../../ripple'
 
 function MultiClip(props: { app: CascadeAPI }) {
   const app = props.app
@@ -36,7 +37,7 @@ function MultiClip(props: { app: CascadeAPI }) {
         <Button icon="unlink" size="sm" disabled={!linked()} onClick={() => app.edit.unlink(ids())}>
           Unlink
         </Button>
-        <Button icon="trash-2" size="sm" variant="danger" onClick={() => app.edit.deleteClips(ids())}>
+        <Button icon="trash-2" size="sm" variant="danger" onClick={() => app.edit.deleteClips(ids(), rippleOptions(app))}>
           Delete
         </Button>
       </div>

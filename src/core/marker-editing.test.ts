@@ -35,7 +35,7 @@ it('ripples markers once for linked deletion and preserves them when disabled', 
   const a=setup(), p=a.project(), v=a.timeline().tracks[0].clips[0]
   a.doc.transact('Linked',d=>{const tl=d.timelines[p.activeTimeline];tl.tracks[0].clips[0].linkId='l';tl.tracks[3].clips=[{...v,id:'a',linkId:'l'}]})
   a.edit.addMarker(12*S); a.edit.deleteClips(['c'],true); expect(a.timeline().markers[0].t).toBe(4*S)
-  a.doc.undo(); a.settings.set('timeline.rippleMarkers',false); a.edit.deleteClips(['c'],true); expect(a.timeline().markers[0].t).toBe(12*S)
+  a.doc.undo(); a.edit.deleteClips(['c'],{ripple:true,rippleMarkers:false}); expect(a.timeline().markers[0].t).toBe(12*S)
 })
 it('clears markers with Deselect and routes Delete to selected markers before clips',async()=>{
   const {PluginHost}=await import('./plugin-host'), {commandsPlugin}=await import('../plugins/builtin/commands')

@@ -3,6 +3,7 @@ import { captureClips, parseClipboard, type ClipClipboardPayload } from '@core/c
 import { captureKeyframes, isKeyframeData, pasteKeyframes } from '@core/keyframe-clipboard'
 import { findClip } from '@shared/project'
 import { expandLinked } from '@core/timeline-ops'
+import { rippleOptions } from '../ripple'
 export const clipboardPlugin = definePlugin({
   id: 'builtin.clipboard', name: 'Clipboard formats',
   activate(ctx) {
@@ -14,10 +15,10 @@ export const clipboardPlugin = definePlugin({
         return captureClips(a.project(), primary ? [primary,...ids.filter(id=>id!==primary)] : ids)
       },
       canPaste:(_a,data) => parseClipboard(JSON.stringify(data))?.cascade === 'clips',
-      paste:(a,data,opts) => a.clipboard.pasteClipPayload(data as ClipClipboardPayload,opts.insert),
+      paste:(a,data,opts) => a.clipboard.pasteClipPayload(data as ClipClipboardPayload,opts.insert,rippleOptions(a).rippleMarkers),
       remove:(a,data) => {
         const ids=(data as ClipClipboardPayload).clips.map(e=>e.clip.id)
-        if (![...expandLinked(a.timeline(),ids)].some(id=>findClip(a.timeline(),id)?.track.locked)) a.edit.deleteClips(ids)
+        if (![...expandLinked(a.timeline(),ids)].some(id=>findClip(a.timeline(),id)?.track.locked)) a.edit.deleteClips(ids,rippleOptions(a))
       }
     })
     ctx.clipboardFormats.register({

@@ -17,6 +17,7 @@ import { MarkerLayer } from '../../markers/ui'
 import { withTimeMaps } from '@core/timeline-ops'
 import { Transitions, transitionMenu } from './Transitions'
 import { linkedSelection } from './state'
+import { rippleOptions } from '../../ripple'
 export { linkedSelection } from './state'
 
 export const HEADER_W = 184
@@ -332,7 +333,7 @@ export function Timeline(props: { ctx: PanelContext }) {
       const raw = base + timeAt(ev.clientX) - startT
       const s = snapTo(raw, new Set(linked ? expandLinked(tl(), [id]) : [id]), ev.altKey)
       setSnapLine(s.at)
-      app.edit.trimClip(id, edge, s.t, { gesture: phase, linked })
+      app.edit.trimClip(id, edge, s.t, { gesture: phase, linked, ...rippleOptions(app) })
       phase = 'update'
       const current = findClip(tl(), id)?.clip
       const dt = current ? (edge === 'start' ? current.start : clipEnd(current)) - base : 0
@@ -352,7 +353,7 @@ export function Timeline(props: { ctx: PanelContext }) {
     const up = (ev: PointerEvent) => {
       if (phase === 'update') {
         const raw = base + timeAt(ev.clientX) - startT
-        app.edit.trimClip(id, edge, snapTo(raw, new Set([id]), ev.altKey).t, { gesture: 'end', linked })
+        app.edit.trimClip(id, edge, snapTo(raw, new Set([id]), ev.altKey).t, { gesture: 'end', linked, ...rippleOptions(app) })
       }
       cleanup()
     }

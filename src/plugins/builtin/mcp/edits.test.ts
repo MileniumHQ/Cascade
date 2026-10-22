@@ -69,3 +69,11 @@ test('source clips keep linked audio across split and move; locked counterpart b
   expect(() => applyEdits(app, { ops: [{ op: 'ripple_delete', start: 6 * FLICKS, end: 8 * FLICKS }] }, ids)).toThrow(/locked/)
   expect(app.project()).toBe(before)
 })
+test('ripple_delete removes the range exactly once even with the UI ripple mode on, and shifts later markers once', async () => {
+  const app = await editor(), ids = new Ids()
+  app.settings.set('timeline.rippleMode', true)
+  applyEdits(app, { ops: [{ op: 'add_text', text: 'Long', start: 0, duration: 12 * FLICKS }, { op: 'add_marker', time: 12 * FLICKS, name: 'End' }] }, ids)
+  applyEdits(app, { ops: [{ op: 'ripple_delete', start: 2 * FLICKS, end: 4 * FLICKS }] }, ids)
+  expect(app.duration()).toBe(10 * FLICKS)
+  expect(app.timeline().markers.map(m => m.t)).toEqual([10 * FLICKS])
+})
