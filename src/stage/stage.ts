@@ -135,7 +135,8 @@ export class Stage {
     if (win && 'ResizeObserver' in win) {
       this.resizeObs = new (win as typeof window).ResizeObserver(() => {
         this.measure()
-        if (this.project) this.render(this.project, this.timelineId!, this.lastTime, { playing: this.lastPlaying, rate: this.lastRate })
+        // Offline audio-chunk stages never render frames: a render would unmount clips mid-chunk.
+        if (this.project && !this.opts.audio?.chunk) this.render(this.project, this.timelineId!, this.lastTime, { playing: this.lastPlaying, rate: this.lastRate })
       })
       this.resizeObs.observe(this.root)
     }
