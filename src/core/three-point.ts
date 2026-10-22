@@ -10,6 +10,9 @@ import { clipEnd, uid, type Clip, type Id, type Timeline, type Track, type Track
 import type { Flicks } from '@shared/time'
 import { placeClip, splitClip } from './timeline-ops'
 
+/** DataTransfer type carrying a marked source range (`{ sourceIn?, sourceOut?, lanes? }`) next to `application/x-cascade-media`. */
+export const SOURCE_RANGE_MIME = 'application/x-cascade-source-range'
+
 export type PlaceMode = 'insert' | 'overwrite' | 'append'
 
 export interface RangeRequest {

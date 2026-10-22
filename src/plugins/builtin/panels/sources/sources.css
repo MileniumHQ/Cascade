@@ -822,3 +822,15 @@ button.sc-section-head:hover {
 .sc-folder:not(.renaming) > * {
   pointer-events: none;
 }
+
+/* In/out range marked in the source monitor. */
+.sc-marks {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  background: #82cbff;
+  opacity: 0.85;
+  border-radius: 2px;
+  pointer-events: none;
+}

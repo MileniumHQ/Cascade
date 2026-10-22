@@ -16,6 +16,7 @@ import { timePropertiesPlugin } from './properties/time'
 import { timelinePlugin } from './panels/timeline'
 import { mcpPlugin } from './mcp'
 import { previewPlugin } from './panels/preview'
+import { sourcePlugin } from './panels/source'
 import { inspectorPlugin } from './panels/inspector'
 import { sourcesPlugin } from './panels/sources'
 import { agentPanelPlugin } from './panels/agent'
@@ -47,6 +48,7 @@ export const builtinPlugins: PluginDefinition[] = [
   audioPropertiesPlugin,
   timePropertiesPlugin,
   previewPlugin,
+  sourcePlugin,
   timelinePlugin,
   inspectorPlugin,
   sourcesPlugin,

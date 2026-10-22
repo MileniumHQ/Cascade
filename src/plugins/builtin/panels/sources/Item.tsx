@@ -7,6 +7,7 @@ import { useValue } from '@ui/reactive'
 import { formatDuration, mediaDetail, waveformGlyph } from './format'
 import { GeneratorTile } from './tiles'
 import { MEDIA_IDS_TYPE } from './Folder'
+import { marksOf } from '../source/marks'
 import type { ViewMode } from './state'
 
 /** Everything an item needs from the panel, so items stay small and keyed by id. */
@@ -104,6 +105,15 @@ export function MediaCard(props: { id: Id; api: PanelApi }) {
   }
   const detail = createMemo(() => (media() ? mediaDetail(media()!, generatorName() ?? mt()?.name ?? media()!.type) : ''))
   const color = () => mt()?.color ?? 'var(--muted)'
+  /** Where the source monitor's in/out marks sit on the item, as fractions of its length. */
+  const markBar = createMemo(() => {
+    const d = media()?.meta.duration
+    const m = marksOf(api.project(), props.id)
+    if (!d || (m.in === undefined && m.out === undefined)) return null
+    const a = Math.min(1, Math.max(0, (m.in ?? 0) / d))
+    const b = Math.min(1, Math.max(a, (m.out ?? d) / d))
+    return { left: `${a * 100}%`, width: `${(b - a) * 100}%` }
+  })
   const renaming = () => api.renaming() === props.id
   const offline = useValue(api.app.media.offline)
   const isOffline = () => offline().has(props.id)
@@ -130,7 +140,7 @@ export function MediaCard(props: { id: Id; api: PanelApi }) {
         onClick={(e) => api.select(props.id, e)}
         onDblClick={(e) => {
           if (renaming() || (e.target as HTMLElement).closest('input')) return
-          api.addToTimeline([props.id])
+          void api.app.run('source.open', props.id)
         }}
         onContextMenu={(e) => api.contextMenu(e, props.id)}
         onDragStart={(e) => {
@@ -166,6 +176,9 @@ export function MediaCard(props: { id: Id; api: PanelApi }) {
           <span class="sc-used-overlay">
             <Used />
           </span>
+          <Show when={markBar()}>
+            <span class="sc-marks" style={markBar()!} data-tip="Marked in the source monitor" />
+          </Show>
         </div>
         <div class="sc-meta">
           <Show

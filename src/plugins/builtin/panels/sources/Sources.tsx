@@ -291,7 +291,7 @@ export function Sources(props: { ctx: PanelContext }) {
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
       .map((it) => ({ label: it.label, icon: it.icon, shortcut: it.shortcut, run: () => void app.run(it.command, id) }))
     openContextMenu(e, [
-      { label: multi ? `Add ${sel.length} to timeline` : 'Add to timeline', icon: 'plus', shortcut: 'Enter', run: () => addToTimeline(sel) },
+      { label: multi ? `Add ${sel.length} to timeline` : 'Add to timeline', icon: 'plus', shortcut: 'Shift+Enter', run: () => addToTimeline(sel) },
       { label: 'Rename', icon: 'pencil', shortcut: 'F2', disabled: multi, run: () => startRename(id) },
       { label: 'Reveal in file manager', icon: 'folder-search', disabled: !m?.path, run: () => reveal(id) },
       { separator: true },
@@ -364,7 +364,7 @@ export function Sources(props: { ctx: PanelContext }) {
       else if (e.key === 'Backspace' && !sel.length && folder() !== null) openFolder(folderById(bin(), folder())?.parent ?? null)
       else if (e.key === 'Delete' || e.key === 'Backspace') void removeMedia(sel)
       else if (e.key === 'F2') sel.length && startRename(sel[sel.length - 1])
-      else if (e.key === 'Enter') sel.length && addToTimeline(sel)
+      else if (e.key === 'Enter') sel.length && (e.shiftKey || mod ? addToTimeline(sel) : void app.run('source.open', sel[sel.length - 1]))
       else if (mod && e.key.toLowerCase() === 'a') selectMedia(app, ids())
       else if (e.key === 'Escape') selectMedia(app, [])
       else if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) && !mod) {
