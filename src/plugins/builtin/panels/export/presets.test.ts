@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ExportPresetContribution } from '@core/plugin-api'
-import { listPresets, presetMatches, presetPrefs, sanitizeUserPresets, snapshotPreset, uniquePresetId, type ExportState } from './presets'
+import { exportFrameRate, exportFrameRateOptions, listPresets, presetMatches, presetPrefs, sanitizeUserPresets, snapshotPreset, uniquePresetId, type ExportState } from './presets'
 
 const state = (extra: Partial<ExportState> = {}): ExportState => ({
   exporter: 'mp4-h264', options: { quality: 18, preset: 'medium' }, size: { w: 1920, h: 1080 }, sizeIsProject: true,
@@ -51,4 +51,17 @@ describe('export presets', () => {
     expect(uniquePresetId('My Preset', ['user:my-preset'])).toBe('user:my-preset-2')
     expect(uniquePresetId('???', [])).toBe('user:preset')
   })
+})
+
+it('retains arbitrary rational preset frame rates exactly', () => {
+  const fps = { num: 1234567, den: 100003 }
+  expect(presetPrefs({ name: 'Custom', exporter: 'mp4-h264', fps }).fps).toBe('1234567/100003')
+})
+
+it('shows custom rational choices and rejects invalid stored rates', () => {
+  expect(exportFrameRate('1234567/100003')).toEqual({ num: 1234567, den: 100003 })
+  expect(exportFrameRateOptions('1234567/100003').at(-1)).toEqual({ value: '1234567/100003', label: 'Custom · 1234567/100003 fps' })
+  for (const value of ['1/0', '0/1', '-2/3', 'Infinity/1', '1.2/3', '9007199254740992/1']) expect(exportFrameRate(value)).toBeUndefined()
+  expect(exportFrameRate('23.976')).toEqual({ num: 24000, den: 1001 })
+  expect(presetPrefs({ name: 'Equivalent', exporter: 'mp4-h264', fps: { num: 60, den: 2 } }).fps).toBe('30')
 })

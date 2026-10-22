@@ -1,35 +1,17 @@
 import { createMemo, For, onCleanup, Show } from 'solid-js'
 import type { CascadeAPI } from '@core/app'
 import type { PanelContext } from '@core/plugin-api'
-import { MASTER_CHANNEL, MIN_DB, clamp, dbToFader, faderToDb, trackChannel, trackGainDb, trackPan } from '@shared/audio-mix'
+import { MASTER_CHANNEL, MIN_DB, dbToFader, faderToDb, trackChannel, trackGainDb, trackPan } from '@shared/audio-mix'
 import type { Id, Track } from '@shared/project'
 import { Icon } from '@ui/icon'
 import { Empty } from '@ui/kit'
 import { useProject } from '@ui/reactive'
 import { MeterBar } from './MeterBar'
 import './mixer.css'
+import { drag } from './drag'
 
 const fmtDb = (db: number) => (db <= MIN_DB ? '-inf' : `${db > 0 ? '+' : ''}${db.toFixed(1)}`)
 const fmtPan = (p: number) => (Math.abs(p) < 0.005 ? 'C' : `${p < 0 ? 'L' : 'R'}${Math.round(Math.abs(p) * 100)}`)
-
-/** Pointer-drag a 0..1 position along an element; calls `phase` start/update/end. */
-function drag(e: PointerEvent, el: HTMLElement, vertical: boolean, onPos: (p: number, phase: 'start' | 'update' | 'end') => void) {
-  if (e.button !== 0) return
-  e.preventDefault()
-  const at = (ev: PointerEvent) => {
-    const r = el.getBoundingClientRect()
-    return clamp(vertical ? 1 - (ev.clientY - r.top) / r.height : (ev.clientX - r.left) / r.width, 0, 1)
-  }
-  onPos(at(e), 'start')
-  const move = (ev: PointerEvent) => onPos(at(ev), 'update')
-  const up = (ev: PointerEvent) => {
-    window.removeEventListener('pointermove', move)
-    window.removeEventListener('pointerup', up)
-    onPos(at(ev), 'end')
-  }
-  window.addEventListener('pointermove', move)
-  window.addEventListener('pointerup', up)
-}
 
 /** Stand-in for the instant between a track's removal and its strip unmounting. */
 const GONE: Track = { id: '', kind: 'audio', name: '', hidden: false, muted: false, locked: false, clips: [] }
@@ -40,6 +22,9 @@ function Strip(props: { app: CascadeAPI; trackId: Id; visible: () => boolean; tr
   const t = () => props.track() ?? GONE
   const gain = () => trackGainDb(t())
   const pan = () => trackPan(t())
+  let stopDrag: (() => void) | undefined
+  onCleanup(() => stopDrag?.())
+  const startDrag: typeof drag = (...args) => { stopDrag?.(); stopDrag = drag(...args); return stopDrag }
   let faderEl!: HTMLDivElement
   let panEl!: HTMLDivElement
   const setGain = (db: number, phase: 'start' | 'update' | 'end') =>
@@ -53,7 +38,7 @@ function Strip(props: { app: CascadeAPI; trackId: Id; visible: () => boolean; tr
         class="mx-pan"
         ref={panEl}
         data-tip={`Pan ${fmtPan(pan())} — double-click to center`}
-        onPointerDown={(e) => drag(e, panEl, false, (p, phase) => setPan(p * 2 - 1, phase))}
+        onPointerDown={(e) => startDrag(e, panEl, false, (p, phase) => setPan(p * 2 - 1, phase))}
         onDblClick={() => app.edit.updateTrack(props.trackId, { pan: 0 })}
       >
         <div class="mx-pan-mid" />
@@ -68,7 +53,7 @@ function Strip(props: { app: CascadeAPI; trackId: Id; visible: () => boolean; tr
           class="mx-fader"
           ref={faderEl}
           data-tip="Drag to set level — double-click for 0 dB"
-          onPointerDown={(e) => drag(e, faderEl, true, (p, phase) => setGain(faderToDb(p), phase))}
+          onPointerDown={(e) => startDrag(e, faderEl, true, (p, phase) => setGain(faderToDb(p), phase))}
           onDblClick={() => app.edit.updateTrack(props.trackId, { gain: 0 })}
         >
           <div class="mx-fader-zero" style={{ bottom: `${dbToFader(0) * 100}%` }} />
