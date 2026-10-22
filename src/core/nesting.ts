@@ -42,6 +42,16 @@ export function nestReason(timeline: Timeline, ids: Iterable<Id>): string | null
   if (host && (host.hidden || host.muted || host.gain || host.pan)) return 'Reset the lowest selected video track’s visibility and mix settings before nesting'
   if (host?.clips.some(c => !selected.has(c.id) && c.start < end && clipEnd(c) > start))
     return 'Include the other clips on the lowest selected video track'
+  // Collapsing selected layers onto the host must not move them below unselected content.
+  const hostIndex = host ? timeline.tracks.indexOf(host) : -1
+  for (let i = hostIndex + 1; host && i < timeline.tracks.length; i++) {
+    const track = timeline.tracks[i]
+    if (track.kind !== 'visual') continue
+    for (const c of track.clips) if (!selected.has(c.id) && found.some(f =>
+      f.track.kind === 'visual' && timeline.tracks.indexOf(f.track) > i &&
+      f.clip.start < clipEnd(c) && clipEnd(f.clip) > c.start))
+      return 'Include the overlapping clips between selected visual layers before nesting'
+  }
   // Moving a clip across a transition boundary would silently remove that transition.
   if (timeline.tracks.some(t => t.transitions?.some(tx => tx.from && tx.to && selected.has(tx.from) !== selected.has(tx.to))))
     return 'Include both sides of transitions before nesting'

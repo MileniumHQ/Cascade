@@ -1,4 +1,4 @@
-import { applyPatches, enablePatches, produceWithPatches, setAutoFreeze, type Draft, type Patch } from 'immer'
+import { applyPatches, enablePatches, freeze, produceWithPatches, setAutoFreeze, type Draft, type Patch } from 'immer'
 import type { Project } from '@shared/project'
 import { Emitter } from './events'
 import { normalizeProjectMarkers } from './markers'
@@ -49,6 +49,7 @@ export class DocumentStore {
   constructor(initial: Project) {
     this._state = structuredClone(initial)
     normalizeProjectMarkers(this._state)
+    freeze(this._state, true)
   }
 
   get state(): Project {
@@ -59,6 +60,7 @@ export class DocumentStore {
   load(project: Project) {
     this._state = structuredClone(project)
     normalizeProjectMarkers(this._state)
+    freeze(this._state, true)
     this.undoStack = []
     this.redoStack = []
     this.savedMarker = null

@@ -192,10 +192,10 @@ describe('insertClips', () => {
       { trackId: 'v1', clip: clip('nv', 4, 2, { linkId: 'N' }) },
       { trackId: 'a1', clip: clip('na', 4, 2, { type: 'audio', linkId: 'N' }) }
     ], sec(4), sec(2))
-    expect(res.blocked).toEqual(['na'])
+    expect(res.blocked).toEqual(['na', 'nv'])
+    expect(res.placed).toEqual([])
     expect(spans(a)).toEqual([['aa', 0, 10]])
-    expect(v.clips.find((c) => c.id === 'nv')!.linkId).toBeUndefined()
-    expect(v.clips).toHaveLength(3)
+    expect(spans(v)).toEqual([['va', 0, 10]])
   })
 
   it('only ripples audio when only the audio clip is placed', () => {

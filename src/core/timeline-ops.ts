@@ -62,6 +62,20 @@ export function cloneClip(clip: Clip): Clip {
   return c
 }
 
+/** Partition source annotations without losing trimmed-out markers. Markers outside both
+ * retained source spans go to the nearest span; ties go to the right timeline half.
+ * This also preserves markers in an overwritten middle interval as hidden annotations. */
+function partitionMarkers(clip: Clip, right: Clip, map: TimeMap, leftEnd: Flicks, rightStart: Flicks) {
+  if (!clip.markers) return
+  const span = (a: number, b: number) => [Math.min(a, b), Math.max(a, b)]
+  const left = span(clip.sourceIn, clip.sourceIn + map.offset(leftEnd - clip.start))
+  const next = span(clip.sourceIn + map.offset(rightStart - clip.start), clip.sourceIn + map.offset(clip.duration))
+  const distance = (t: number, range: number[]) => Math.max(range[0] - t, 0, t - range[1])
+  const goesRight = clip.markers.map(m => distance(m.t, next) <= distance(m.t, left))
+  right.markers = right.markers!.filter((_, i) => goesRight[i])
+  clip.markers = clip.markers.filter((_, i) => !goesRight[i])
+}
+
 /**
  * Clear [start, end) on a track (overwrite semantics). Clips fully inside are removed, partially
  * covered clips are trimmed, a clip spanning the whole range is split in two.
@@ -84,12 +98,8 @@ export function clearRange(track: Track, start: Flicks, end: Flicks, except: Set
     }
     if (cs < start && ce > end) {
       const map = resolveTimeMap(c)
-      const positions = (c.markers ?? []).map(m => clipMarkerTimelineTime(c, map, m))
       const right = cloneClip(c)
-      if (c.markers) {
-        right.markers = right.markers!.filter((_, i) => positions[i] !== null && positions[i]! >= end)
-        c.markers = c.markers.filter((_, i) => positions[i] !== null && positions[i]! < start)
-      }
+      partitionMarkers(c, right, map, start, end)
       transferTransitionEnd(track, c.id, right.id)
       trimEndTo(c, start)
       trimStartTo(right, end)
@@ -123,12 +133,8 @@ export function splitClip(track: Track, clipId: Id, t: Flicks): Clip | null {
   const c = track.clips[i]
   if (t <= c.start + MIN_CLIP / 2 || t >= clipEnd(c) - MIN_CLIP / 2) return null
   const map = resolveTimeMap(c)
-  const positions = (c.markers ?? []).map(m => clipMarkerTimelineTime(c, map, m))
   const right = cloneClip(c)
-  if (c.markers) {
-    right.markers = right.markers!.filter((_, i) => positions[i] !== null && positions[i]! >= t)
-    c.markers = c.markers.filter((_, i) => positions[i] !== null && positions[i]! < t)
-  }
+  partitionMarkers(c, right, map, t, t)
   transferTransitionEnd(track, c.id, right.id)
   trimEndTo(c, t)
   trimStartTo(right, t)

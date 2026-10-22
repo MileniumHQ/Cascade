@@ -6,10 +6,10 @@
  * New clips always play at speed 1, so a source range and a timeline range never get stretched
  * to fit each other: when both are marked, the timeline duration wins.
  */
-import { clipEnd, uid, type Clip, type Id, type Timeline, type Track, type TrackKind } from '@shared/project'
+import { clipEnd, type Clip, type Id, type Timeline, type Track, type TrackKind } from '@shared/project'
 import type { Flicks } from '@shared/time'
-import { shiftMarkers } from './markers'
-import { placeClip, splitClip } from './timeline-ops'
+import { insertTime } from './advanced-timeline-ops'
+import { placeClip } from './timeline-ops'
 
 /** DataTransfer type carrying a marked source range (`{ sourceIn?, sourceOut?, lanes? }`) next to `application/x-cascade-media`. */
 export const SOURCE_RANGE_MIME = 'application/x-cascade-source-range'
@@ -139,54 +139,17 @@ export function overwriteClips(tl: Timeline, placements: Placement[]): PlaceResu
 /**
  * Open a gap of `duration` at `start` on the target tracks, then put the clips in it.
  * Clips at or after `start` shift right and a clip straddling `start` is split. Link partners of
- * anything that moves move with it (on any unlocked track), so audio and video stay in sync even
- * when only one of them is targeted. Locked tracks never change.
+ * anything that moves open space on their tracks too, so audio and video stay in sync even
+ * when only one of them is targeted. A locked linked partner rejects insertion atomically.
  */
 export function insertClips(tl: Timeline, placements: Placement[], start: Flicks, duration: Flicks, rippleMarkers = true): PlaceResult {
   const { ok, blocked } = usable(tl, placements)
-  const targets = new Set(ok.map((o) => o.track.id))
-  const affected = (c: Clip) => clipEnd(c) > start
-  // Clips that must make room: everything past `start` on a target track, plus their link partners.
-  const seeds = new Set<Id>()
-  const links = new Set<Id>()
-  for (const track of tl.tracks) {
-    if (!targets.has(track.id)) continue
-    for (const c of track.clips)
-      if (affected(c)) {
-        seeds.add(c.id)
-        if (c.linkId) links.add(c.linkId)
-      }
-  }
-  if (links.size)
-    for (const track of tl.tracks) {
-      if (track.locked) continue
-      for (const c of track.clips) if (c.linkId && links.has(c.linkId) && affected(c)) seeds.add(c.id)
-    }
-
-  const moving = new Set<Id>()
-  const split: Id[] = []
-  const linkMap = new Map<Id, Id>()
-  for (const track of tl.tracks) {
-    if (track.locked) continue
-    for (const c of [...track.clips]) {
-      if (!seeds.has(c.id)) continue
-      if (c.start < start) {
-        const right = splitClip(track, c.id, start)
-        if (right) {
-          if (c.linkId) {
-            if (!linkMap.has(c.linkId)) linkMap.set(c.linkId, uid('ln_'))
-            right.linkId = linkMap.get(c.linkId)
-          }
-          split.push(right.id)
-          moving.add(right.id)
-        }
-      } else moving.add(c.id)
-    }
-  }
-  for (const track of tl.tracks)
-    for (const c of track.clips) if (moving.has(c.id)) c.start += duration
+  if (!ok.length) return { placed: [], blocked, split: [] }
+  const before = new Set(tl.tracks.flatMap(tr => tr.clips.map(c => c.id)))
+  if (!insertTime(tl, ok.map(o => o.track.id), start, duration, rippleMarkers))
+    return { placed: [], blocked: [...blocked, ...ok.map(o => o.clip.id)], split: [] }
+  const split = tl.tracks.flatMap(tr => tr.clips.filter(c => !before.has(c.id)).map(c => c.id))
   for (const { track, clip } of ok) placeClip(track, clip)
-  if (ok.length && rippleMarkers) tl.markers = shiftMarkers(tl.markers, start, duration)
   return { placed: ok.map((o) => o.clip.id), blocked, split }
 }
 

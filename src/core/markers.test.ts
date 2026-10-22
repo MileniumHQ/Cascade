@@ -57,5 +57,5 @@ it('partitions markers when overwrite creates two surviving clip halves',async()
   const p=createProject(''),tr=p.timelines[p.activeTimeline].tracks[0],c=clip()
   c.markers=[20,21,22,23].map(n=>({id:`m${n}`,t:n*S,name:''}));tr.clips=[c]
   clearRange(tr,11*S,13*S)
-  expect(tr.clips.map(c=>c.markers!.map(m=>m.t/S))).toEqual([[20],[23]])
+  expect(tr.clips.map(c=>c.markers!.map(m=>m.t/S))).toEqual([[20,21],[22,23]])
 })

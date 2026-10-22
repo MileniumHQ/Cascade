@@ -18,7 +18,7 @@ describe('DocumentStore transact', () => {
   it('replaces state immutably and freezes the result', () => {
     const doc = new DocumentStore(project('Original'))
     const initial = doc.state
-    expect(Object.isFrozen(initial)).toBe(false)
+    expect(Object.isFrozen(initial)).toBe(true)
 
     const changed = doc.transact('Rename', (d) => {
       d.name = 'Next'
