@@ -2,6 +2,8 @@ import type { CascadeApp } from '@core/app'
 import type { MenuItemContribution, MenuLocation } from '@core/plugin-api'
 import type { MenuItem } from '../ui/kit'
 import type { Session } from './session'
+import { shortcutFor } from './keys'
+import { slotId } from '@core/keymap'
 
 const SECTIONS: [MenuLocation, string][] = [
   ['app/file', 'File'],
@@ -24,8 +26,10 @@ export interface AppMenu {
  * computed when a menu opens, so enabled/checked state is always current.
  */
 export function appMenus(app: CascadeApp, session: Session): AppMenu[] {
-  const shortcut = (command: string, args?: unknown[]) =>
-    app.registries.keybindings.all().find((k) => k.command === command && JSON.stringify(k.args ?? []) === JSON.stringify(args ?? []))?.key
+  const shortcut = (command: string, args?: unknown[]) => shortcutFor(app, command, args)
+
+  // An explicit label is only a fallback for commands without bindings; a rebound or unbound command shows the truth.
+  const hasBinding = (m: MenuItemContribution) => app.registries.keybindings.all().some((k) => slotId(k) === slotId(m))
 
   const item = (m: MenuItemContribution, editor: boolean): MenuItem => {
     const command = app.registries.commands.get(m.command)
@@ -37,7 +41,7 @@ export function appMenus(app: CascadeApp, session: Session): AppMenu[] {
       icon: m.icon ?? command?.icon,
       disabled: !enabled,
       checked: m.checked ? editor && m.checked(app) : undefined,
-      shortcut: m.shortcut ?? shortcut(m.command, m.args),
+      shortcut: shortcut(m.command, m.args) ?? (hasBinding(m) ? undefined : m.shortcut),
       run: () => void app.run(m.command, ...(m.args ?? []))
     }
   }

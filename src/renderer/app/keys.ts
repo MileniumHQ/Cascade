@@ -1,5 +1,5 @@
 import type { CascadeAPI } from '@core/app'
-import type { KeybindingContribution } from '@core/plugin-api'
+import { effectiveBindings, KEYBINDING_OVERRIDES_SETTING, sanitizeOverrides, slotId, type EffectiveBinding, type KeyOverrides } from '@core/keymap'
 
 const isMac = navigator.platform.includes('Mac')
 
@@ -19,23 +19,29 @@ export function eventKey(e: KeyboardEvent): string {
   return parts.join('+')
 }
 
-const normalize = (k: string) =>
-  k
-    .split('+')
-    .map((p) => (p.length === 1 ? p.toUpperCase() : p))
-    .sort((a, b) => order(a) - order(b))
-    .join('+')
-const order = (p: string) => (p === 'Mod' ? 0 : p === 'Shift' ? 1 : p === 'Alt' ? 2 : 3)
+const overridesOf = (app: CascadeAPI): KeyOverrides => sanitizeOverrides(app.settings.get(KEYBINDING_OVERRIDES_SETTING))
 
-export function matchKeybinding(app: CascadeAPI, e: KeyboardEvent, activePanel: string | null): KeybindingContribution | undefined {
+let cache: { rev: number; raw: unknown; app: CascadeAPI; list: EffectiveBinding[] } | undefined
+/** Registered bindings with the user's overrides applied (cached until either changes). */
+export function bindingsOf(app: CascadeAPI): EffectiveBinding[] {
+  const rev = app.registries.keybindings.revision
+  const raw = app.settings.values.get()[KEYBINDING_OVERRIDES_SETTING]
+  if (cache?.app === app && cache.rev === rev && cache.raw === raw) return cache.list
+  const list = effectiveBindings(app.registries.keybindings.all(), overridesOf(app))
+  cache = { rev, raw, app, list }
+  return list
+}
+
+export function matchKeybinding(app: CascadeAPI, e: KeyboardEvent, activePanel: string | null): EffectiveBinding | undefined {
   const key = eventKey(e)
   if (!key) return undefined
-  const all = app.registries.keybindings.all().filter((kb) => normalize(kb.key) === key)
+  const all = bindingsOf(app).filter((kb) => kb.key === key)
   // Panel-scoped bindings win over global ones.
   return all.find((kb) => kb.when && kb.when === activePanel) ?? all.find((kb) => !kb.when)
 }
 
-/** Shortcut label for a command (for menus/tooltips). */
-export function shortcutFor(app: CascadeAPI, command: string): string | undefined {
-  return app.registries.keybindings.all().find((k) => k.command === command && !k.args)?.key
+/** Shortcut for a command (for menus/tooltips), honouring the user's overrides. */
+export function shortcutFor(app: CascadeAPI, command: string, args?: unknown[]): string | undefined {
+  const id = slotId({ command, args })
+  return bindingsOf(app).find((k) => slotId(k) === id)?.key
 }
