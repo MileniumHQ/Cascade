@@ -5,9 +5,10 @@ import type { ExportProgress } from '@shared/ipc'
 import { FPS_PRESETS, fpsKey, RESOLUTION_PRESETS } from '@shared/formats'
 import { FLICKS, formatTimecode, type FrameRate } from '@shared/time'
 import { Icon } from '@ui/icon'
-import { Button, NumberField, pushToast, Segmented, Select, Toggle } from '@ui/kit'
-import { useProject, useRegistry } from '@ui/reactive'
+import { Button, IconButton, NumberField, pushToast, Segmented, Select, TextField, Toggle } from '@ui/kit'
+import { useProject, useRegistry, useValue } from '@ui/reactive'
 import { prepareExportRequest, rangeHasAudio } from '../../export-request'
+import { listPresets, presetMatches, presetPrefs, sanitizeUserPresets, snapshotPreset, uniquePresetId, USER_PRESETS_SETTING, type ExportState, type ListedPreset } from './presets'
 
 type RangeMode = 'all' | 'inout'
 interface Prefs {
@@ -67,6 +68,8 @@ export function ExportPanel(props: { ctx: PanelContext }) {
   const app = props.ctx.app
   const project = useProject(app)
   const exporters = useRegistry(app.registries.exporters)
+  const contributedPresets = useRegistry(app.registries.exportPresets)
+  const settingValues = useValue(app.settings.values)
   const [prefs, setPrefsRaw] = createSignal<Prefs>(loadPrefs())
   const setPrefs = (p: Partial<Prefs>) => {
     const next = { ...prefs(), ...p }
@@ -131,6 +134,47 @@ export function ExportPanel(props: { ctx: PanelContext }) {
     setPrefs({ exporter: id })
     const o = outputOverride()
     if (o && e) setOutputOverride(e.extension === 'png' ? o.replace(/\.[^./\\]+$/, '') + ' frames' : o.replace(/( frames)?(\.[^./\\]+)?$/, `.${e.extension}`))
+  }
+
+  // ── presets ──
+  const userPresets = createMemo(() => sanitizeUserPresets(settingValues()[USER_PRESETS_SETTING]))
+  const presets = createMemo(() => listPresets(contributedPresets(), userPresets(), (id) => exporters().some((e) => e.id === id)))
+  const exportState = createMemo<ExportState>(() => ({
+    exporter: exporter()?.id ?? '',
+    options: options(),
+    size: size(),
+    sizeIsProject: prefs().resolution === 'project',
+    fps: fps(),
+    fpsIsProject: prefs().fps === 'project',
+    range: hasInOut() ? rangeMode() : 'all'
+  }))
+  const currentPreset = createMemo(() => presets().find((p) => presetMatches(p, exportState())))
+  const [naming, setNaming] = createSignal<{ mode: 'new' | 'rename'; value: string } | null>(null)
+  const saveUserPresets = (list: ReturnType<typeof userPresets>) => app.settings.set(USER_PRESETS_SETTING, list)
+
+  const applyPreset = (preset: ListedPreset) => {
+    const patch = presetPrefs(preset)
+    changeExporter(patch.exporter)
+    setPrefs({
+      options: { ...prefs().options, [patch.exporter]: patch.options },
+      resolution: patch.resolution ?? 'project',
+      fps: patch.fps ?? (preset.fps ? prefs().fps : 'project')
+    })
+    if (patch.custom) setCustom(patch.custom)
+    if (patch.range) setRangeMode(patch.range === 'inout' && !hasInOut() ? 'all' : patch.range)
+  }
+  const commitName = () => {
+    const n = naming()
+    const name = n?.value.trim()
+    if (!n || !name) return setNaming(null)
+    const list = userPresets()
+    if (n.mode === 'rename' && currentPreset()?.user) saveUserPresets(list.map((p) => (p.id === currentPreset()!.id ? { ...p, name } : p)))
+    else saveUserPresets([...list, snapshotPreset(name, exportState(), uniquePresetId(name, [...list, ...contributedPresets()].map((p) => p.id)))])
+    setNaming(null)
+  }
+  const deletePreset = () => {
+    const p = currentPreset()
+    if (p?.user) saveUserPresets(userPresets().filter((u) => u.id !== p.id))
   }
 
   const active = () => jobs().find((j) => !['done', 'error', 'cancelled'].includes(j.progress.state))
@@ -206,6 +250,40 @@ export function ExportPanel(props: { ctx: PanelContext }) {
       </section>
 
       <section class="ex-settings">
+        <div class="ex-row ex-row-wide ex-presets">
+          <label>Preset</label>
+          <Show
+            when={naming()}
+            fallback={
+              <div class="ex-inline">
+                <Select
+                  value={currentPreset()?.id ?? ''}
+                  width="230px"
+                  options={[{ value: '', label: 'Custom' }, ...presets().map((p) => ({ value: p.id, label: p.name, icon: p.icon }))]}
+                  onChange={(id) => {
+                    const p = presets().find((x) => x.id === id)
+                    if (p) applyPreset(p)
+                  }}
+                />
+                <IconButton icon="bookmark-plus" size="sm" tip="Save settings as a preset" onClick={() => setNaming({ mode: 'new', value: '' })} />
+                <Show when={currentPreset()?.user}>
+                  <IconButton icon="pencil" size="sm" tip="Rename preset" onClick={() => setNaming({ mode: 'rename', value: currentPreset()!.name })} />
+                  <IconButton icon="trash-2" size="sm" tip="Delete preset" onClick={deletePreset} />
+                </Show>
+              </div>
+            }
+          >
+            <div class="ex-inline">
+              <TextField value={naming()!.value} placeholder="Preset name" autofocus onInput={(v) => setNaming({ ...naming()!, value: v })} onChange={(v) => setNaming({ ...naming()!, value: v })} class="ex-preset-name" />
+              <Button size="sm" variant="primary" disabled={!naming()!.value.trim()} onClick={commitName}>
+                Save
+              </Button>
+              <Button size="sm" onClick={() => setNaming(null)}>
+                Cancel
+              </Button>
+            </div>
+          </Show>
+        </div>
         <div class="ex-row ex-row-wide">
           <label>Output</label>
           <div class="ex-output">

@@ -110,3 +110,9 @@ Realtime factor uses the requested range duration divided by wall time. Stale co
 - `src/plugins/builtin/media/decoder.ts`: necessary decoder liveness/disposal fix, isolated in commit `8c4e315`.
 
 No preload changes, dependency changes, UI implementation, main-checkout edits or other-worktree edits. The pre-existing untracked `scripts/steps-example.mjs` is left untouched.
+
+## Presets and still frames
+
+The Export panel's **Preset** row applies a named set of settings (exporter, its options, output size, frame rate, range) and highlights the preset the current settings match. Presets are contributions: `ctx.exportPresets.register({ id, name, exporter, options?, size?, fps?, range? })` (`ExportPresetContribution`); built-ins live in `src/plugins/builtin/export-presets.ts`, an example in `examples/plugins/presets.ts`. A preset whose exporter isn't registered is hidden. Absent `size`/`fps` follow the project; `fps` must be one of the panel's frame-rate choices (`FPS_PRESETS`) to be shown. **Save** (bookmark icon) stores the current settings as a user preset in the app setting `export.userPresets` (not the project); user presets can be renamed and deleted. Logic and tests: `panels/export/presets.ts`.
+
+`export.stillFrame` (File → Export frame…, `Mod+Shift+E`) renders the frame at the playhead at project resolution and writes PNG or JPEG (by the chosen extension) after a save dialog named `<project> <timecode>.png`; `export.copyFrame` puts the same frame on the clipboard. Both go through `HostBridge.export.saveFrame` / `copyFrame`, which use the warm render worker behind `export.frame`, so a frame matches what a full export produces.

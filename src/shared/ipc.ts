@@ -98,6 +98,15 @@ export interface FFmpegExportPlan {
   fallback?: { videoArgs: string[]; inputArgs?: string[] }
 }
 
+/** One frame of a timeline, rendered through the same worker the export uses. */
+export interface FrameRequest {
+  project: Project
+  timelineId: string
+  time: Flicks
+  width: number
+  height: number
+}
+
 export interface ExportRequest {
   project: Project
   timelineId: string
@@ -293,7 +302,11 @@ export interface HostBridge {
     cancel(jobId: string): Promise<void>
     onProgress(fn: (p: ExportProgress) => void): () => void
     /** Render a single frame to a PNG data URL (used by MCP / thumbnails). */
-    frame(req: { project: Project; timelineId: string; time: Flicks; width: number; height: number }): Promise<string>
+    frame(req: FrameRequest): Promise<string>
+    /** Render a single frame and write it to `output` (absolute path). Resolves to the path. */
+    saveFrame(req: FrameRequest & { output: string; format: 'png' | 'jpeg'; quality?: number }): Promise<string>
+    /** Render a single frame onto the system clipboard. */
+    copyFrame(req: FrameRequest): Promise<void>
   }
 
   plugins: {

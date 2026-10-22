@@ -1,9 +1,9 @@
-import { app, ipcMain, nativeImage, type WebContents } from 'electron'
+import { app, clipboard, ClipboardItem, ipcMain, nativeImage, type NativeImage, type WebContents } from 'electron'
 import { availableParallelism, tmpdir } from 'node:os'
 import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import type { ExportProgress, ExportRequest, FFmpegExportPlan, HostBridge, RenderWorkerJob } from '../../shared/ipc'
+import type { ExportProgress, ExportRequest, FFmpegExportPlan, FrameRequest, HostBridge, RenderWorkerJob } from '../../shared/ipc'
 import { FLICKS, frameToFlicks } from '../../shared/time'
 import { getFFmpegTools } from '../ffmpeg'
 import { partitionFrames, validateRequest } from './plan'
@@ -152,7 +152,7 @@ async function run(job: Job) {
   }
 }
 
-async function still(req: Parameters<HostBridge['export']['frame']>[0]) {
+async function stillImage(req: FrameRequest): Promise<NativeImage> {
   if (quitting) throw new Error('Application is quitting')
   const request: ExportRequest = { ...req, fps: req.project.settings.fps, range: { start: req.time, end: req.time + FLICKS }, output: join(tmpdir(), 'unused.png'), exporter: '', options: {}, encoding: { videoArgs: [], audioArgs: [], extension: 'png' } }
   validateRequest(request)
@@ -162,10 +162,19 @@ async function still(req: Parameters<HostBridge['export']['frame']>[0]) {
   warm.job = workerJob(request, 'frame')
   try {
     const buffer = await warm.capture(++stillIndex, req.time)
-    return `data:image/png;base64,${nativeImage.createFromBitmap(buffer, { width: req.width, height: req.height }).toPNG().toString('base64')}`
+    return nativeImage.createFromBitmap(buffer, { width: req.width, height: req.height })
   } catch (error) { warm.dispose(); warm = undefined; throw error } finally {
     warmTimer = setTimeout(() => { warm?.dispose(); warm = undefined }, 30_000)
   }
+}
+
+const still = async (req: FrameRequest) => `data:image/png;base64,${(await stillImage(req)).toPNG().toString('base64')}`
+
+/** Serialized with the other stills: the warm worker renders one frame at a time. */
+function queued<T>(task: () => Promise<T>): Promise<T> {
+  const next = stillChain.then(task)
+  stillChain = next.catch(() => {})
+  return next
 }
 
 export function registerExportIpc(): void {
@@ -193,11 +202,21 @@ export function registerExportIpc(): void {
     job.scope.cancel()
     await job.finished
   })
-  ipcMain.handle('export:frame', (_event, req: Parameters<HostBridge['export']['frame']>[0]) => {
-    const next = stillChain.then(() => still(req))
-    stillChain = next.catch(() => {})
-    return next
-  })
+  ipcMain.handle('export:frame', (_event, req: FrameRequest) => queued(() => still(req)))
+  ipcMain.handle('export:saveFrame', (_event, req: FrameRequest & { output: string; format: 'png' | 'jpeg'; quality?: number }) => queued(async () => {
+    if (typeof req.output !== 'string' || !isAbsolute(req.output) || /[\0\r\n]/.test(req.output)) throw new Error('Frame output must be an absolute path')
+    if (req.format !== 'png' && req.format !== 'jpeg') throw new Error('Unsupported image format')
+    const image = await stillImage(req)
+    const output = resolve(req.output)
+    await mkdir(dirname(output), { recursive: true })
+    const quality = Math.round(Math.min(100, Math.max(1, Number(req.quality) || 92)))
+    await writeFile(output, req.format === 'png' ? image.toPNG() : image.toJPEG(quality))
+    return output
+  }))
+  ipcMain.handle('export:copyFrame', (_event, req: FrameRequest) => queued(async () => {
+    const png = (await stillImage(req)).toPNG()
+    await clipboard.write([new ClipboardItem({ 'image/png': new Blob([new Uint8Array(png)], { type: 'image/png' }) })])
+  }))
   app.on('before-quit', event => {
     if (readyToQuit) return
     if (quitting) { event.preventDefault(); return }
