@@ -43,6 +43,8 @@ export class PluginHost {
       plugin: { id: def.id, name: def.name, builtin },
       env: app.env,
       app,
+      markerKinds: reg('markerKinds'),
+      clipboardFormats: reg('clipboardFormats'),
       mediaTypes: reg('mediaTypes'),
       transitions: reg('transitions'),
       properties: reg('properties'),

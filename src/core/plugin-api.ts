@@ -13,6 +13,8 @@
  *  - "render": headless export workers. Only stage-side code runs (media type `stage`,
  *    property `apply`/`audio`, easings, param interpolation). UI registrations are no-ops.
  */
+import type { ClipboardFormatContribution } from './clipboard'
+export type { ClipboardFormatContribution } from './clipboard'
 import type { Disposable } from './disposable'
 import type { Contribution } from './registry'
 import type { Clip, EasingRef, Id, MediaItem, MediaMeta, Project, PropertyInstance, Timeline, Track, TransitionInstance } from '@shared/project'
@@ -51,6 +53,8 @@ export interface PluginContext {
   readonly plugin: { id: string; name: string; builtin: boolean }
   readonly env: PluginEnv
   readonly app: CascadeAPI
+  readonly markerKinds: Registrar<MarkerKindContribution>
+  readonly clipboardFormats: Registrar<ClipboardFormatContribution>
   readonly mediaTypes: Registrar<MediaTypeContribution>
   readonly transitions: Registrar<TransitionContribution>
   readonly properties: Registrar<PropertyContribution>
@@ -71,6 +75,12 @@ export interface PluginContext {
   /** Register any disposable to be cleaned up when the plugin unloads (hot reload!). */
   track<T extends Disposable>(d: T): T
   log(...args: unknown[]): void
+}
+
+export interface MarkerKindContribution extends Contribution {
+  name: string
+  icon?: Icon
+  color?: string
 }
 
 export interface Registrar<T> {

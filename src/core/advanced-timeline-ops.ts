@@ -1,6 +1,7 @@
 /** Generic, mutable pure operations. Call withTimeMaps when a project has remap properties. */
 import { clipEnd, findClip, uid, type Clip, type Id, type Timeline, type Track } from '@shared/project'
 import type { Flicks } from '@shared/time'
+import { shiftMarkers } from './markers'
 import { sourceSpan } from './time-remap'
 import { expandLinked, MIN_CLIP, sortClips, splitClip, timeMapFor, trimEndTo, trimStartTo, type TrimLimits } from './timeline-ops'
 
@@ -38,7 +39,7 @@ function matchingLinkPartitions(tl: Timeline, tracks: Set<Id>, at: Flicks, split
 }
 
 /** Insert empty time; split straddling clips and preserve links between their right halves. */
-export function insertTime(tl: Timeline, trackIds: Iterable<Id>, at: Flicks, duration: Flicks): boolean {
+export function insertTime(tl: Timeline, trackIds: Iterable<Id>, at: Flicks, duration: Flicks, rippleMarkers = true): boolean {
   if (!Number.isSafeInteger(at) || at < 0 || duration <= 0 || !Number.isSafeInteger(duration)) return false
   const tracks = linkedTrackClosure(tl, trackIds, at)
   if (tl.tracks.some((tr) => tracks.has(tr.id) && tr.locked) || !matchingLinkPartitions(tl, tracks, at, true)) return false
@@ -56,6 +57,7 @@ export function insertTime(tl: Timeline, trackIds: Iterable<Id>, at: Flicks, dur
     }
     for (const c of tr.clips) if (c.start >= at) c.start += duration
   }
+  if (rippleMarkers) tl.markers = shiftMarkers(tl.markers, at, duration)
   return true
 }
 
@@ -73,7 +75,7 @@ function edgeBounds(c: Clip, edge: 'start' | 'end', limits: TrimLimits): [number
 }
 
 /** Ripple a linked group's trim by one common, source-limited delta. Returns the applied edge delta. */
-export function rippleTrim(tl: Timeline, clipId: Id, edge: 'start' | 'end', t: Flicks, opts: { limits?: LimitsFor; linked?: boolean } = {}): Flicks {
+export function rippleTrim(tl: Timeline, clipId: Id, edge: 'start' | 'end', t: Flicks, opts: { limits?: LimitsFor; linked?: boolean; rippleMarkers?: boolean } = {}): Flicks {
   const f = findClip(tl, clipId)
   if (!f) return 0
   const limits = opts.limits ?? unlimited
@@ -112,6 +114,7 @@ export function rippleTrim(tl: Timeline, clipId: Id, edge: 'start' | 'end', t: F
   if (lo > hi) return 0
   const base = edge === 'start' ? f.clip.start : clipEnd(f.clip)
   const delta = clamp(t - base, lo, hi)
+  const markerAt = edge === 'start' ? f.clip.start : clipEnd(f.clip)
   const shift = edge === 'start' ? -delta : delta
   for (const g of group) {
     if (edge === 'start') {
@@ -124,6 +127,7 @@ export function rippleTrim(tl: Timeline, clipId: Id, edge: 'start' | 'end', t: F
     for (const c of tr.clips) if (!ids.has(c.id) && c.start >= (boundaries.get(tr.id) ?? boundary)) c.start += shift
     sortClips(tr)
   }
+  if (opts.rippleMarkers !== false) tl.markers = shiftMarkers(tl.markers, shift < 0 && edge === 'end' ? markerAt + shift : markerAt, shift)
   return delta
 }
 
@@ -170,7 +174,7 @@ export function slideClip(track: Track, clipId: Id, delta: Flicks, limits: Limit
 }
 
 /** Close precisely the same empty interval on all linked tail tracks, or leave all untouched. */
-export function closeLinkedGap(tl: Timeline, trackId: Id, t: Flicks): boolean {
+export function closeLinkedGap(tl: Timeline, trackId: Id, t: Flicks, rippleMarkers = true): boolean {
   const track = tl.tracks.find((tr) => tr.id === trackId)
   if (!track || track.locked || track.clips.some((c) => c.start <= t && clipEnd(c) > t)) return false
   const end = track.clips.find((c) => c.start > t)?.start
@@ -180,5 +184,6 @@ export function closeLinkedGap(tl: Timeline, trackId: Id, t: Flicks): boolean {
   if (!matchingLinkPartitions(tl, tracks, end, false)) return false
   if (tl.tracks.some((tr) => tracks.has(tr.id) && (tr.locked || tr.clips.some((c) => c.start < end && clipEnd(c) > start)))) return false
   for (const tr of tl.tracks.filter((tr) => tracks.has(tr.id))) for (const c of tr.clips) if (c.start >= end) c.start -= end - start
+  if (rippleMarkers) tl.markers = shiftMarkers(tl.markers, start, start - end)
   return true
 }

@@ -28,6 +28,8 @@ import * as ops from './timeline-ops'
 import { clipTimeMap, constantMap, type TimeMap } from './time-remap'
 import { endOfTracks, insertClips, overwriteClips, resolveRange, resolveTarget, type PlaceMode } from './three-point'
 
+import { MarkerEditing, type AddMarkerOptions } from './marker-editing'
+import type { Marker } from '@shared/project'
 import { TransitionEditing, type AddTransitionOptions, type TransitionPatch } from './transition-editing'
 import { deleteWithRipple, linkedToolEdit, sourceLimits, type TrimTool } from './advanced-editing'
 
@@ -62,7 +64,8 @@ export interface PlaceSourceResult {
 
 export class Editing {
   private readonly transitionEditing: TransitionEditing
-  constructor(private app: CascadeApp) { this.transitionEditing = new TransitionEditing(app) }
+  private readonly markerEditing: MarkerEditing
+  constructor(private app: CascadeApp) { this.transitionEditing = new TransitionEditing(app); this.markerEditing = new MarkerEditing(app) }
   addTransition(opts: AddTransitionOptions, gesture?: GestureOpts): Id | null { return this.transitionEditing.add(opts, gesture) }
   updateTransition(id: Id, patch: TransitionPatch, opts?: GestureOpts): void { this.transitionEditing.update(id, patch, opts) }
   removeTransitions(ids: Id[]): void { this.transitionEditing.remove(ids) }
@@ -330,6 +333,7 @@ export class Editing {
       data: { ...(mt.defaultData?.() ?? {}), ...(clip.data ?? {}) },
       type: clip.type,
       mediaId: clip.mediaId,
+      markers: clip.markers,
       speed: clip.speed
     }
     this.doc.transact(`Add ${full.name}`, (d) => {
@@ -413,7 +417,7 @@ export class Editing {
     if ([...all].some((id) => findClip(tl0, id)?.track.locked)) return
     this.doc.transact(ripple ? 'Ripple delete' : 'Delete', (d) => {
       if (ripple) {
-        if (!deleteWithRipple(this.tl(d) as Timeline, all)) this.app.notify('warning', 'Ripple delete blocked by linked clips or locked tracks')
+        if (!deleteWithRipple(this.tl(d) as Timeline, all, this.app.settings.get('timeline.rippleMarkers') !== false)) this.app.notify('warning', 'Ripple delete blocked by linked clips or locked tracks')
       } else ops.deleteClips(this.tl(d) as Timeline, all)
     })
   }
@@ -437,6 +441,7 @@ export class Editing {
         if (!f) continue
         const c = JSON.parse(JSON.stringify(f.clip)) as Clip
         c.id = uid('cl_')
+        for (const m of c.markers ?? []) m.id = uid('mk_')
         for (const p of c.properties) p.id = uid('pi_')
         if (c.linkId) {
           if (!links.has(c.linkId)) links.set(c.linkId, uid('ln_'))
@@ -566,7 +571,7 @@ export class Editing {
   /** Ripple an edge, keeping linked members and downstream partner tracks synchronized. */
   rippleTrim(clipId: Id, edge: 'start' | 'end', t: Flicks, opts?: GestureOpts & { linked?: boolean }) {
     this.doc.transact('Ripple trim', (d) => {
-      ops.rippleTrim(this.tl(d) as Timeline, clipId, edge, t, { linked: opts?.linked, limits: (c) => sourceLimits(this.app, c) })
+      ops.rippleTrim(this.tl(d) as Timeline, clipId, edge, t, { rippleMarkers: this.app.settings.get('timeline.rippleMarkers') !== false, linked: opts?.linked, limits: (c) => sourceLimits(this.app, c) })
     }, this.gesture(`ripple:${clipId}:${edge}`, opts))
     this.endGesture(opts)
   }
@@ -586,7 +591,7 @@ export class Editing {
 
   closeGap(trackId: Id, t = this.app.playback.time.get()) {
     this.doc.transact('Close gap', (d) => {
-      if (!ops.closeLinkedGap(this.tl(d) as Timeline, trackId, t)) this.app.notify('info', 'No gap can be closed here without changing linked or locked clips')
+      if (!ops.closeLinkedGap(this.tl(d) as Timeline, trackId, t, this.app.settings.get('timeline.rippleMarkers') !== false)) this.app.notify('info', 'No gap can be closed here without changing linked or locked clips')
     })
   }
 
@@ -600,7 +605,7 @@ export class Editing {
         // Each successful closure changes positions; inspect the current gap before each clip.
         for (let i = 0; i < tr.clips.length; i++) {
           const start = i ? clipEnd(tr.clips[i - 1]) : 0
-          if (tr.clips[i].start > start && !ops.closeLinkedGap(tl, tr.id, start)) skipped = true
+          if (tr.clips[i].start > start && !ops.closeLinkedGap(tl, tr.id, start, this.app.settings.get('timeline.rippleMarkers') !== false)) skipped = true
         }
       }
     })
@@ -658,7 +663,7 @@ export class Editing {
     let inserted = false
     this.doc.transact('Freeze frame', (d) => {
       const tl = this.tl(d) as Timeline
-      if (!ops.insertTime(tl, tracks, t, duration)) return
+      if (!ops.insertTime(tl, tracks, t, duration, this.app.settings.get('timeline.rippleMarkers') !== false)) return
       ops.placeClip(tl.tracks.find((tr) => tr.id === f.track.id)!, hold)
       inserted = true
     })
@@ -995,11 +1000,10 @@ export class Editing {
     })
   }
 
-  addMarker(t: Flicks, name = '') {
-    this.doc.transact('Add marker', (d) => {
-      this.tl(d).markers.push({ id: uid('mk_'), t, name })
-    })
-  }
+  addMarker(t: Flicks, name?: string, opts?: AddMarkerOptions): Id { return this.markerEditing.add(t, name, opts) }
+  updateMarker(id: Id, patch: Partial<Omit<Marker, 'id'>>, opts?: GestureOpts): void { this.markerEditing.update(id, patch, opts) }
+  moveMarker(id: Id, t: Flicks, opts?: GestureOpts): void { this.markerEditing.move(id, t, opts) }
+  removeMarkers(ids: Id[]): void { this.markerEditing.remove(ids) }
 
   setPluginData(pluginId: string, data: unknown) {
     this.doc.transact('Plugin data', (d) => {
@@ -1068,7 +1072,7 @@ export class Editing {
     let placed: Id[] = []
     this.doc.transact(`${verb} ${media.name}`, (d) => {
       const dl = this.tl(d) as Timeline
-      placed = (mode === 'insert' ? insertClips(dl, placements, range.start, range.duration) : overwriteClips(dl, placements)).placed
+      placed = (mode === 'insert' ? insertClips(dl, placements, range.start, range.duration, this.app.settings.get('timeline.rippleMarkers') !== false) : overwriteClips(dl, placements)).placed
     })
     if (!placed.length) return null
     const ids = placements.map((p) => p.clip.id).filter((id) => placed.includes(id))

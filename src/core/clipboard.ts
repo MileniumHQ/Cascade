@@ -1,4 +1,11 @@
 import type { CascadeAPI } from './app'
+import type { Contribution } from './registry'
+export interface ClipboardFormatContribution extends Contribution {
+  canCopy(app: CascadeAPI): boolean
+  copy(app: CascadeAPI): unknown | Promise<unknown>
+  canPaste(app: CascadeAPI, data: unknown): boolean
+  paste(app: CascadeAPI, data: unknown, opts: { insert: boolean }): Id[] | void | Promise<Id[] | void>
+}
 import { clipEnd, findClip, uid, type Clip, type Id, type MediaItem, type Project, type PropertyInstance, type Timeline, type Track, type TrackKind } from '@shared/project'
 import { cloneClip, expandLinked, insertTime, placeClip, withTimeMaps } from './timeline-ops'
 import { clipTimeMap } from './time-remap'
