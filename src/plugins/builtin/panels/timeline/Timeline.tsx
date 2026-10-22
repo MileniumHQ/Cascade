@@ -12,6 +12,7 @@ import { Icon } from '@ui/icon'
 import { openContextMenu, type MenuItem } from '@ui/kit'
 import { useProject, useRegistry, useValue } from '@ui/reactive'
 import { drawRuler } from './ruler'
+import { TimelineTabs } from './TimelineTabs'
 import { Transitions, transitionMenu } from './Transitions'
 import { linkedSelection } from './state'
 export { linkedSelection } from './state'
@@ -438,7 +439,7 @@ export function Timeline(props: { ctx: PanelContext }) {
   }
 
   // ───────── drag & drop from Sources / OS ─────────
-  const dropKinds = ['application/x-cascade-media', 'application/x-cascade-generator', 'Files']
+  const dropKinds = ['application/x-cascade-timeline', 'application/x-cascade-media', 'application/x-cascade-generator', 'Files']
   const onDragOver = (e: DragEvent) => {
     if (!e.dataTransfer || !dropKinds.some((k) => e.dataTransfer!.types.includes(k))) return
     e.preventDefault()
@@ -461,6 +462,8 @@ export function Timeline(props: { ctx: PanelContext }) {
     e.preventDefault()
     const trackId = d.row && !d.row.track.locked ? d.row.track.id : undefined
     const opts = { start: d.t, trackId, audioTrackId: d.row?.track.kind === 'audio' ? trackId : undefined }
+    const timelineId = e.dataTransfer.getData('application/x-cascade-timeline')
+    if (timelineId) { app.run('sequence.add', timelineId, d.t, trackId); return }
     const mediaId = e.dataTransfer.getData('application/x-cascade-media')
     const genId = e.dataTransfer.getData('application/x-cascade-generator')
     // A marked range dragged from the source monitor lands as a three-point overwrite at the drop point.
@@ -503,7 +506,7 @@ export function Timeline(props: { ctx: PanelContext }) {
       { label: 'Ripple delete', icon: 'trash', shortcut: 'Shift+Delete', danger: true, run: () => app.run('timeline.rippleDelete') }
     ]
     for (const m of app.registries.menus.all().filter((m) => m.location === 'clip/context' && (!m.when || m.when(app, id))))
-      items.push({ label: m.label, icon: m.icon, shortcut: m.shortcut, run: () => app.run(m.command, id) })
+      items.push({ label: m.label, icon: m.icon, shortcut: m.shortcut, disabled: app.registries.commands.get(m.command)?.enabled?.(app) === false, run: () => app.run(m.command, id) })
     openContextMenu(e, items)
   }
   const trackMenu = (e: MouseEvent, track: Track) => {
@@ -568,6 +571,8 @@ export function Timeline(props: { ctx: PanelContext }) {
   })
 
   return (
+    <div class="tl-workspace">
+    <TimelineTabs app={app} />
     <div class={`tl tool-${tool()}`} style={{ '--tool-cursor': activeTool()?.cursor ?? 'default' }} ref={root} onWheel={onWheel}>
       <Show when={toolTip()}>{(tip) => <div class="tl-edit-tooltip glass tnum" style={{ left: `${tip().x}px`, top: `${tip().y}px` }}>{tip().text}</div>}</Show>
       <div class="tl-top">
@@ -682,6 +687,7 @@ export function Timeline(props: { ctx: PanelContext }) {
       </div>
       <div class="tl-playhead" ref={playhead} style={{ left: `${HEADER_W}px` }} />
       <HScrollbar app={app} width={width()} content={contentW() + width() * 0.5} onScroll={setScroll} />
+    </div>
     </div>
   )
 }
@@ -842,6 +848,7 @@ function ClipView(props: {
   return (
     <div
       class={`tl-clip ${props.selected ? 'sel' : ''} ${props.primary ? 'primary' : ''} ${props.dragging ? 'dragging' : ''} ${tiny() ? 'tiny' : ''} type-${mt()?.track ?? 'visual'}`}
+      onDblClick={() => mt()?.open?.(app, props.clip)}
       data-id={props.clip.id}
       style={{ left: `${geo().left}px`, width: `${geo().width}px`, '--c': colorOf(app, props.clip) }}
     >

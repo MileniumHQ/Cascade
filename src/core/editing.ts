@@ -31,6 +31,9 @@ import { endOfTracks, insertClips, overwriteClips, resolveRange, resolveTarget, 
 import { TransitionEditing, type AddTransitionOptions, type TransitionPatch } from './transition-editing'
 import { deleteWithRipple, linkedToolEdit, sourceLimits, type TrimTool } from './advanced-editing'
 
+import { TimelineEditing, type CreateTimelineOptions, type NestClipsOptions } from './timeline-editing'
+import { canReferenceTimeline, sourceMeta } from './compositions'
+
 type DProject = Draft<Project>
 
 export interface GestureOpts {
@@ -62,7 +65,27 @@ export interface PlaceSourceResult {
 
 export class Editing {
   private readonly transitionEditing: TransitionEditing
-  constructor(private app: CascadeApp) { this.transitionEditing = new TransitionEditing(app) }
+  private readonly timelineEditing: TimelineEditing
+  constructor(private app: CascadeApp) {
+    this.transitionEditing = new TransitionEditing(app)
+    this.timelineEditing = new TimelineEditing(app)
+  }
+  createTimeline(opts?: CreateTimelineOptions): Id { return this.timelineEditing.create(opts) }
+  duplicateTimeline(id: Id): Id | null { return this.timelineEditing.duplicate(id) }
+  renameTimeline(id: Id, name: string): void { this.timelineEditing.rename(id, name) }
+  deleteTimeline(id: Id): boolean { return this.timelineEditing.delete(id) }
+  deleteTimelineReason(id: Id): string | null { return this.timelineEditing.deleteReason(id) }
+  reorderTimeline(id: Id, index: number): void { this.timelineEditing.reorder(id, index) }
+  /** Navigation is silent (outside undo); playhead is restored and selections cleared. */
+  setActiveTimeline(id: Id, remember = false): void { this.timelineEditing.setActive(id, remember) }
+  previousTimeline(): void { this.timelineEditing.back() }
+  get timelineHistory() { return this.timelineEditing.history }
+  addComposition(timelineId: Id, mediaType: string, opts?: { start?: Flicks; trackId?: Id }): Id | null { return this.timelineEditing.addComposition(timelineId, mediaType, opts) }
+  nestClips(ids: Id[], opts: NestClipsOptions): Id | null { return this.timelineEditing.nest(ids, opts) }
+  nestClipsReason(ids: Iterable<Id>): string | null { return this.timelineEditing.nestReason(ids) }
+  breakApartClip(id: Id): Id[] | null { return this.timelineEditing.breakApart(id) }
+  breakApartClipReason(id: Id): string | null { return this.timelineEditing.breakApartReason(id) }
+
   addTransition(opts: AddTransitionOptions, gesture?: GestureOpts): Id | null { return this.transitionEditing.add(opts, gesture) }
   updateTransition(id: Id, patch: TransitionPatch, opts?: GestureOpts): void { this.transitionEditing.update(id, patch, opts) }
   removeTransitions(ids: Id[]): void { this.transitionEditing.remove(ids) }
@@ -232,6 +255,7 @@ export class Editing {
 
   /** Build (but don't insert) a clip for a media item. */
   buildClip(media: MediaItem, start: Flicks, typeOverride?: string): Clip | null {
+    media = { ...media, meta: sourceMeta(media, this.app.project(), this.app.registries) }
     const mt = this.app.registries.mediaTypes.get(typeOverride ?? media.type)
     if (!mt) return null
     const dur =
@@ -277,6 +301,10 @@ export class Editing {
   addMediaToTimeline(mediaId: Id, opts: { start?: Flicks; trackId?: Id; audioTrackId?: Id } = {}): Id[] {
     const media = this.app.project().media[mediaId]
     if (!media) return []
+    if (media.timelineId && !canReferenceTimeline(this.app.project(), this.app.project().activeTimeline, media.timelineId)) {
+      this.app.notify('warning', 'A composition cannot contain itself, directly or indirectly')
+      return []
+    }
     const mt = this.app.registries.mediaTypes.get(media.type)
     if (!mt) return []
     const start = opts.start ?? this.app.playback.time.get()
@@ -1020,9 +1048,14 @@ export class Editing {
    * timeline duration wins; new clips always play at speed 1. Null when nothing could be placed.
    */
   placeSource(mode: PlaceMode, mediaId: Id, opts: PlaceSourceOpts = {}): PlaceSourceResult | null {
-    const media = this.app.project().media[mediaId]
+    const original = this.app.project().media[mediaId]
+    const media = original && { ...original, meta: sourceMeta(original, this.app.project(), this.app.registries) }
     const mt = media && this.app.registries.mediaTypes.get(media.type)
     if (!media || !mt) return null
+    if (media.timelineId && !canReferenceTimeline(this.app.project(), this.app.project().activeTimeline, media.timelineId)) {
+      this.app.notify('warning', 'A composition cannot contain itself, directly or indirectly')
+      return null
+    }
     const tl = this.app.timeline()
     const lanes = { visual: true, audio: true, ...opts.lanes }
     const targets = { ...this.app.selection.targets.get(), ...opts.targets }

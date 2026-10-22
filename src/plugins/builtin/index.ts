@@ -33,6 +33,8 @@ import { audioToolsPlugin } from './audio-tools'
 import { colorPlugin } from './color'
 import { transitionsPlugin } from './transitions'
 import { masksPlugin } from './masks'
+import { sequencePlugin } from './sequence'
+import { timelinesPlugin } from './timelines'
 
 /**
  * Everything Cascade can do comes from these plugins. They load first (built-in priority)
@@ -58,6 +60,8 @@ export const builtinPlugins: PluginDefinition[] = [
   audioPropertiesPlugin,
   timePropertiesPlugin,
   transitionsPlugin,
+  sequencePlugin,
+  timelinesPlugin,
   previewPlugin,
   sourcePlugin,
   timelinePlugin,
@@ -76,4 +80,4 @@ export const builtinPlugins: PluginDefinition[] = [
 ]
 
 /** Plugins that are safe to load in headless export workers (no UI). */
-export const renderPlugins: PluginDefinition[] = [exportersPlugin, paramsPlugin, easingsPlugin, videoPlugin, imagePlugin, elementPlugin, audioPlugin, visualPropertiesPlugin, effectsPlugin, colorPlugin, masksPlugin, textPropertiesPlugin, audioPropertiesPlugin, timePropertiesPlugin, transitionsPlugin]
+export const renderPlugins: PluginDefinition[] = [exportersPlugin, paramsPlugin, easingsPlugin, videoPlugin, imagePlugin, elementPlugin, audioPlugin, visualPropertiesPlugin, effectsPlugin, colorPlugin, masksPlugin, textPropertiesPlugin, audioPropertiesPlugin, timePropertiesPlugin, transitionsPlugin, sequencePlugin]

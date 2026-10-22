@@ -334,6 +334,8 @@ export interface EasingContribution extends Contribution {
 // ───────────────────────────── media types ─────────────────────────────
 
 export interface ClipFrameState {
+  /** Offline audio scheduling pass; prepare must avoid decoding visual frames. */
+  audioOnly?: boolean
   /** Timeline time. */
   time: Flicks
   /** Time since clip start. */
@@ -382,6 +384,24 @@ export interface ClipMountContext {
   /** URL for streaming a local media file (supports range requests). */
   mediaUrl(path: string): string
   audio?: StageAudio
+  /** Mount a timeline as an isolated composition, in this clip's coordinate/audio space.
+   * Available in preview and export. Call update/prepare with the parent's frame state:
+   * sourceTime/remap determine nested time; nested tracks/effects/transitions mix into audioOut.
+   * Dispose the handle with the clip. Ancestor cycles render silence/empty content and warn.
+   * Declare media.timelineId for dependency validation even when the plugin is unavailable. */
+  compositions?: CompositionService
+}
+
+export interface SubComposition {
+  readonly audioOut?: AudioNode
+  update(state: ClipFrameState): void
+  prepare(state: ClipFrameState): Promise<void>
+  dispose(): void
+}
+
+export interface CompositionService {
+  /** Container must have a size. The child fills it using its own CSS size container. */
+  mount(timelineId: Id, container: HTMLElement, opts?: { audio?: boolean }): SubComposition
 }
 
 export interface StageAudio {
@@ -422,6 +442,13 @@ export interface MediaTypeContribution extends Contribution {
   accepts?(file: ImportCandidate): number
   /** Whether clips have an intrinsic duration from the media. */
   timeBased?: boolean
+  /** Live intrinsic metadata (e.g. a composition whose duration changes while editing). */
+  sourceMeta?(media: MediaItem, project: Project): MediaMeta
+  /** Audio capability in clip-local flicks. Query nested sources through ctx.timelineHasAudio;
+   * it resolves mute/solo, remapping and recursion. Absent: audio tracks retain legacy behavior. */
+  hasAudio?(ctx: MediaAudioContext): boolean
+  /** Optional editor action for double-clicking a clip. */
+  open?(app: CascadeAPI, clip: Clip): void
   /** Default clip length for non-time-based media (seconds). */
   defaultDuration?: number
   /** Property type ids added to new clips (always shown, in this order). */
@@ -435,6 +462,15 @@ export interface MediaTypeContribution extends Contribution {
   clipBody?: Mount<ClipBodyContext>
   /** Sources panel thumbnail. Editor only. */
   thumbnail?: Mount<{ media: MediaItem; app: CascadeAPI }>
+}
+
+export interface MediaAudioContext {
+  project: Project
+  clip: Clip
+  media?: MediaItem
+  range: { start: Flicks; end: Flicks }
+  remap: TimeMap
+  timelineHasAudio(timelineId: Id, range: { start: Flicks; end: Flicks }): boolean
 }
 
 export interface ClipBodyContext {

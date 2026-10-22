@@ -1,0 +1,15 @@
+.tl-workspace { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.tl-tabs { flex: none; display: flex; align-items: stretch; gap: 2px; min-height: 29px; overflow-x: auto; border-bottom: 1px solid var(--line); background: var(--panel); padding: 0 5px; }
+.tl-tab { display: flex; align-items: center; gap: 6px; max-width: 220px; padding: 4px 10px; font-size: 11px; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
+.tl-tab span { overflow: hidden; text-overflow: ellipsis; }
+.tl-tab:hover { background: rgba(255,255,255,.04); }
+.tl-tab.active { color: var(--accent); background: rgba(255,255,255,.055); border-bottom-color: rgba(255,255,255,.65); }
+.tl-tab input { width: 140px; min-width: 0; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 1px 3px; }
+.tl-tab-add, .tl-tab-back { flex: none; display: grid; place-items: center; width: 27px; color: var(--muted); }
+.tl-tab-add:hover, .tl-tab-back:hover { color: var(--accent); background: rgba(255,255,255,.055); }
+.sc-timelines { display: flex; flex-direction: column; gap: 2px; padding: 3px 8px 8px; }
+.sc-timeline { display: flex; align-items: center; gap: 7px; padding: 6px 7px; border-radius: 4px; font-size: 11px; cursor: grab; color: var(--muted); }
+.sc-timeline:hover { background: rgba(255,255,255,.055); color: var(--accent); }
+.sc-timeline span { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.sc-timeline.active { color: var(--accent); }
+.sc-timeline button { display: grid; place-items: center; }

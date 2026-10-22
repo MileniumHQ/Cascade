@@ -3,11 +3,13 @@ import { clipEnd, findClip, type Clip, type Id, type Timeline } from '@shared/pr
 import type { Flicks } from '@shared/time'
 import { clipTimeMap } from './time-remap'
 import * as ops from './timeline-ops'
+import { sourceMeta } from './compositions'
 
 export type TrimTool = 'roll' | 'slip' | 'slide'
 export const sourceLimits = (app: CascadeAPI, c: Clip): ops.TrimLimits => {
   const m = c.mediaId ? app.project().media[c.mediaId] : undefined
-  return app.registries.mediaTypes.get(c.type)?.timeBased && m?.meta.duration !== undefined ? { sourceDuration: m.meta.duration } : {}
+  const meta = m && sourceMeta(m, app.project(), app.registries)
+  return app.registries.mediaTypes.get(c.type)?.timeBased && meta?.duration !== undefined ? { sourceDuration: meta.duration } : {}
 }
 
 /** Verify every member of each existing link group received the same edge/source changes. */

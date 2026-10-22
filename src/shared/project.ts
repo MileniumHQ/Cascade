@@ -43,6 +43,8 @@ export interface MediaItem {
   meta: MediaMeta
   /** Playback proxy (for codecs Chromium can't play natively). */
   proxyPath?: string
+  /** Optional composition source. Generic across media types; retained without its plugin. */
+  timelineId?: Id
   data?: Record<string, unknown>
 }
 

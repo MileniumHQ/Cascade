@@ -10,7 +10,9 @@
  */
 import { anySolo, trackAudible, type MeterReading } from '@shared/audio-mix'
 import { StageMixer } from './mixer'
-import { clipEnd, type Clip, type Id, type MediaItem, type Project, type Track } from '@shared/project'
+import { mountComposition } from './compositions'
+import { sourceMeta } from '@core/compositions'
+import { clipEnd, uid, type Clip, type Id, type MediaItem, type Project, type Track } from '@shared/project'
 import { FLICKS, type Flicks } from '@shared/time'
 import type { Registries } from '@core/app'
 import { evaluateProperty } from '@core/evaluate'
@@ -37,6 +39,12 @@ export interface StageOptions {
   audio?: StageAudio
   /** CSS injected into the stage document (fonts…). */
   css?: string
+  /** Nested stages attach here rather than the document body. */
+  container?: HTMLElement
+  /** Child compositions preserve alpha when composited over their host. */
+  transparent?: boolean
+  /** Ancestor composition ids, supplied by the generic sub-composition service. */
+  ancestors?: readonly Id[]
 }
 
 interface AudioChain {
@@ -81,6 +89,8 @@ export class Stage {
   /** Track buses and the master bus every clip chain feeds (absent without audio). */
   private mixer: StageMixer | null
   private gpu: StageGPU
+  private readonly stageId = uid('stage_')
+  private readonly resources: Element[] = []
 
   constructor(private opts: StageOptions) {
     const doc = opts.document
@@ -89,7 +99,7 @@ export class Stage {
     const style = doc.createElement('style')
     style.textContent = `
       html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
-      #cascade-stage { position: absolute; inset: 0; overflow: hidden; container-type: size; contain: strict;
+      .cascade-stage { position: absolute; inset: 0; overflow: hidden; container-type: size; contain: strict;
         font-family: 'Inter', system-ui, sans-serif; color: white; -webkit-font-smoothing: antialiased; }
       .cs-track { position: absolute; inset: 0; pointer-events: none; }
       .cs-clip-layer { position: absolute; inset: 0; transform-origin: 50% 50%; }
@@ -97,9 +107,12 @@ export class Stage {
       ${opts.css ?? ''}
     `
     doc.head.appendChild(style)
+    this.resources.push(style)
     this.root = doc.createElement('div')
-    this.root.id = 'cascade-stage'
-    doc.body.appendChild(this.root)
+    this.root.id = this.opts.container ? this.stageId : 'cascade-stage'
+    this.root.className = 'cascade-stage'
+    const parent = opts.container ?? doc.body
+    parent.appendChild(this.root)
     const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg')
     svg.setAttribute('width', '0')
     svg.setAttribute('height', '0')
@@ -107,6 +120,7 @@ export class Stage {
     this.svgDefs = doc.createElementNS('http://www.w3.org/2000/svg', 'defs')
     svg.appendChild(this.svgDefs)
     doc.body.appendChild(svg)
+    this.resources.push(svg)
 
     const self = this
     this.units = {
@@ -157,13 +171,14 @@ export class Stage {
   }
 
   private mediaKey(clip: Clip, media?: MediaItem) {
-    return `${clip.type}|${clip.mediaId ?? ''}|${media?.proxyPath ?? media?.path ?? ''}`
+    return `${clip.type}|${clip.mediaId ?? ''}|${media?.proxyPath ?? media?.path ?? ''}|${media?.timelineId ?? ''}`
   }
 
   private mount(clip: Clip, track: Track, project: Project): Mounted | null {
     const mt = this.opts.registries.mediaTypes.get(clip.type)
     if (!mt) return null
-    const media = clip.mediaId ? project.media[clip.mediaId] : undefined
+    const original = clip.mediaId ? project.media[clip.mediaId] : undefined
+    const media = original && { ...original, meta: sourceMeta(original, project, this.opts.registries) }
     const wrapper = this.opts.document.createElement('div')
     wrapper.className = 'cs-clip'
     wrapper.dataset.clip = clip.id
@@ -180,7 +195,9 @@ export class Stage {
         mode: this.opts.mode,
         u: this.units,
         mediaUrl: this.opts.mediaUrl,
-        audio: this.opts.audio
+        audio: this.opts.audio,
+        compositions: { mount: (id, container, options) => mountComposition(options?.audio === false ? { ...this.opts, audio: undefined } : this.opts,
+          [...(this.opts.ancestors ?? []), this.timelineId!], id, container) }
       })
     } catch (e) {
       console.error(`[stage] mount failed for ${clip.type}`, e)
@@ -210,7 +227,7 @@ export class Stage {
     }
     this.disposeAudio(m)
     m.layer.remove()
-    if (m.svgFilterKey) this.svgDefs.querySelector(`#${CSS.escape(`f_${m.clip.id}`)}`)?.remove()
+    if (m.svgFilterKey) this.svgDefs.querySelector(`#${CSS.escape(`f_${this.stageId}_${m.clip.id}`)}`)?.remove()
   }
 
   private disposeAudio(m: Mounted) {
@@ -269,12 +286,19 @@ export class Stage {
     if (this.disposed) return
     this.project = project
     this.timelineId = timelineId
+    this.measure()
     this.lastTime = t
     this.lastPlaying = o.playing
     this.lastRate = o.rate ?? 1
     const tl = project.timelines[timelineId]
-    if (!tl) return
-    this.root.style.background = project.settings.background
+    if (!tl) {
+      for (const mounted of this.mounted.values()) this.unmount(mounted)
+      this.mounted.clear()
+      for (const layer of this.trackLayers.values()) layer.remove()
+      this.trackLayers.clear()
+      return
+    }
+    this.root.style.background = this.opts.transparent ? 'transparent' : project.settings.background
     const preroll = this.opts.mode === 'preview' ? PREROLL_PREVIEW : 0
     const postroll = this.opts.mode === 'preview' ? POSTROLL_PREVIEW : 0
     const needed = new Set<Id>()
@@ -296,7 +320,7 @@ export class Stage {
           const m = this.mounted.get(clip.id)
           if (m) { m.layer.style.zIndex = String(index); layers.set(clip.id, m.layer) }
         })
-        if (layers.size) renderTransitionLayers(this.opts.registries, track, t, layers, { u: this.units, mode: this.opts.mode, project })
+        if (layers.size) renderTransitionLayers(this.opts.registries, track, t, layers, { u: this.units, mode: this.opts.mode, project, scope: this.stageId })
       }
     }
     for (const [id, m] of this.mounted) {
@@ -315,7 +339,8 @@ export class Stage {
   }
 
   private renderClip(project: Project, track: Track, clip: Clip, t: Flicks, o: { playing: boolean; rate?: number }) {
-    const media = clip.mediaId ? project.media[clip.mediaId] : undefined
+    const original = clip.mediaId ? project.media[clip.mediaId] : undefined
+    const media = original && { ...original, meta: sourceMeta(original, project, this.opts.registries) }
     let m = this.mounted.get(clip.id)
     if (m && (m.mediaKey !== this.mediaKey(clip, media) || m.trackId !== track.id)) {
       this.unmount(m)
@@ -411,7 +436,7 @@ export class Stage {
         for (const el of w.querySelectorAll<HTMLElement>(':scope > [data-cs-owner]')) if (!applied.has(el.dataset.csOwner!)) el.remove()
       if (out.svg.length) {
         const key = out.svg.join('')
-        const id = `f_${clip.id}`
+        const id = `f_${this.stageId}_${clip.id}`
         if (m.svgFilterKey !== key) {
           let f = this.svgDefs.querySelector(`#${CSS.escape(id)}`)
           if (!f) {
@@ -473,17 +498,19 @@ export class Stage {
     const audio = this.opts.audio
     const timeline = project.timelines[timelineId]
     if (!audio?.chunk || !timeline) throw new Error('Audio chunk requires a timeline and StageAudio.chunk')
+    this.project = project
+    this.timelineId = timelineId
     const end = start + duration
     const prepare: Promise<void>[] = []
     this.mixer?.sync(timeline.tracks, 0)
     const solo = anySolo(timeline.tracks)
     for (const track of timeline.tracks) {
-      if (!trackAudible(track, solo)) continue
+      if (!trackAudible(track, solo) || track.kind === 'visual' && track.hidden) continue
       for (const clip of track.clips) {
         const range = clipRenderRange(this.opts.registries, track, clip)
         if (range.start >= end || range.end <= start) continue
         const mounted = this.mount(clip, track, project)
-        if (!mounted) throw new Error(`Cannot mount audio clip ${clip.id} (${clip.type})`)
+        if (!mounted) continue // Missing plugins keep their document data and render silence.
         this.mounted.set(clip.id, mounted)
         // Media plugins expose audio capability through their mounted instance, never a core type list.
         if (!mounted.inst.audioOut) {
@@ -511,11 +538,12 @@ export class Stage {
         for (const n of mounted.audio!.nodes) if (n.node.ready) prepare.push(n.node.ready)
         const local = from - clip.start
         const remap = clipTimeMap(clip, timeline, this.opts.registries)
-        const media = clip.mediaId ? project.media[clip.mediaId] : undefined
+        const original = clip.mediaId ? project.media[clip.mediaId] : undefined
+        const media = original && { ...original, meta: sourceMeta(original, project, this.opts.registries) }
         const state: ClipFrameState = {
           time: from, local, activeRange: range, sourceTime: Math.max(0, Math.min(Math.max(0, (media?.meta.duration ?? Infinity) - 1), clip.sourceIn + remap.offset(local))) / FLICKS,
           playing: false, rate: remap.speedAt(local) * (remap.reversed ? -1 : 1), remap, clip, media,
-          project, mode: 'render', extra: {}, u: this.units
+          project, mode: 'render', audioOnly: true, extra: {}, u: this.units
         }
         mounted.inst.update(state)
         if (mounted.inst.prepare) prepare.push(mounted.inst.prepare(state))
@@ -542,6 +570,7 @@ export class Stage {
     this.gpu.dispose()
     this.resizeObs?.disconnect()
     this.root.remove()
+    for (const resource of this.resources) resource.remove()
   }
 }
 

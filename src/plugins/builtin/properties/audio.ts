@@ -67,7 +67,10 @@ export const audioPropertiesPlugin = definePlugin({
   activate(ctx) {
     // Registry order is priority, then id: keep the menu in registration order.
     let order = 700
-    const register = (p: PropertyContribution) => ctx.properties.register({ priority: order++, ...p })
+    const register = (p: PropertyContribution) => ctx.properties.register({ priority: order++, ...p,
+      // Compound sources expose audio on a visual clip. Pitch still requires file-backed PCM.
+      ...(p.id !== 'pitch' ? { appliesTo: (clip: Clip) => isAudio(clip) || !!ctx.app.registries.mediaTypes.get(clip.type)?.hasAudio } : {})
+    })
     register({
       id: 'volume',
       name: 'Volume',
