@@ -1,4 +1,5 @@
 import './editing.css'
+import { parseClipboard } from '@core/clipboard'
 import { createSignal, For } from 'solid-js'
 import { render } from 'solid-js/web'
 import { definePlugin, type CommandContribution, type MenuLocation, type PropertyInstance } from '@core/plugin-api'
@@ -13,7 +14,8 @@ export const editingPlugin = definePlugin({
     let closeModal: (() => void) | undefined
     ctx.track({ dispose() { closeModal?.() } })
     const attributes = async (app: CascadeAPI) => {
-      const payload = await app.clipboard.read()
+      const raw = await app.clipboard.read()
+      const payload = raw?.cascade === 1 && raw.format === 'clips' ? parseClipboard(JSON.stringify(raw.data)) : raw
       const properties = payload?.cascade === 'clips' ? payload.clips[0].clip.properties : payload?.cascade === 'property' ? [payload.property] : []
       if (!properties.length || !app.selection.clips.get().length) return
       closeModal?.()
