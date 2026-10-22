@@ -5,7 +5,7 @@ import type { MediaTypeContribution } from '@core/plugin-api'
 import { Value } from '@core/value'
 import { uid, type Clip, type Id, type MediaItem, type Project, type Timeline, type Track } from '@shared/project'
 import { snapToFrame, type Flicks } from '@shared/time'
-import type { EngineFeed } from '../preview/engine'
+import type { ViewerFeed } from '@core/plugin-api'
 import { isEmpty, marksOf, markIn, markOut, writeMarks, type SourceMarks } from './marks'
 
 const TIMELINE_ID = 'tl_source'
@@ -146,7 +146,7 @@ export class SourceMonitor {
   }
 
   /** What the preview engine needs to render this monitor instead of the timeline. */
-  feed(): EngineFeed {
+  feed(): ViewerFeed {
     return {
       project: () => this.built?.project ?? this.sizedEmpty(),
       timelineId: () => TIMELINE_ID,

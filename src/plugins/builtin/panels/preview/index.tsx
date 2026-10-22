@@ -1,5 +1,5 @@
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from 'solid-js'
-import { definePlugin, type PanelContext } from '@core/plugin-api'
+import { definePlugin, VIEWER_SERVICE, type PanelContext, type ViewerService } from '@core/plugin-api'
 import { formatTimecode } from '@shared/time'
 import { Icon } from '@ui/icon'
 import { IconButton, openMenu } from '@ui/kit'
@@ -163,6 +163,10 @@ export const previewPlugin = definePlugin({
   id: 'cascade.panel.preview',
   name: 'Preview',
   activate(ctx) {
+    // Other panels (the source monitor) show frames through this instead of importing the engine.
+    const viewers: ViewerService = { create: (host, feed) => new PreviewEngine(ctx.app, host, feed) }
+    ctx.app.services.set(VIEWER_SERVICE, viewers)
+    ctx.track({ dispose: () => ctx.app.services.delete(VIEWER_SERVICE) })
     ctx.panels.register({ id: 'preview', title: 'Preview', icon: 'monitor-play', region: 'top', order: 0, group: 'viewer', mount: solidMount(Preview) })
     ctx.commands.register({ id: 'preview.fullscreen', title: 'Full Screen Preview', category: 'View', icon: 'maximize', run: toggleFullscreen })
     ctx.keybindings.register({ id: 'preview.fullscreen:F', command: 'preview.fullscreen', key: 'F' })
