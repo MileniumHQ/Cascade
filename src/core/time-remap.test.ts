@@ -157,3 +157,27 @@ test('source availability covers forward and reversed handles', async () => {
   expect(sourceLocalRange(clip, constantMap(2), S(120))).toEqual({ start: -S(50), end: S(10) })
   expect(sourceLocalRange(clip, reverseMap(constantMap(2)), S(120))).toEqual({ start: -S(10), end: S(50) })
 })
+
+test('zero-speed holds: moving intervals keep pitch processing, held intervals are left out as silence', async () => {
+  const app = await editor()
+  const range = { start: 0, end: S(30) }
+  app.edit.updateClip('cv', { speed: 0 })
+  const prop = app.timeline().tracks.flatMap((t) => t.clips).find((c) => c.id === 'cv')!.properties.find((p) => p.type === 'speed')!.id
+  app.edit.addKeyframe('cv', prop, 'speed', 0, 2, { id: 'hold' })
+  app.edit.addKeyframe('cv', prop, 'speed', S(1), 0, { id: 'hold' })
+  app.edit.addKeyframe('cv', prop, 'speed', S(2), 2, { id: 'linear' })
+  const pitch = app.edit.addProperty('ca', 'pitch')!
+  app.edit.setParam('ca', pitch, 'semitones', 12)
+  const plan = audioPlan(app, range).ca
+  expect(plan.mode).toBe('stretch')
+  expect(plan.segments!.map((x) => [Math.round(x.localStart * 100) / 100, Math.round(x.localEnd * 100) / 100])).toEqual([[0, 1], [2, 10]])
+  expect(plan.segments![0]).toMatchObject({ tempo: 2, pitch: 2, sourceStart: 100 })
+  expect(plan.segments![0].sourceEnd).toBeCloseTo(102, 2)
+  expect(plan.segments![1].sourceStart).toBeCloseTo(102, 2)
+  // Matching pitch to speed with no shift stays a plain resample: the worker gates the plateau to silence.
+  app.edit.setParam('ca', pitch, 'semitones', 0)
+  app.edit.setParam('ca', pitch, 'matchSpeed', true)
+  expect(audioPlan(app, range).ca.mode).toBe('source')
+  app.edit.setParam('ca', pitch, 'semitones', 12)
+  expect(audioPlan(app, range).ca.segments![1].pitch).toBeGreaterThan(2)
+})

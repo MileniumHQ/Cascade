@@ -147,6 +147,19 @@ export interface ClipAudioPlan {
   commands?: { t: number; tempo: number; pitch: number }[]
   /** Stretch only: the clip plays the range backwards (ffmpeg reverses it before stretching). */
   reverse?: boolean
+  /** Stretch only: a speed curve with zero-speed holds. Each moving interval is stretched on its
+   * own (clip-local seconds `localStart`–`localEnd`); the gaps between them are silence. */
+  segments?: ClipAudioSegment[]
+}
+
+export interface ClipAudioSegment {
+  localStart: number
+  localEnd: number
+  sourceStart: number
+  sourceEnd: number
+  tempo: number
+  pitch: number
+  commands: { t: number; tempo: number; pitch: number }[]
 }
 
 export interface ExportProgress {

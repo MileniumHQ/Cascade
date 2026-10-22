@@ -233,7 +233,7 @@ describe('freeze and zero-speed maps', () => {
   })
 })
 
-it('exports a zero-containing audio ramp via resampling and skips a wholly silent plateau range', async () => {
+it('exports a zero-containing audio ramp as stretched moving intervals and skips a wholly silent plateau range', async () => {
   const app = await editor()
   app.edit.updateClip('v1', { speed: 0 })
   const prop = get(app, 'v1').properties[0]
@@ -241,5 +241,9 @@ it('exports a zero-containing audio ramp via resampling and skips a wholly silen
   app.edit.addKeyframe('v1', prop.id, 'speed', S, 0, { id: 'linear' })
   app.edit.addKeyframe('v1', prop.id, 'speed', 2 * S, 2, { id: 'linear' })
   expect(audioPlan(app, { start: 0, end: S }).a1).toBeUndefined()
-  expect(audioPlan(app, { start: 0, end: 4 * S }).a1.mode).toBe('source')
+  const plan = audioPlan(app, { start: 0, end: 4 * S }).a1
+  expect(plan.mode).toBe('stretch')
+  expect(plan.segments).toHaveLength(1)
+  expect(plan.segments![0].localStart).toBeCloseTo(1, 2)
+  expect(plan.segments![0].localEnd).toBeCloseTo(4, 2)
 })
