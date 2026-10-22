@@ -28,6 +28,8 @@ import * as ops from './timeline-ops'
 import { clipTimeMap, constantMap, type TimeMap } from './time-remap'
 import { endOfTracks, insertClips, overwriteClips, resolveRange, resolveTarget, type PlaceMode } from './three-point'
 
+import { TransitionEditing, type AddTransitionOptions, type TransitionPatch } from './transition-editing'
+
 type DProject = Draft<Project>
 
 export interface GestureOpts {
@@ -58,7 +60,11 @@ export interface PlaceSourceResult {
 }
 
 export class Editing {
-  constructor(private app: CascadeApp) {}
+  private readonly transitionEditing: TransitionEditing
+  constructor(private app: CascadeApp) { this.transitionEditing = new TransitionEditing(app) }
+  addTransition(opts: AddTransitionOptions, gesture?: GestureOpts): Id | null { return this.transitionEditing.add(opts, gesture) }
+  updateTransition(id: Id, patch: TransitionPatch, opts?: GestureOpts): void { this.transitionEditing.update(id, patch, opts) }
+  removeTransitions(ids: Id[]): void { this.transitionEditing.remove(ids) }
 
   /** Trims and splits need the real (possibly keyframed) speed of a clip, linked partners included. */
   private readonly maps = (clip: Clip) => clipTimeMap(clip, this.app.timeline(), this.app.registries)

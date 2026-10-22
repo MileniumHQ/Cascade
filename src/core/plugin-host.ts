@@ -44,6 +44,7 @@ export class PluginHost {
       env: app.env,
       app,
       mediaTypes: reg('mediaTypes'),
+      transitions: reg('transitions'),
       properties: reg('properties'),
       paramTypes: reg('paramTypes'),
       easings: reg('easings'),

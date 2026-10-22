@@ -12,6 +12,7 @@ import { Icon } from '@ui/icon'
 import { openContextMenu, type MenuItem } from '@ui/kit'
 import { useProject, useValue } from '@ui/reactive'
 import { drawRuler } from './ruler'
+import { Transitions, transitionMenu } from './Transitions'
 
 export const HEADER_W = 184
 const RULER_H = 30
@@ -466,7 +467,9 @@ export function Timeline(props: { ctx: PanelContext }) {
     e.preventDefault()
     if (!app.selection.clips.get().includes(id)) selectClip(id, e)
     const f = findClip(tl(), id)
+    const transition = f && transitionMenu(app, f.track, timeAt(e.clientX))
     const items: MenuItem[] = [
+      ...(transition ? [transition, { separator: true }] : []),
       { label: 'Split at playhead', icon: 'scissors', shortcut: 'S', run: () => app.run('timeline.split') },
       { label: 'Duplicate', icon: 'copy-plus', shortcut: 'Mod+D', run: () => app.run('timeline.duplicate') },
       { separator: true },
@@ -573,6 +576,11 @@ export function Timeline(props: { ctx: PanelContext }) {
           onContextMenu={(e) => {
             const c = (e.target as HTMLElement).closest<HTMLElement>('.tl-clip')
             if (c) clipMenu(e, c.dataset.id!)
+            else {
+              const row = rowAt(e.clientY)
+              const item = row && transitionMenu(app, row.track, timeAt(e.clientX))
+              if (item) openContextMenu(e, [item])
+            }
           }}
         >
           {/* Rows and clips are keyed by id (documents are immutable, so objects change on every edit):
@@ -606,6 +614,7 @@ export function Timeline(props: { ctx: PanelContext }) {
                           </Show>
                         )}
                       </For>
+                      <Transitions app={app} track={row().track} x={x} width={width()} h={row().h} />
                     </div>
                   </div>
                 </Show>

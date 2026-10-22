@@ -6,6 +6,7 @@
 import { clipEnd, uid, type Clip, type Id, type Timeline, type Track } from '@shared/project'
 import type { Flicks } from '@shared/time'
 import { constantMap, type TimeMap } from './time-remap'
+import { transferTransitionEnd } from './transitions'
 
 export const MIN_CLIP: Flicks = 705_600_000 / 240
 
@@ -81,6 +82,7 @@ export function clearRange(track: Track, start: Flicks, end: Flicks, except: Set
     }
     if (cs < start && ce > end) {
       const right = cloneClip(c)
+      transferTransitionEnd(track, c.id, right.id)
       trimEndTo(c, start)
       trimStartTo(right, end)
       if (c.linkId) right.linkId = undefined
@@ -113,6 +115,7 @@ export function splitClip(track: Track, clipId: Id, t: Flicks): Clip | null {
   const c = track.clips[i]
   if (t <= c.start + MIN_CLIP / 2 || t >= clipEnd(c) - MIN_CLIP / 2) return null
   const right = cloneClip(c)
+  transferTransitionEnd(track, c.id, right.id)
   trimEndTo(c, t)
   trimStartTo(right, t)
   // Keyframes: keep only those within each half, but preserve keyframes beyond the edge as

@@ -1,9 +1,10 @@
 import type { CascadeAPI } from '@core/app'
 import type { ClipAudioPlan, ExportRequest } from '@shared/ipc'
 import { anySolo, trackAudible } from '@shared/audio-mix'
-import { clipEnd } from '@shared/project'
 import { FLICKS, type Flicks, type FrameRate } from '@shared/time'
 import { pitchOf } from './properties/audio'
+import { transitionClipRange } from '@core/transitions'
+import { sourceLocalRange } from '@core/time-remap'
 
 export interface ExportJobSpec {
   exporter: string
@@ -20,7 +21,10 @@ export interface ExportJobSpec {
 export function rangeHasAudio(app: CascadeAPI, range: { start: Flicks; end: Flicks }): boolean {
   const tl = app.project().timelines[app.project().activeTimeline]
   const solo = anySolo(tl?.tracks ?? [])
-  return !!tl?.tracks.some((t) => t.kind === 'audio' && trackAudible(t, solo) && t.clips.some((c) => c.start < range.end && clipEnd(c) > range.start))
+  return !!tl?.tracks.some((t) => t.kind === 'audio' && trackAudible(t, solo) && t.clips.some(c => {
+    const active = transitionClipRange(t, c, tx => !!app.registries.transitions.get(tx.type)?.kinds.includes(t.kind))
+    return active.start < range.end && active.end > range.start
+  }))
 }
 
 /** Max rubberband commands per clip for a varying speed (a 10 Hz control rate, capped). */
@@ -42,10 +46,12 @@ export function audioPlan(app: CascadeAPI, range: { start: Flicks; end: Flicks }
     for (const clip of track.clips) {
       const media = clip.mediaId ? project.media[clip.mediaId] : undefined
       if (!media?.path || media.meta.hasAudio === false) continue
-      const from = Math.max(range.start, clip.start) - clip.start
-      const to = Math.min(range.end, clipEnd(clip)) - clip.start
-      if (to <= from) continue
+      const active = transitionClipRange(track, clip, tx => !!app.registries.transitions.get(tx.type)?.kinds.includes(track.kind))
       const map = app.edit.timeMap(clip)
+      const available = sourceLocalRange(clip, map, media.meta.duration)
+      const from = Math.max(range.start - clip.start, active.start - clip.start, available.start)
+      const to = Math.min(range.end - clip.start, active.end - clip.start, available.end)
+      if (to <= from) continue
       const { semitones, matchSpeed } = pitchOf(clip)
       const o0 = map.offset(from)
       // A reversed clip covers the same source range, read from its end down.

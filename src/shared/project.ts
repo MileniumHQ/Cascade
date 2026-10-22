@@ -94,6 +94,21 @@ export interface Clip {
   color?: string
 }
 
+export interface TransitionInstance {
+  id: Id
+  /** Plugin type id. Unknown types and params survive save/load. */
+  type: string
+  /** Outgoing end edge; absent for a fade in. */
+  from?: Id
+  /** Incoming start edge; absent for a fade out. */
+  to?: Id
+  duration: Flicks
+  align: 'center' | 'start' | 'end'
+  params: Record<string, unknown>
+  /** Explicit pairing of linked picture/sound transitions (not inferred from proximity). */
+  linkId?: Id
+}
+
 export type TrackKind = 'visual' | 'audio'
 
 export interface Track {
@@ -112,6 +127,7 @@ export interface Track {
   /** Clips sorted by start, never overlapping. */
   clips: Clip[]
   height?: number
+  transitions?: TransitionInstance[]
 }
 
 export interface Marker {

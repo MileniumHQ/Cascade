@@ -42,7 +42,8 @@ vec3 linearToSrgb(vec3 c) { c = max(c, vec3(0.0)); return mix(c * 12.92, 1.055 *
 const COPY = 'vec4 effect(vec2 uv) { return src(uv); }'
 
 export class StageGPU {
-  private canvas: HTMLCanvasElement
+  /** Created with the context on first use, so stages without shader effects never touch WebGL. */
+  private canvas!: HTMLCanvasElement
   private gl: WebGL2RenderingContext | null = null
   private attempted = false
   private disposed = false
@@ -55,10 +56,7 @@ export class StageGPU {
   private targets: { texture: WebGLTexture; framebuffer: WebGLFramebuffer }[] = []
   private targetSize = ''
 
-  constructor(private doc: Document, private mediaUrl: (path: string) => string) {
-    this.canvas = doc.createElement('canvas')
-    this.canvas.addEventListener('webglcontextlost', () => this.redraw())
-  }
+  constructor(private doc: Document, private mediaUrl: (path: string) => string) {}
 
   private warn(type: string, error: unknown) {
     if (this.warned.has(type)) return
@@ -70,6 +68,8 @@ export class StageGPU {
     if (!this.attempted) {
       this.attempted = true
       try {
+        this.canvas = this.doc.createElement('canvas')
+        this.canvas.addEventListener('webglcontextlost', () => this.redraw())
         this.gl = this.canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: true, preserveDrawingBuffer: true, antialias: false, depth: false, stencil: false })
         if (this.gl) {
           this.input = this.makeTexture(this.gl.TEXTURE_2D)
