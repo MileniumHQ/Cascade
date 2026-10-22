@@ -1,4 +1,4 @@
-import { definePlugin, type AudioPropertyNode } from '@core/plugin-api'
+import { definePlugin, type AudioPropertyNode, type PropertyContribution } from '@core/plugin-api'
 import type { Clip } from '@shared/project'
 
 const n = (v: unknown) => Number(v) || 0
@@ -64,7 +64,10 @@ export const audioPropertiesPlugin = definePlugin({
   id: 'cascade.properties.audio',
   name: 'Audio properties',
   activate(ctx) {
-    ctx.properties.register({
+    // Registry order is priority, then id: keep the menu in registration order.
+    let order = 700
+    const register = (p: PropertyContribution) => ctx.properties.register({ priority: order++, ...p })
+    register({
       id: 'volume',
       name: 'Volume',
       description: 'Clip loudness in decibels',
@@ -82,7 +85,7 @@ export const audioPropertiesPlugin = definePlugin({
       },
       summary: (v) => `${n(v.gain) > 0 ? '+' : ''}${n(v.gain).toFixed(1)} dB`
     })
-    ctx.properties.register({
+    register({
       id: 'pan',
       name: 'Pan',
       description: 'Position in the stereo field',
@@ -99,7 +102,7 @@ export const audioPropertiesPlugin = definePlugin({
         }
       }
     })
-    ctx.properties.register({
+    register({
       id: 'eq',
       name: 'Equalizer',
       description: 'Three-band EQ: low shelf, mid peak, high shelf',
@@ -136,7 +139,7 @@ export const audioPropertiesPlugin = definePlugin({
         }
       }
     })
-    ctx.properties.register({
+    register({
       id: 'filter',
       name: 'Low/high pass',
       description: 'Cut frequencies above or below a cutoff',
@@ -166,7 +169,7 @@ export const audioPropertiesPlugin = definePlugin({
         }
       }
     })
-    ctx.properties.register({
+    register({
       id: 'pitch',
       name: 'Pitch',
       description: 'Shift pitch, or let it follow speed',
@@ -215,7 +218,7 @@ export const audioPropertiesPlugin = definePlugin({
       },
       summary: (v) => [n(v.semitones) ? `${n(v.semitones) > 0 ? '+' : ''}${+n(v.semitones).toFixed(1)} st` : '', v.matchSpeed ? 'follows speed' : ''].filter(Boolean).join(' · ') || 'Original'
     })
-    ctx.properties.register({
+    register({
       id: 'compressor',
       name: 'Compressor',
       description: 'Even out loud and quiet parts',

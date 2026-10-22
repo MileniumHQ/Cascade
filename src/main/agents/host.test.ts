@@ -14,8 +14,9 @@ afterEach(async () => { await host?.closeAll() })
 
 function make(events: AgentEvent[], extra: Partial<Parameters<typeof createAgentHost>[0]> = {}) {
   return createAgentHost({
+    workspaces: join(tmpdir(), 'cascade-agent-workspaces'),
     ...extra,
-    home: tmpdir(), defaultCwd: tmpdir(), mcp: () => ({ url: 'http://127.0.0.1:9/mcp', token: 'tok' }),
+    home: tmpdir(), mcp: () => ({ url: 'http://127.0.0.1:9/mcp', token: 'tok' }),
     emit: (e) => { events.push(e); if (e.type === 'permission') void host!.respond(e.chatId, e.requestId, 'ok') },
     resolve: () => fixture, node: process.execPath
   })
@@ -42,6 +43,16 @@ test('drives an ACP agent: session with Cascade MCP attached, streaming, permiss
   expect(last?.type === 'update' && last.update.sessionUpdate === 'tool_call_update' && last.update.status).toBe('completed')
   // Only the first prompt carries the Cascade context preamble.
   await host.prompt(session.id, 'again')
+})
+
+test('each project gets its own working folder; resumed chats keep theirs', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'cascade-ws-'))
+  host = make([], { workspaces: root })
+  const a = await host.start('codex', { project: 'pr_abc' })
+  expect(a.cwd).toBe(join(root, 'pr_abc'))
+  expect((await host.start('codex')).cwd).toBe(join(root, 'scratch'))
+  expect((await host.start('codex', { project: '../escape' })).cwd).toBe(join(root, 'scratch'))
+  expect((await host.start('codex', { project: 'pr_other', cwd: a.cwd })).cwd).toBe(a.cwd)
 })
 
 test('closing a chat ends the process; unknown/missing agents fail clearly', async () => {
@@ -175,4 +186,21 @@ writeFileSync(${JSON.stringify(state)}, JSON.stringify(s))`)
     process.env.PATH = path
     for (const [k, v] of [['XDG_CACHE_HOME', cache], ['XDG_DATA_HOME', data]] as const) { if (v === undefined) delete process.env[k]; else process.env[k] = v }
   }
+})
+
+test('agents with ACP systemPrompt get the panel context as a system prompt instead of a message preamble', async () => {
+  const said = (events: AgentEvent[]) => events.flatMap(e => e.type === 'update' && e.update.sessionUpdate === 'agent_message_chunk' && e.update.content.type === 'text' ? [e.update.content.text] : []).join('')
+  const plain: AgentEvent[] = []
+  host = make(plain)
+  await host.prompt((await host.start('codex')).id, 'hi')
+  expect(said(plain)).toContain('preamble=true')
+  await host.closeAll()
+  const events: AgentEvent[] = []
+  host = make(events)
+  process.env.FAKE_SYSTEM_PROMPT = '1'
+  try {
+    await host.prompt((await host.start('codex')).id, 'hi')
+    expect(said(events)).toContain('"system":"append"')
+    expect(said(events)).toContain('preamble=false')
+  } finally { delete process.env.FAKE_SYSTEM_PROMPT }
 })

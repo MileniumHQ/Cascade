@@ -4,7 +4,8 @@
  */
 import type { AnalysisPart, AnalysisSentence, SourceAnalysis } from '@shared/analysis'
 import { clipEnd, type Clip, type Id, type Project, type Track } from '@shared/project'
-import { FLICKS, formatTimecode, type Flicks, type FrameRate } from '@shared/time'
+import { FLICKS, type Flicks, type FrameRate } from '@shared/time'
+import { clock } from './clock'
 import { constantMap, sourceSpan, type TimeMap } from '@core/time-remap'
 
 /** Cached analyses per source file path. */
@@ -185,6 +186,8 @@ export interface FormatOptions {
   end?: Flicks
   clipId?: Id
   maxLines: number
+  /** Items (sentences, pauses, events, cuts) to skip, for paging. */
+  offset?: number
   wordId: (w: TWord) => string
   sentenceId: (s: TSentence) => string
   clipLabel: (c: Clip) => string
@@ -195,7 +198,7 @@ export const SOURCE_LEGEND = 'Source time (not on the timeline). m#:w#/m#:s# ids
 export const TRANSCRIPT_LEGEND = 'Timeline time. w#/s# ids are anchors for any time in timeline_apply_edits/frame_get (w12, w12.end, s3.start, w12.end+80ms). {um}=filler, *word*=stressed (pitch and loudness peak above the sentence trend; conservative, ≤1 per sentence; or ≥ +6 dB louder), _word_=very quiet (≤ -16 dB, may be hard to hear), word?=low confidence, [lively]/[flat]=pitch variation vs the speaker’s norm, ↗=rising ending (question, uncertainty, list continuing), (part)=sentence partly outside the clip. ⏸ pause, ✂ shot cut, [CUE] sound event.'
 
 export function formatTranscript(index: TIndex, o: FormatOptions): string {
-  const tc = (t: Flicks) => formatTimecode(t, o.fps)
+  const tc = (t: Flicks) => clock(t)
   const lo = o.start ?? 0, hi = o.end ?? Number.MAX_SAFE_INTEGER
   const inRange = (a: Flicks, b: Flicks) => b > lo && a < hi
   const clipOk = (id: Id) => !o.clipId || id === o.clipId || index.clips.some((c) => c.clip.id === id && c.clip.linkId && index.clips.some((d) => d.clip.id === o.clipId && d.clip.linkId === c.clip.linkId))
@@ -229,11 +232,13 @@ export function formatTranscript(index: TIndex, o: FormatOptions): string {
   for (const e of index.events) if (clipOk(e.clipId) && inRange(e.start, e.end)) items.push({ t: e.start, line: () => [`[${e.cue} ${tc(e.start)}–${tc(e.end)} ${e.score.toFixed(2).slice(1)}${e.underSpeech ? ' under speech' : ''}]`] })
   for (const s of index.shots) if (clipOk(s.clipId) && s.t >= lo && s.t < hi) items.push({ t: s.t, line: () => [`✂ ${tc(s.t)}`] })
   items.sort((a, b) => a.t - b.t)
-  let shown = 0
-  for (const item of items) {
+  const skip = o.offset ?? 0
+  if (skip) lines.push(`(skipped the first ${Math.min(skip, items.length)} items)`)
+  let shown = skip
+  for (const item of items.slice(skip)) {
     const add = item.line()
     if (lines.length + add.length > o.maxLines) {
-      lines.push(`… truncated at ${tc(item.t)} (${items.length - shown} more items). Continue with start=${item.t}.`)
+      lines.push(`… truncated at ${tc(item.t)} (${items.length - shown} more items). Continue with offset=${shown}.`)
       break
     }
     lines.push(...add); shown++
@@ -242,10 +247,37 @@ export function formatTranscript(index: TIndex, o: FormatOptions): string {
   return lines.join('\n')
 }
 
-const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}']+/gu, '')
+export const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}']+/gu, '')
+export const tokens = (text: string) => text.split(/\s+/).map(norm).filter(Boolean)
+
+/**
+ * Where `text` is spoken: runs of `words` (time order) matching its tokens in order, skipping up to
+ * two unmatched words (fillers, misrecognitions) between tokens and tolerating a quarter of the
+ * tokens missing. Returns [first, last] word indexes of every run.
+ */
+export function findSpoken(words: TWord[], text: string, from = 0): [number, number][] {
+  const want = tokens(text)
+  if (!want.length) return []
+  const runs: [number, number][] = []
+  const allowedMisses = Math.floor(want.length / 4)
+  for (let i = from; i < words.length; i++) {
+    if (norm(words[i].text) !== want[0] && (allowedMisses === 0 || norm(words[i].text) !== want[1])) continue
+    let j = i, misses = 0, last = i, k = norm(words[i].text) === want[0] ? 1 : 2
+    if (k === 2) misses++
+    for (; k < want.length && misses <= allowedMisses; k++) {
+      let found = -1
+      for (let x = j + 1; x <= Math.min(words.length - 1, j + 3); x++) if (norm(words[x].text) === want[k]) { found = x; break }
+      if (found < 0) { misses++; continue }
+      j = last = found
+    }
+    // Runs don't overlap: continue after this one.
+    if (misses <= allowedMisses) { runs.push([i, last]); i = last }
+  }
+  return runs
+}
 
 /** Phrase search over word tokens (punctuation/case-insensitive), or a regex over sentence text. */
-export function searchTranscript(index: TIndex, query: string, regex: boolean): { sentence: TSentence; from: number; to: number }[] {
+export function searchTranscript(index: TIndex, query: string, regex: boolean, any = false): { sentence: TSentence; from: number; to: number }[] {
   const hits: { sentence: TSentence; from: number; to: number }[] = []
   if (regex) {
     const re = new RegExp(query, 'i')
@@ -254,6 +286,10 @@ export function searchTranscript(index: TIndex, query: string, regex: boolean): 
   }
   const q = query.split(/\s+/).map(norm).filter(Boolean)
   if (!q.length) return hits
+  if (any) {
+    for (const s of index.sentences) s.words.forEach((w, i) => { if (q.includes(norm(w.text))) hits.push({ sentence: s, from: i, to: i }) })
+    return hits.sort((a, b) => a.sentence.words[a.from].start - b.sentence.words[b.from].start)
+  }
   // Match across sentence boundaries within one clip by scanning the flat word list.
   const words = index.words
   const owner = new Map<TWord, TSentence>()

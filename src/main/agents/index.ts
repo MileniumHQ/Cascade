@@ -30,7 +30,10 @@ export const LAUNCHERS: AgentLauncher[] = [
 ]
 
 /** First prompt preamble: what the agent is embedded in and how to reach the editor. */
-export const CONTEXT = `[Context from Cascade] You are running inside the agent panel of Cascade, a video editor. The user is looking at the editor next to this chat. The \`cascade\` MCP server controls the open project live (undoable): inspect with timeline_get/project_get, see with frame_get or contact sheets, edit with timeline_apply_edits, analyze speech with media_analyze then transcript_get. Prefer those tools over editing project files on disk. Each user message ends with [Editor: …], the playhead and selected clips at send time (clip ids as in timeline_get), so "here", "this clip" or "from the playhead" refer to them. Keep replies short; the panel is narrow.`
+/** The panel's instructions: a system prompt where the agent supports ACP `systemPrompt` (append), otherwise a preamble on the first message. Panel-only; the MCP server's instructions stay neutral. */
+export const CONTEXT = `You're the agent panel in Cascade, a full video editor: a sidebar beside the timeline, preview, media bin and inspector the user is working in, not a standalone chat. They can do anything in the editor themselves; you help with what they ask. The \`cascade\` MCP server controls the open project live (undoable): inspect with timeline_get/project_get, see with frame_get or contact_sheet, edit with timeline_apply_edits (dryRun first; history_undo to back out), analyze speech with media_analyze then transcript_get, listen with audio_analyze, and check your work with inspect_range or timeline_lint. You can't watch playback: judge timing and feel from contact sheets (each cell lists what's on screen and the words spoken; audio=true adds waveforms), the transcript, audio_analyze's loudness strip and timeline_stats. Prefer those tools over editing project files on disk or running ffmpeg yourself. Your working directory is a scratch folder for this project only; keep notes and helper scripts there. Each user message ends with [Editor: …], the playhead and selected clips at send time (clip ids as in timeline_get), so "here", "this clip" or "from the playhead" refer to them. Keep replies short; the panel is narrow.
+
+Editing is the user's creative work. When a request hands you the creative calls wholesale (cut the whole video, make it good, make it engaging, decide the story), don't refuse, but check once first, in a few lines and your own words: you're weak at taste and pacing, so edits you direct alone tend to come out generic; ask if they're sure, and offer two or three short, concrete seeds they could steer with (an angle, a structure, a moment to build around; specific to their footage if you've seen it). No lecture, no moralizing, and don't hand them a prompt to paste back. If they say go ahead, do it properly and don't repeat the caveat. Skip this entirely for concrete or mechanical asks (trims, removing silences or filler words, captions, sync, levels, a described cut) and for creative choices the user has already made; just do those. Raise it at most once per conversation, and don't bring it up unprompted otherwise.`
 
 /** Cascade's read-only tools run without asking (Claude Code naming); edits, shell and file writes still ask in manual mode. */
 export const READ_ONLY_TOOLS = cascadeTools.filter(t => t.annotations.readOnlyHint).map(t => `mcp__cascade__${t.name}`)
@@ -73,7 +76,8 @@ interface Chat {
 
 export interface AgentHostOptions {
   home: string
-  defaultCwd: string
+  /** Per-project agent working folders (`<userData>/workspaces`); `scratch` when no project is open. */
+  workspaces: string
   /** Cascade MCP endpoint, read at session start (it may start after the host). */
   mcp: () => { url: string; token: string }
   emit: (event: AgentEvent) => void
@@ -145,12 +149,16 @@ export function createAgentHost(options: AgentHostOptions) {
   }
 
   async function start(providerId: string, opts: StartOptions = {}): Promise<AgentSession> {
-    const { cwd, resume } = opts
+    const { cwd, resume, project } = opts
     const launcher = LAUNCHERS.find(l => l.id === providerId)
     if (!launcher) throw new Error(`Unknown agent ${providerId}`)
     const how = await launch(launcher)
     if ('error' in how) throw new Error(how.error)
-    const dir = cwd && isAbsolute(cwd) && (await stat(cwd).catch(() => null))?.isDirectory() ? cwd : options.defaultCwd
+    let dir = cwd && isAbsolute(cwd) && (await stat(cwd).catch(() => null))?.isDirectory() ? cwd : ''
+    if (!dir) {
+      dir = join(options.workspaces, project && /^[\w-]{1,100}$/.test(project) ? project : 'scratch')
+      await mkdir(dir, { recursive: true })
+    }
     const id = randomUUID()
     const [command, args, shell] = spawnCommand(how.command, how.args)
     const child = spawn(command, args, { cwd: dir, env: how.env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, ...shell })
@@ -191,7 +199,10 @@ export function createAgentHost(options: AgentHostOptions) {
       const http = init.agentCapabilities?.mcpCapabilities?.http === true
       const mcpServers: McpServer[] = mcp.url && http ? [{ type: 'http', name: 'cascade', url: mcp.url, headers: [{ name: 'Authorization', value: `Bearer ${mcp.token}` }] }] : []
       const _meta = providerId === 'claude' && mcpServers.length ? { claudeCode: { options: { allowedTools: READ_ONLY_TOOLS } } } : undefined
-      const extra = _meta ? { _meta } : {}
+      // Agents advertising sessionCapabilities.systemPrompt take CONTEXT as a system prompt (append mode is always supported).
+      const systemPrompt = (init.agentCapabilities as { sessionCapabilities?: { systemPrompt?: unknown } } | undefined)?.sessionCapabilities?.systemPrompt
+        ? { systemPrompt: { mode: 'append', content: [{ type: 'text', text: CONTEXT }] } } : undefined
+      const extra = { ...(_meta ? { _meta } : {}), ...systemPrompt }
       chat.images = init.agentCapabilities?.promptCapabilities?.image === true
       let config: SessionConfigOption[] | null | undefined
       let resumed = false
@@ -215,6 +226,7 @@ export function createAgentHost(options: AgentHostOptions) {
           session = await open()
         }
         chat.sessionId = session.sessionId
+        if (systemPrompt) chat.primed = true
         config = session.configOptions
       }
       const info = init.agentInfo
@@ -227,7 +239,7 @@ export function createAgentHost(options: AgentHostOptions) {
 
   async function prompt(id: string, text: string, attachments: AgentAttachment[] = []): Promise<StopReason> {
     const chat = get(id)
-    const blocks: ContentBlock[] = [{ type: 'text', text: chat.primed ? text : `${CONTEXT}\n\n${text}` }]
+    const blocks: ContentBlock[] = [{ type: 'text', text: chat.primed ? text : `[Context from Cascade] ${CONTEXT}\n\n${text}` }]
     for (const a of attachments) {
       if (a.kind === 'file') blocks.push({ type: 'resource_link', uri: pathToFileURL(a.path).href, name: a.name })
       else if (chat.images) blocks.push({ type: 'image', data: a.data, mimeType: a.mimeType })

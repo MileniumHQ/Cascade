@@ -41,6 +41,16 @@ export function scoreProperty(p: PropertyContribution, query: string): number {
   return total
 }
 
+/**
+ * Menu order for the built-in categories, roughly the order an editor reaches for them. Categories
+ * from user plugins sort after these, in registration order.
+ */
+const CATEGORY_ORDER = ['Transform', 'Compositing', 'Time', 'Text', 'Color', 'Blur', 'Stylize', 'Shape', 'Audio']
+const categoryRank = (c: string) => {
+  const i = CATEGORY_ORDER.indexOf(c)
+  return i < 0 ? CATEGORY_ORDER.length : i
+}
+
 interface Entry {
   contrib: PropertyContribution
   index: number
@@ -97,7 +107,7 @@ function AddPropertyPopover(props: { app: CascadeAPI; clipId: Id; anchor: HTMLEl
       list.push(s)
       byCat.set(s.contrib.category, list)
     }
-    let cats = [...byCat.entries()]
+    let cats = [...byCat.entries()].sort((a, b) => categoryRank(a[0]) - categoryRank(b[0]))
     if (q) {
       for (const [, items] of cats) items.sort((a, b) => b.score - a.score)
       cats.sort((a, b) => b[1][0].score - a[1][0].score)

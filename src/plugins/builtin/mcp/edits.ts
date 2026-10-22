@@ -1,12 +1,14 @@
 import { CascadeApp, type CascadeAPI } from '@core/app'
-import { clipEnd, findClip, type Project, type Clip, type Id, type PropertyInstance } from '@shared/project'
+import { clipEnd, findClip, uid, type Project, type Clip, type Id, type PropertyInstance } from '@shared/project'
 import { MIN_CLIP } from '@core/timeline-ops'
 import { sourceSpan, type TimeMap } from '@core/time-remap'
 import { evaluateParam } from '@core/evaluate'
-import { ANCHOR, SOURCE_ANCHOR, editSchema, type Edit } from '../../../main/mcp/catalog'
+import { ANCHOR, SOURCE_ANCHOR, TIME_TEXT, editSchema, type Edit } from '../../../main/mcp/catalog'
 import type { ParamDef } from '@core/plugin-api'
-import { FLICKS, frameToFlicks, type Flicks, type FrameRate } from '@shared/time'
-import { buildIndex, buildSourceIndex, type Analyses } from './transcript'
+import { FLICKS, frameToFlicks, secondsToFlicks, type Flicks, type FrameRate } from '@shared/time'
+import { buildIndex, buildSourceIndex, findSpoken, type Analyses } from './transcript'
+import { clock } from './clock'
+export { clock }
 
 /** Stable aliases for this editor lifetime; full document ids also work. */
 export class Ids {
@@ -23,7 +25,7 @@ export class Ids {
   resolve(value: string): string { return this.full.get(value) ?? value }
 }
 /** An edit with every anchor resolved to integer flicks. */
-type Resolved = Edit extends infer E ? E extends unknown ? { [K in keyof E]: K extends 'start' | 'end' | 'time' ? Extract<E[K], number | undefined> : E[K] } : never : never
+type Resolved = Edit extends infer E ? E extends unknown ? { [K in keyof E]: K extends 'start' | 'end' | 'time' | 'duration' ? Extract<E[K], number | undefined> : E[K] } : never : never
 
 /** Signed anchor offset (+80ms, -0.5s, +2f) in flicks. */
 function anchorOffset(sign: string | undefined, amount: string | undefined, unit: string | undefined, fps: FrameRate) {
@@ -32,8 +34,19 @@ function anchorOffset(sign: string | undefined, amount: string | undefined, unit
   return Math.round(Number(amount) * per) * (sign === '-' ? -1 : 1)
 }
 
+/** Flicks for time text: a clock time (HH:MM:SS.mmm, MM:SS.s, decimal seconds after the dot) or an amount (83.5s, 500ms, 12f). */
+export function parseTimeText(value: string, fps: FrameRate): Flicks {
+  const match = TIME_TEXT.exec(value)
+  if (!match) throw new Error(`Invalid time ${value}`)
+  const [, h, m, s, fraction, amount, unit] = match
+  if (amount) return anchorOffset('+', amount, unit, fps)
+  if (Number(s) >= 60 || (h !== undefined && Number(m) >= 60)) throw new Error(`Invalid time ${value}`)
+  return secondsToFlicks(Number(h ?? 0) * 3600 + Number(m) * 60 + Number(s) + Number(`0.${fraction ?? 0}`))
+}
+
 /** Timeline flicks for a transcript anchor (w12, w12.end, s3.start, w12.end+80ms, s3.end+2f) in `project`. */
 export function resolveAnchor(project: Project, analyses: Analyses | undefined, ids: Ids, value: string, timeMap?: (clip: Clip) => TimeMap): number {
+  if (TIME_TEXT.test(value)) return parseTimeText(value, project.settings.fps)
   if (SOURCE_ANCHOR.test(value)) throw new Error(`${value} is a source anchor; use it in add_clip sourceIn/sourceOut. Timeline times take w#/s# ids from transcript_get without mediaId`)
   const match = ANCHOR.exec(value)
   if (!match) throw new Error(`Invalid anchor ${value}`)
@@ -61,6 +74,11 @@ export function resolveSourceAnchor(project: Project, analyses: Analyses | undef
   return { mediaId, t: Math.max(0, Math.min(m.meta.duration ?? Number.MAX_SAFE_INTEGER, t)) }
 }
 
+/** Remove one clip without its linked partners. */
+function removeClip(copy: CascadeApp, clipId: Id) {
+  copy.doc.transact('Remove clip', d => { for (const t of d.timelines[d.activeTimeline].tracks) t.clips = t.clips.filter(c => c.id !== clipId) })
+}
+
 export function staging(app: CascadeAPI): CascadeApp {
   const copy = new CascadeApp('editor', null, structuredClone(app.project()))
   Object.assign(copy.registries, app.registries)
@@ -70,7 +88,7 @@ export function staging(app: CascadeAPI): CascadeApp {
 export function commit(app: CascadeAPI, project: Project, label: string) {
   app.doc.transact(`Agent: ${label}`, draft => { Object.assign(draft, project) })
 }
-function validateValue(def: ParamDef, value: unknown, fonts?: string[]) {
+export function validateValue(def: ParamDef, value: unknown, fonts?: string[]) {
   if (['number', 'angle'].includes(def.type)) {
     if (typeof value !== 'number' || !Number.isFinite(value) || (def.min !== undefined && value < def.min) || (def.max !== undefined && value > def.max)) throw new Error(`Invalid ${def.id}; expected finite number in ${def.min ?? '-∞'}..${def.max ?? '∞'}`)
   } else if (def.type === 'vec2') {
@@ -103,6 +121,10 @@ function random(seed: number) {
 export interface ApplyOptions {
   /** Installed font families; font params must name one. */
   fonts?: string[]
+  /** Validate and report without committing. */
+  dryRun?: boolean
+  /** Beat grids from beat_grid, by source path, in source flicks. */
+  beats?: Map<string, { beats: Flicks[]; downbeats: Flicks[] }>
 }
 
 export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?: Analyses, options: ApplyOptions = {}) {
@@ -113,8 +135,11 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
   const untouched = new Set(copy.timeline().tracks.flatMap(t => t.clips))
   const refs = new Map<string, string>()
   const resolve = (v: string) => refs.get(v) ?? ids.resolve(v)
+  // Clips an earlier operation removed (a delete takes the linked partner with it), so a later reference says why.
+  const gone = new Map<string, string>()
   const editable = (id: string) => {
     const f = findClip(copy.timeline(), resolve(id))
+    if (!f && gone.has(resolve(id))) throw new Error(`Clip ${id} was already removed by ${gone.get(resolve(id))}; drop this operation`)
     if (!f) throw new Error(`Unknown clip ${id}; refresh timeline_get`)
     if (f.track.locked || (f.clip.linkId && copy.timeline().tracks.some(t => t.locked && t.clips.some(c => c.linkId === f.clip.linkId)))) throw new Error(`Clip ${id} or its linked audio is locked`)
     return f
@@ -167,6 +192,7 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
   }
   const sourceTime = (value: number | string, mediaId: Id) => {
     if (typeof value === 'number') return value
+    if (TIME_TEXT.test(value)) return parseTimeText(value, fps)
     const r = resolveSourceAnchor(copy.project(), analyses, ids, value)
     if (r.mediaId !== mediaId) throw new Error(`${value} belongs to another source than this clip's mediaId`)
     return r.t
@@ -176,6 +202,7 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
     retargeted = ''
     const op = { ...raw } as Record<string, unknown>
     for (const key of ['start', 'end', 'time'] as const) if (typeof op[key] === 'string') op[key] = anchor(op[key] as string)
+    if (typeof op.duration === 'string' && !(op.duration = parseTimeText(op.duration, fps))) throw new Error('duration must be positive')
     // An anchor names a moment in a source. If the addressed clip was cut into pieces (earlier in this
     // batch or before), use the piece of the same source on the same track that holds that moment.
     if ((raw.op === 'split' || raw.op === 'add_keyframe' || raw.op === 'set_param') && typeof raw.time === 'string') {
@@ -198,8 +225,23 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
     refs.set(name, id)
   }
   const span = (clip: Clip) => `[${clip.start}, ${clipEnd(clip)})`
+  const trackOf = (value: string) => {
+    const tr = copy.timeline().tracks.find(t => t.id === resolve(value))
+    if (!tr) throw new Error(`Unknown track ${value}; refresh timeline_get`)
+    return tr
+  }
+  // Reorder within a kind, keeping the slots the kinds occupy.
+  const moveTrack = (trackId: string, index: number) => copy.doc.transact('Move track', d => {
+    const tl = d.timelines[d.activeTimeline], kind = tl.tracks.find(t => t.id === trackId)!.kind
+    const same = tl.tracks.filter(t => t.kind === kind && t.id !== trackId)
+    same.splice(Math.min(index, same.length), 0, tl.tracks.find(t => t.id === trackId)!)
+    let i = 0
+    tl.tracks = tl.tracks.map(t => t.kind === kind ? same[i++] : t)
+  })
+  const clipIds = () => new Set(copy.timeline().tracks.flatMap(t => t.clips.map(c => c.id)))
   const results: string[] = []
   for (const [index, raw] of ops.entries()) {
+    const before = clipIds()
     try {
       const op = resolveTimes(raw)
       let created: string | null | undefined
@@ -285,6 +327,160 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
         clip.start = start; clip.duration = op.duration ?? 5 * FLICKS
         created = copy.edit.insertClip(clip, destination)
         note = ` ${span(clip)}`
+      } else if (op.op === 'add_track') {
+        const id = copy.edit.addTrack(op.kind, { name: op.name })
+        if (op.index !== undefined) moveTrack(id, op.index)
+        setRef(op.ref, id)
+        results.push(`${index + 1}. add_track: ok ${ids.show(id, 't')}${op.ref ? ` (${op.ref})` : ''} ${copy.timeline().tracks.find(t => t.id === id)!.name}`)
+        continue
+      } else if (op.op === 'remove_track') {
+        const tr = trackOf(op.trackId)
+        if (tr.locked) throw new Error(`Track ${op.trackId} is locked`)
+        const clips = tr.clips.map(c => c.id)
+        for (const id of clips) editable(id)
+        copy.edit.deleteClips(clips)
+        copy.edit.removeTrack(tr.id)
+        note = ` (${clips.length} clips)`
+      } else if (op.op === 'update_track') {
+        const patch = Object.fromEntries(Object.entries({ name: op.name, locked: op.locked, muted: op.muted, hidden: op.hidden }).filter(([, v]) => v !== undefined))
+        if (!Object.keys(patch).length) throw new Error('Give name, locked, muted or hidden')
+        copy.edit.updateTrack(trackOf(op.trackId).id, patch)
+      } else if (op.op === 'move_track') moveTrack(trackOf(op.trackId).id, op.index)
+      else if (op.op === 'copy_properties') {
+        const from = editable(op.fromClipId).clip
+        const wanted = (p: PropertyInstance) => op.properties ? op.properties.some(x => resolve(x) === p.id || x === p.type) : p.type !== remapType?.id
+        const sources = from.properties.filter(wanted)
+        if (!sources.length) throw new Error(`${op.fromClipId} has none of those properties`)
+        let added = 0, skipped = 0
+        for (const target of op.toClipIds) {
+          const to = editable(target).clip
+          if (to.id === from.id) continue
+          for (const src of sources) {
+            const def = copy.registries.properties.get(src.type)
+            if (!def || !copy.edit.propertyApplies(def, to)) { skipped++; continue }
+            let propId = to.properties.find(p => p.type === src.type)?.id
+            if (!propId) { propId = copy.edit.addProperty(to.id, src.type) ?? undefined; added++ }
+            if (!propId) { skipped++; continue }
+            const keys = Object.keys(src.params).filter(k => op.params ? op.params.includes(k) : !(src.type === 'text' && k === 'text'))
+            copy.doc.transact('Copy properties', d => {
+              const prop = findClip(d.timelines[d.activeTimeline], to.id)!.clip.properties.find(p => p.id === propId)!
+              for (const k of keys) prop.params[k] = structuredClone(src.params[k])
+              prop.enabled = src.enabled
+            })
+          }
+        }
+        note = ` to ${op.toClipIds.length} clips${added ? `, added ${added} properties` : ''}${skipped ? `, skipped ${skipped} that don't apply` : ''}`
+      } else if (op.op === 'merge_tracks') {
+        const into = trackOf(op.into)
+        if (into.locked) throw new Error(`Track ${op.into} is locked`)
+        let moved = 0
+        for (const value of op.trackIds) {
+          const tr = trackOf(value)
+          if (tr.id === into.id) continue
+          if (tr.locked) throw new Error(`Track ${value} is locked`)
+          if (tr.kind !== into.kind) throw new Error(`${value} is a ${tr.kind} track and ${op.into} a ${into.kind} track`)
+          const clips = structuredClone(tr.clips) as Clip[]
+          copy.edit.removeTrack(tr.id)
+          copy.edit.placeClips(into.id, clips.sort((a, b) => a.start - b.start), { label: 'Merge tracks' })
+          moved += clips.length
+        }
+        note = ` ${moved} clips onto ${ids.show(into.id, 't')} ${into.name}`
+      } else if (op.op === 'duck') {
+        const index = buildIndex(copy.project(), analyses ?? new Map(), (c) => copy.edit.timeMap(c))
+        const ms = (v: number | string | undefined, d: number) => v === undefined ? d * FLICKS / 1000 : typeof v === 'string' ? parseTimeText(v, fps) : v
+        const attack = ms(op.attack, 150), release = ms(op.release, 400), mergeGap = ms(op.mergeGap, 800)
+        const targets = op.clipIds.map(v => editable(v).clip)
+        const own = new Set(targets.flatMap(c => [c.id, ...partners(c).map(x => x.id)]))
+        const words = index.words.filter(w => !own.has(w.clipId)).sort((a, b) => a.start - b.start)
+        if (!words.length) throw new Error('No transcribed speech on the timeline to duck under; run media_analyze on the speech sources')
+        // Speech segments: words merged across gaps shorter than mergeGap.
+        const segments: [Flicks, Flicks][] = []
+        for (const w of words) {
+          const last = segments.at(-1)
+          if (last && w.start - last[1] < mergeGap) last[1] = Math.max(last[1], w.end)
+          else segments.push([w.start, w.end])
+        }
+        let keys = 0
+        for (const clip of targets) {
+          if (copy.registries.mediaTypes.get(clip.type)?.track !== 'audio') throw new Error(`${ids.show(clip.id, 'c')} is not an audio clip`)
+          let prop = clip.properties.find(p => p.type === 'volume')
+          if (!prop) {
+            const id = copy.edit.addProperty(clip.id, 'volume')
+            prop = id ? findClip(copy.timeline(), clip.id)!.clip.properties.find(p => p.id === id) : undefined
+            if (!prop) throw new Error('The volume property is unavailable')
+          }
+          const gain = prop.params.gain
+          if (gain?.keyframes?.length) throw new Error(`${ids.show(clip.id, 'c')} already has volume keyframes; clear_keyframes first`)
+          const base = Number(gain?.value ?? 0), low = Math.max(-60, base + op.amount)
+          const points: { t: Flicks; v: number }[] = []
+          for (const [s0, e0] of segments) {
+            const s = s0 - clip.start, e = e0 - clip.start
+            if (e + release <= 0 || s - attack >= clip.duration) continue
+            const prev = points.at(-1)
+            // Overlapping fades: stay down instead of bouncing.
+            if (prev && s - attack <= prev.t) { points.splice(-2, 2, { t: Math.min(clip.duration, e), v: low }, { t: Math.min(clip.duration, e + release), v: base }); continue }
+            points.push({ t: Math.max(0, s - attack), v: s - attack < 0 ? low : base }, { t: Math.max(0, s), v: low }, { t: Math.min(clip.duration, e), v: low }, { t: Math.min(clip.duration, e + release), v: base })
+          }
+          const unique = points.filter((p, i) => i === 0 || p.t > points[i - 1].t)
+          for (const p of unique) copy.edit.addKeyframe(clip.id, prop.id, 'gain', p.t, p.v, { id: 'ease-in-out' })
+          keys += unique.length
+        }
+        note = ` ${keys} volume keyframes under ${segments.length} speech segments (${op.amount} dB)`
+      } else if (op.op === 'snap_to_beats') {
+        const beat = editable(op.beatClipId).clip
+        const media = beat.mediaId ? copy.project().media[beat.mediaId] : undefined
+        const grid = media?.path ? options.beats?.get(media.path) : undefined
+        if (!grid) throw new Error(`No beat grid for ${op.beatClipId}; run beat_grid clipId=${op.beatClipId} first`)
+        const map = copy.edit.timeMap(beat)
+        if (map.constant === null || map.reversed) throw new Error('snap_to_beats needs the music clip at a constant forward speed')
+        const times = (op.to === 'downbeats' ? grid.downbeats : grid.beats).map(t => beat.start + Math.round((t - beat.sourceIn) / map.constant!)).filter(t => t >= beat.start && t <= clipEnd(beat))
+        if (!times.length) throw new Error(`${op.beatClipId} has no ${op.to} in its range`)
+        const maxShift = op.maxShift === undefined ? FLICKS / 4 : typeof op.maxShift === 'string' ? parseTimeText(op.maxShift, fps) : op.maxShift
+        const nearest = (t: Flicks) => times.reduce((a, b) => Math.abs(b - t) < Math.abs(a - t) ? b : a)
+        let snapped = 0, far = 0, keyed = 0
+        for (const value of op.clipIds) {
+          const { clip, track: tr } = editable(value)
+          const edge = op.edge === 'start' ? clip.start : clipEnd(clip)
+          const target = nearest(edge)
+          if (Math.abs(target - edge) > maxShift) far++
+          else if (target !== edge) {
+            if (op.edge === 'start') copy.edit.moveClips([clip, ...partners(clip)].map(c => ({ clipId: c.id, trackId: c.id === clip.id ? tr.id : findClip(copy.timeline(), c.id)!.track.id, start: c.start + target - edge })))
+            else if (target > clip.start + MIN_CLIP) copy.edit.trimClip(clip.id, 'end', target)
+            snapped++
+          }
+          if (op.keyframes) {
+            copy.doc.transact('Snap keyframes', d => {
+              const c = findClip(d.timelines[d.activeTimeline], clip.id)!.clip
+              for (const p of c.properties) for (const v of Object.values(p.params)) {
+                for (const k of v.keyframes ?? []) {
+                  const t = nearest(c.start + k.t) - c.start
+                  if (t !== k.t && Math.abs(t - k.t) <= maxShift && t >= 0 && t <= c.duration && !v.keyframes!.some(o => o !== k && o.t === t)) { k.t = t; keyed++ }
+                }
+                v.keyframes?.sort((a, b) => a.t - b.t)
+              }
+            })
+          }
+        }
+        note = ` ${snapped} clips to ${op.to}${far ? `, ${far} left alone (more than ${clock(maxShift)} from a beat)` : ''}${op.keyframes ? `, ${keyed} keyframes` : ''}`
+      } else if (op.op === 'sync_text') {
+        const index = buildIndex(copy.project(), analyses ?? new Map(), (c) => copy.edit.timeMap(c))
+        if (!index.words.length) throw new Error('No transcript on the timeline; run media_analyze on the speech sources')
+        const words = [...index.words].sort((a, b) => a.start - b.start)
+        const padding = op.padding === undefined ? 0 : typeof op.padding === 'string' ? parseTimeText(op.padding, fps) : op.padding
+        const lines: string[] = []
+        for (const value of op.clipIds) {
+          const { clip, track: tr } = editable(value)
+          const text = String(clip.properties.find(p => p.type === 'text')?.params.text?.value ?? '')
+          if (!text.trim()) throw new Error(`${value} has no text`)
+          const runs = findSpoken(words, text)
+          if (!runs.length) throw new Error(`"${text.slice(0, 60)}" (${value}) is not in the transcript`)
+          const [a, b] = runs.reduce((x, y) => Math.abs(words[y[0]].start - clip.start) < Math.abs(words[x[0]].start - clip.start) ? y : x)
+          const start = Math.max(0, words[a].start - padding), end = words[b].end + padding
+          copy.edit.moveClips([{ clipId: clip.id, trackId: tr.id, start }])
+          copy.edit.trimClip(clip.id, 'end', Math.max(end, start + MIN_CLIP))
+          lines.push(`${ids.show(clip.id, 'c')} ${clock(start)}–${clock(end)}`)
+        }
+        note = ` ${lines.join(', ')}`
       } else if (op.op === 'add_marker') copy.edit.addMarker(op.time, op.name)
       else if (op.op === 'ripple_delete') {
         if (op.end <= op.start) throw new Error('end must be after start')
@@ -304,7 +500,33 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
           created = copy.edit.splitAt(op.time, [clip.id])?.[0]
           if (!created) throw new Error('Split is too close to the clip edge')
         } else if (op.op === 'delete') copy.edit.deleteClips([clip.id])
-        else if (op.op === 'add_property') {
+        else if (op.op === 'duplicate_clip') {
+          const start = op.start ?? clipEnd(clip), delta = start - clip.start
+          const linkId = clip.linkId ? uid('ln_') : undefined
+          for (const c of [clip, ...partners(clip)]) {
+            const dup = structuredClone(c) as Clip
+            dup.id = uid('cl_'); dup.start = c.start + delta; dup.linkId = linkId
+            for (const p of dup.properties) p.id = uid('pi_')
+            if (dup.start < 0) throw new Error('The copy would start before zero')
+            const trackId = c.id === clip.id ? (op.trackId ? track(op.trackId, c.type) : currentTrack.id) : findClip(copy.timeline(), c.id)!.track.id
+            copy.edit.placeClips(trackId, [dup], { label: 'Duplicate clip' })
+            if (c.id === clip.id) created = dup.id
+            else note += ` + linked ${ids.show(dup.id, 'c')}`
+          }
+        } else if (op.op === 'replace_clip') {
+          const media = copy.project().media[resolve(op.mediaId)]
+          if (!media) throw new Error(`Unknown media ${op.mediaId}`)
+          if (media.type !== clip.type) throw new Error(`replace_clip needs a source of the same type (${clip.type}); ${op.mediaId} is ${media.type}`)
+          const sourceIn = op.sourceIn === undefined ? clip.sourceIn : sourceTime(op.sourceIn, media.id)
+          for (const c of [clip, ...partners(clip)]) {
+            const audio = c.id !== clip.id && copy.registries.mediaTypes.get(c.type)?.track === 'audio'
+            if (audio && !media.meta.hasAudio) { removeClip(copy, c.id); note += ` (removed linked audio ${ids.show(c.id, 'c')}: the new source has no sound)`; continue }
+            copy.doc.transact('Replace clip', d => {
+              const x = findClip(d.timelines[d.activeTimeline], c.id)!.clip
+              x.mediaId = media.id; x.sourceIn = sourceIn; x.name = media.name
+            })
+          }
+        } else if (op.op === 'add_property') {
           const def = copy.registries.properties.get(op.type)
           if (!def || !copy.edit.propertyApplies(def, clip)) throw new Error(`Property ${op.type} unavailable or incompatible`)
           const shared = def.timeRemap ? findProperty(clip, op.type) : null
@@ -323,7 +545,7 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
         } else {
           let found = findProperty(clip, op.propertyId)
           // Setting speed on a clip without one adds it where the UI would: the pair's picture clip.
-          if (!found && op.op !== 'remove_property' && remapType && op.propertyId === remapType.id && copy.edit.propertyApplies(remapType, clip)) {
+          if (!found && op.op !== 'remove_property' && op.op !== 'clear_keyframes' && remapType && op.propertyId === remapType.id && copy.edit.propertyApplies(remapType, clip)) {
             copy.edit.addProperty((pictureOf(clip) ?? clip).id, remapType.id)
             found = findProperty(findClip(copy.timeline(), clip.id)!.clip, op.propertyId)
           }
@@ -333,7 +555,24 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
           const shift = clip.start - owner.start
           if (owner.id !== clip.id) note = ` (on linked ${ids.show(owner.id, 'c')}; applies to both)`
           if (op.op === 'remove_property') copy.edit.removeProperty(owner.id, prop.id)
-          else {
+          else if (op.op === 'clear_keyframes') {
+            const params = op.paramId ? [op.paramId] : Object.keys(prop.params)
+            let cleared = 0
+            for (const paramId of params) {
+              const def = copy.edit.paramDef(prop.type, paramId)
+              if (!def) throw new Error(`Unknown parameter ${paramId}`)
+              if (!prop.params[paramId]?.keyframes?.length) continue
+              const value = op.value !== undefined ? op.value : evaluateParam(copy.registries, def, prop.params[paramId], shift)
+              if (op.value !== undefined) validateValue(def, value, options.fonts)
+              copy.doc.transact('Clear keyframes', d => {
+                const pv = findClip(d.timelines[d.activeTimeline], owner.id)!.clip.properties.find(p => p.id === prop.id)!.params[paramId]
+                delete pv.keyframes
+                pv.value = structuredClone(value)
+              })
+              cleared++
+            }
+            note += ` ${cleared} parameters`
+          } else {
             const def = copy.edit.paramDef(prop.type, op.paramId)
             if (!def) throw new Error(`Unknown parameter ${op.paramId}`)
             const keyframe = (t: Flicks, value: unknown, easing?: string) => {
@@ -384,6 +623,10 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
       if ('ref' in op && op.ref && created) refs.set(op.ref, created)
       results.push(`${index + 1}. ${op.op}: ok${created ? ` ${ids.show(created, op.op === 'add_property' ? 'p' : 'c')}${'ref' in op && op.ref ? ` (${op.ref})` : ''}` : ''}${note}${retargeted ? `, on ${retargeted}` : ''}`)
     } catch (e) { throw new Error(`Operation ${index + 1} (${raw.op}): ${e instanceof Error ? e.message : e}. No edits applied.`) }
+    finally {
+      const reason = `operation ${index + 1} (${raw.op}${'clipId' in raw ? ` ${raw.clipId}` : ''})`
+      for (const id of before) if (!gone.has(id) && !findClip(copy.timeline(), id)) gone.set(id, reason)
+    }
   }
   for (const tr of copy.timeline().tracks) for (const clip of tr.clips) {
     if (clip.duration < MIN_CLIP || !Number.isSafeInteger(clip.start + clip.duration) || clip.sourceIn < 0) throw new Error('Result contains an invalid clip duration/range. No edits applied.')
@@ -394,6 +637,7 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
       if (lo < -slack || hi > media.meta.duration + slack) throw new Error(`Clip ${ids.show(clip.id, 'c')} would play past the ${lo < 0 ? 'start' : 'end'} of its source (speed too high for its duration?). No edits applied.`)
     }
   }
+  if (options.dryRun) return results.join('\n') + '\nDry run: every operation is valid. Nothing was committed.'
   commit(app, copy.project(), ops.length === 1 ? ops[0].op.replaceAll('_', ' ') : `apply ${ops.length} edits`)
   return results.join('\n') + '\nOne undo step committed.'
 }

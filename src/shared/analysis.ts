@@ -5,7 +5,7 @@
  */
 import type { Flicks } from './time'
 
-export const ANALYSIS_VERSION = 2
+export const ANALYSIS_VERSION = 3
 
 export type AnalysisPart = 'speech' | 'events' | 'prosody' | 'shots' | 'speakers'
 

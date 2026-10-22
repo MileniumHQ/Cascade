@@ -12,15 +12,15 @@ const simple = (
   param: Omit<ParamDef, 'id' | 'label' | 'type'> & { label?: string },
   css: (v: number) => string,
   keywords: string[] = [],
-  cost: PropertyContribution['cost'] = 'cheap'
+  category = 'Color'
 ): PropertyContribution => ({
   id,
   name,
   description,
   icon,
-  category: 'Color & Filters',
+  category,
   keywords,
-  cost,
+  cost: 'cheap',
   appliesTo: visualOnly,
   params: [{ id: 'amount', label: param.label ?? 'Amount', type: param.unit === 'deg' ? 'angle' : 'number', ...param }],
   apply: (v) => ({ filter: [css(n(v.amount))] }),
@@ -64,15 +64,12 @@ export const effectsPlugin = definePlugin({
       simple('contrast', 'Contrast', 'Increase or decrease contrast', 'contrast', { unit: 'percent', default: 1.2, min: 0, softMax: 3, step: 1 }, (a) => `contrast(${r(a)})`),
       simple('saturation', 'Saturation', 'Color intensity', 'palette', { unit: 'percent', default: 1.3, min: 0, softMax: 3, step: 1 }, (a) => `saturate(${r(a)})`, ['vibrance', 'color']),
       simple('hue', 'Hue shift', 'Rotate all colors around the color wheel', 'rainbow', { unit: 'deg', default: 30, step: 1 }, (a) => `hue-rotate(${r(a, 3)}deg)`, ['color', 'tint']),
-      simple('grayscale', 'Black & white', 'Remove color', 'droplet-off', { unit: 'percent', default: 1, min: 0, max: 1, step: 1 }, (a) => `grayscale(${r(a)})`, ['monochrome', 'grayscale', 'desaturate']),
-      simple('sepia', 'Sepia', 'Warm vintage tone', 'coffee', { unit: 'percent', default: 1, min: 0, max: 1, step: 1 }, (a) => `sepia(${r(a)})`, ['vintage', 'old']),
-      simple('invert', 'Invert', 'Negative image', 'square-split-horizontal', { unit: 'percent', default: 1, min: 0, max: 1, step: 1 }, (a) => `invert(${r(a)})`, ['negative']),
       {
         id: 'color-tint',
         name: 'Tint',
         description: 'Wash the clip with a color',
         icon: 'paintbrush',
-        category: 'Color & Filters',
+        category: 'Color',
         keywords: ['colorize', 'duotone', 'overlay color'],
         appliesTo: visualOnly,
         params: [
@@ -98,12 +95,15 @@ export const effectsPlugin = definePlugin({
           return { svgFilter: `<feColorMatrix type="matrix" values="${mat}"/>` }
         }
       },
+      simple('grayscale', 'Black & white', 'Remove color', 'droplet-off', { unit: 'percent', default: 1, min: 0, max: 1, step: 1 }, (a) => `grayscale(${r(a)})`, ['monochrome', 'grayscale', 'desaturate']),
+      simple('sepia', 'Sepia', 'Warm vintage tone', 'coffee', { unit: 'percent', default: 1, min: 0, max: 1, step: 1 }, (a) => `sepia(${r(a)})`, ['vintage', 'old'], 'Stylize'),
+      simple('invert', 'Invert', 'Negative image', 'square-split-horizontal', { unit: 'percent', default: 1, min: 0, max: 1, step: 1 }, (a) => `invert(${r(a)})`, ['negative'], 'Stylize'),
       {
         id: 'vignette',
         name: 'Vignette',
         description: 'Darken the edges',
         icon: 'circle-dot',
-        category: 'Color & Filters',
+        category: 'Stylize',
         keywords: ['edges', 'dark corners'],
         appliesTo: visualOnly,
         params: [
@@ -126,6 +126,7 @@ export const effectsPlugin = definePlugin({
         }
       }
     ]
-    for (const p of list) ctx.properties.register(p)
+    // After the visual properties, so Shadow leads the Stylize group.
+    list.forEach((p, i) => ctx.properties.register({ priority: 600 + i, ...p }))
   }
 })

@@ -161,7 +161,7 @@ export async function startChat(providerId = draftProvider()): Promise<Chat | nu
   setStarting(true)
   setStartError('')
   try {
-    const session = await bridge.start(providerId).catch((error: unknown) => { setStartError(message(error)); throw error })
+    const session = await bridge.start(providerId, { project: projectContext() }).catch((error: unknown) => { setStartError(message(error)); throw error })
     const chat: Chat = { id: session.id, providerId, agent: session.agent, title: 'New chat', entries: [], options: session.options, running: false, startedAt: 0, permissions: [], cascadeTools: session.cascadeTools, ended: false, sessionId: session.sessionId, cwd: session.cwd, images: session.images, queue: [], paused: false }
     if (previous && !previous.entries.length) closeChat(previous.id)
     setChats(chats.length, chat)
@@ -224,6 +224,9 @@ export function closeChat(id: string) {
 /** Editor state appended to each prompt (playhead, selection), so "here" and "this clip" resolve. Set by the panel. */
 let editorContext: () => string = () => ''
 export const setEditorContext = (fn: () => string) => { editorContext = fn }
+/** Open project id; a new chat works in that project's own folder. */
+let projectContext: () => string | undefined = () => undefined
+export const setProjectContext = (fn: () => string | undefined) => { projectContext = fn }
 
 let queueId = 0
 /** Send now, or queue it when the agent is busy. */

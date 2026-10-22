@@ -181,7 +181,7 @@ async function initialize(): Promise<void> {
   ipcMain.on('plugins:openFolder', () => { void shell.openPath(paths.plugins).then((error) => { if (error) console.warn(error) }).catch(console.warn) })
   protocol.handle('media', serveMedia)
   protocol.handle('cascade-plugin', (request) => servePlugin(request, (name) => userPlugins.code(name)))
-  await registerAgentsIpc({ home: paths.home, defaultCwd: paths.projects, dataDir: join(paths.userData, 'agents'), mcp: () => mcpInfo }, (event) => {
+  await registerAgentsIpc({ home: paths.home, workspaces: join(paths.userData, 'workspaces'), dataDir: join(paths.userData, 'agents'), mcp: () => mcpInfo }, (event) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('agents:event', event)
   })
   await startUpdater(() => mainWindow)

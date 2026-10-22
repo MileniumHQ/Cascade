@@ -18,7 +18,7 @@ test('SDK initialization, tools and direct stateless requests; authorization bef
   client = new Client({ name: 'test', version: '1' })
   await client.connect(new StreamableHTTPClientTransport(new URL(started.url), { requestInit: { headers: { Authorization: 'Bearer secret' } } }))
   const listed = await client.listTools()
-  expect(listed.tools).toHaveLength(32)
+  expect(listed.tools).toHaveLength(39)
   expect(listed.tools[0].inputSchema.required ?? []).not.toContain('detail')
   expect(listed.tools.find(t => t.name === 'timeline_apply_edits')?.annotations?.destructiveHint).toBe(true)
   const progress: number[] = []
@@ -27,7 +27,7 @@ test('SDK initialization, tools and direct stateless requests; authorization bef
   const direct = await fetch(started.url, { method: 'POST', headers: { Authorization: 'Bearer secret', 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', 'Mcp-Session-Id': 'legacy-session-header' }, body: JSON.stringify({ jsonrpc: '2.0', id: 8, method: 'tools/list', params: {} }) })
   expect(direct.status).toBe(200)
   const payload = (await direct.text()).split('\n').find(line => line.startsWith('data: '))!
-  expect(JSON.parse(payload.slice(6)).result.tools).toHaveLength(32)
+  expect(JSON.parse(payload.slice(6)).result.tools).toHaveLength(39)
   const invalid = await client.callTool({ name: 'frame_get', arguments: { time: -1 } })
   expect(invalid.isError).toBe(true)
   expect(received).toEqual(['registry_list'])

@@ -1,5 +1,6 @@
-// Build a self-contained whisper-cli. No npm dependencies are installed.
-// `--target win32-x64` cross-compiles the Windows binary from Linux with llvm-mingw (downloaded into vendor/).
+// Build self-contained whisper-cli (transcription) and cascade-align (Qwen3-ForcedAligner word timing, on
+// CrispASR's ggml port; source in native/cascade-align). No npm dependencies are installed.
+// `--target win32-x64` cross-compiles the Windows binaries from Linux with llvm-mingw (downloaded into vendor/).
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, existsSync, readFileSync, writeFileSync, copyFileSync, chmodSync, renameSync } from 'node:fs'
 import { resolve, join } from 'node:path'
@@ -8,8 +9,11 @@ import { availableParallelism } from 'node:os'
 
 const tag = 'v1.9.5'
 const commit = 'd1be6fde11ac6e0407606b4e42fe72d34add8037'
+// CrispASR pins its ggml fork as a submodule; that commit comes along with this one.
+const CRISPASR = { tag: 'v0.8.43', commit: 'eb633d908120cc5f44b8af8cd4aeb1191f16bfd8' }
 const root = fileURLToPath(new URL('../', import.meta.url))
 const source = join(root, 'vendor/whisper.cpp')
+const crispasr = join(root, 'vendor/CrispASR')
 const host = `${process.platform}-${process.arch}`
 const targetArg = process.argv.indexOf('--target')
 const target = targetArg > 0 ? process.argv[targetArg + 1] : host
@@ -26,6 +30,14 @@ mkdirSync(resolve(source, '..'), { recursive: true })
 if (!existsSync(join(source, '.git'))) run('git', ['clone', '--depth', '1', '--branch', tag, 'https://github.com/ggml-org/whisper.cpp.git', source])
 const head = run('git', ['-C', source, 'rev-parse', 'HEAD'], { stdio: 'pipe' })
 if (head !== commit) throw new Error(`Expected ${tag} (${commit}), found ${head}. Remove vendor/whisper.cpp and retry.`)
+if (!existsSync(join(crispasr, '.git'))) {
+  run('git', ['clone', '--filter=blob:none', '--no-checkout', 'https://github.com/CrispStrobe/CrispASR.git', crispasr])
+  run('git', ['-C', crispasr, 'checkout', '--quiet', CRISPASR.commit])
+}
+const crispHead = run('git', ['-C', crispasr, 'rev-parse', 'HEAD'], { stdio: 'pipe' })
+if (crispHead !== CRISPASR.commit) throw new Error(`Expected CrispASR ${CRISPASR.tag} (${CRISPASR.commit}), found ${crispHead}. Remove vendor/CrispASR and retry.`)
+// Only ggml; the c2pa-audio submodule is for CrispASR's own CLI.
+run('git', ['-C', crispasr, 'submodule', 'update', '--init', '--depth', '1', 'ggml'])
 // v1.9.5's full JSON bypasses the VAD-aware token accessors. Map all token
 // fields (including DTW) with upstream's segment-aware mapper before serialization.
 const cpp = join(source, 'src/whisper.cpp')
@@ -75,13 +87,17 @@ function portableArgs(vulkan) {
   const names = ['strtol', 'strtoul', 'strtoll', 'strtoull']
   const types = { strtol: 'long', strtoul: 'unsigned long', strtoll: 'long long', strtoull: 'unsigned long long' }
   // C11 without _GNU_SOURCE, so strtol here binds to the original symbol. Static libstdc++'s random_device
-  // calls arc4random (glibc 2.36); getrandom is 2.25.
+  // calls arc4random (glibc 2.36); getrandom is 2.25. glibc 2.43 re-versioned log10f (CrispASR's mel);
+  // the wrapper binds the original version.
   writeFileSync(join(dir, 'compat.c'), `#include <stdlib.h>\n#include <stdint.h>\n#include <sys/random.h>
 ${names.map(n => `${types[n]} __wrap___isoc23_${n}(const char *s, char **end, int base) { return ${n}(s, end, base); }`).join('\n')}
-uint32_t __wrap_arc4random(void) { uint32_t v = 0; while (getrandom(&v, sizeof v, 0) != sizeof v) {} return v; }\n`)
+uint32_t __wrap_arc4random(void) { uint32_t v = 0; while (getrandom(&v, sizeof v, 0) != sizeof v) {} return v; }
+float cascade_log10f(float);
+__asm__(".symver cascade_log10f,log10f@GLIBC_2.2.5");
+float __wrap_log10f(float x) { return cascade_log10f(x); }\n`)
   run('cc', ['-std=c11', '-O2', '-fPIC', '-c', join(dir, 'compat.c'), '-o', join(dir, 'compat.o')])
   // libgcc stays shared: its static unwinder needs _dl_find_object (glibc 2.35), and every distro has libgcc_s.
-  const wraps = [...names.map(n => `__isoc23_${n}`), 'arc4random'].map(n => `-Wl,--wrap=${n}`).join(' ')
+  const wraps = [...names.map(n => `__isoc23_${n}`), 'arc4random', 'log10f'].map(n => `-Wl,--wrap=${n}`).join(' ')
   return ['-DCMAKE_C_FLAGS=-fno-math-errno', '-DCMAKE_CXX_FLAGS=-fno-math-errno', '-DGGML_OPENMP=OFF', ...(vulkan ? vulkanHeaders() : []),
     `-DCMAKE_EXE_LINKER_FLAGS=-static-libstdc++ ${join(dir, 'compat.o')} ${wraps}`]
 }
@@ -117,7 +133,7 @@ function checkPortable(binary) {
   const symbols = spawnSync('objdump', ['-T', binary], { encoding: 'utf8' }).stdout ?? ''
   const newer = [...new Set(symbols.match(/GLIBC_2\.\d+/g) ?? [])].filter(v => Number(v.split('.')[1]) > Number(MAX_GLIBC.split('.')[1]))
   const runtime = [...new Set(symbols.match(/(GLIBCXX|CXXABI|GOMP|OMP)_[\d.]+/g) ?? [])]
-  if (newer.length || runtime.length) throw new Error(`whisper-cli isn't portable: needs ${[...newer, ...runtime].join(', ')} (max glibc ${MAX_GLIBC}, no libstdc++/libgomp)`)
+  if (newer.length || runtime.length) throw new Error(`${binary.split('/').at(-1)} isn't portable: needs ${[...newer, ...runtime].join(', ')} (max glibc ${MAX_GLIBC}, no libstdc++/libgomp)`)
 }
 let gpu = !process.argv.includes('--cpu') && !cross
 function build(vulkan) {
@@ -128,6 +144,18 @@ function build(vulkan) {
   run('cmake', ['--build', dir, '--config', 'Release', '--target', 'whisper-cli', '-j', String(Math.min(8, availableParallelism()))])
   return dir
 }
+// CrispASR must be the top-level CMake project; native/cascade-align/CMakeLists.txt adds the target through
+// its project() include hook. No BLAS or OpenMP (portable binary; ggml's threadpool does the work).
+function buildAligner(vulkan) {
+  const dir = join(crispasr, `build-cascade-${target}-${vulkan ? 'vulkan' : 'cpu'}`)
+  run('cmake', ['-S', crispasr, '-B', dir, '-DCMAKE_BUILD_TYPE=Release', `-DGGML_VULKAN=${vulkan ? '1' : '0'}`, ...crossArgs(), ...portableArgs(vulkan),
+    `-DCMAKE_PROJECT_crispasr_INCLUDE=${join(root, 'native/cascade-align/CMakeLists.txt')}`,
+    '-DBUILD_SHARED_LIBS=OFF', '-DGGML_NATIVE=OFF', '-DGGML_CCACHE=OFF', '-DGGML_BLAS=OFF', '-DCRISPASR_MEL_BLAS=OFF',
+    '-DCMAKE_DISABLE_FIND_PACKAGE_OpenMP=ON', '-DCRISPASR_BUILD_TESTS=OFF', '-DCRISPASR_BUILD_EXAMPLES=OFF',
+    '-DCRISPASR_BUILD_SERVER=OFF', '-DCRISPASR_CURL=OFF', '-DCRISPASR_NO_C2PA_NATIVE=ON'])
+  run('cmake', ['--build', dir, '--config', 'Release', '--target', 'cascade-align', '-j', String(Math.min(8, availableParallelism()))])
+  return dir
+}
 let dir
 try { dir = build(gpu) } catch (error) {
   if (!gpu) throw error
@@ -135,14 +163,21 @@ try { dir = build(gpu) } catch (error) {
   gpu = false
   dir = build(false)
 }
+const alignerDir = buildAligner(gpu)
 mkdirSync(output, { recursive: true })
-const exe = target.startsWith('win32') ? 'whisper-cli.exe' : 'whisper-cli'
-const binary = [join(dir, 'bin', exe), join(dir, 'bin/Release', exe)].find(existsSync)
-if (!binary) throw new Error('Build succeeded but whisper-cli was not found')
-checkPortable(binary)
-copyFileSync(binary, join(output, `${exe}.tmp`))
-chmodSync(join(output, `${exe}.tmp`), 0o755)
-renameSync(join(output, `${exe}.tmp`), join(output, exe))
-writeFileSync(join(output, 'build.json'), JSON.stringify({ tag, commit, target, timestampPatch: 1, gpu, backend: gpu ? 'vulkan' : 'cpu', seconds: (Date.now() - started) / 1000 }, null, 2))
+const suffix = target.startsWith('win32') ? '.exe' : ''
+function install(dir, name) {
+  const exe = name + suffix
+  const binary = [join(dir, 'bin', exe), join(dir, 'bin/Release', exe), join(dir, exe), join(dir, 'Release', exe)].find(existsSync)
+  if (!binary) throw new Error(`Build succeeded but ${exe} was not found`)
+  checkPortable(binary)
+  copyFileSync(binary, join(output, `${exe}.tmp`))
+  chmodSync(join(output, `${exe}.tmp`), 0o755)
+  renameSync(join(output, `${exe}.tmp`), join(output, exe))
+}
+install(dir, 'whisper-cli')
+install(alignerDir, 'cascade-align')
+writeFileSync(join(output, 'build.json'), JSON.stringify({ tag, commit, crispasr: CRISPASR, target, timestampPatch: 1, gpu, backend: gpu ? 'vulkan' : 'cpu', seconds: (Date.now() - started) / 1000 }, null, 2))
 copyFileSync(join(source, 'LICENSE'), join(output, 'LICENSE'))
-console.log(`whisper.cpp ${tag}: ${gpu ? 'Vulkan' : 'CPU'} build in ${((Date.now() - started) / 1000).toFixed(1)}s → ${output}`)
+copyFileSync(join(crispasr, 'LICENSE'), join(output, 'LICENSE-crispasr'))
+console.log(`whisper.cpp ${tag} + cascade-align (CrispASR ${CRISPASR.tag}): ${gpu ? 'Vulkan' : 'CPU'} build in ${((Date.now() - started) / 1000).toFixed(1)}s → ${output}`)

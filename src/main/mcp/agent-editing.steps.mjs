@@ -1,5 +1,5 @@
 // Agent editing features end to end: source transcripts and anchors, linked speed, reverse, repeat/append,
-// wiggle, font checks, shot sheets and audio_check. Run with scripts/drive.mjs after `bun run build`.
+// wiggle, font checks, shot sheets and audio_analyze. Run with scripts/drive.mjs after `bun run build`.
 // Needs ~/wwdc.webm and the analysis models in the profile (symlink <profile>/models to a profile that has them).
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
@@ -58,9 +58,9 @@ export default async ({ win, shot }) => {
   assert.doesNotMatch(timeline, /opacity\{opacity=1\}/)
   await call('transcript_get', { view: 'words', maxLines: 80 })
   const duration = Number(timeline.match(/duration \S+ \((\d+)\)/)[1])
-  await call('timeline_preview_sheet', { start: 0, end: Math.min(duration, 2 * F), count: 6 })
-  await call('contact_sheet', { shots: true })
-  await call('media_contact_sheet', { mediaId, shots: true, start: 600 * F, end: 650 * F, count: 9 })
+  await call('contact_sheet', { start: 0, end: Math.min(duration, 2 * F), count: 6 })
+  await call('contact_sheet', { mode: 'shots' })
+  await call('contact_sheet', { mediaId, mode: 'shots', start: 600 * F, end: 650 * F, count: 9 })
   const back = timeline.match(/^\s+(c\d+) (\S+)–\S+ \[(\d+), (\d+)\) video[^\n]*reversed/m)
   await call('frame_get', { time: Math.round((Number(back[3]) + Number(back[4])) / 2), width: 640 })
   await shot('timeline')
@@ -71,10 +71,8 @@ export default async ({ win, shot }) => {
   assert(played > Number(back[3]) + F / 2, 'playback advanced through the reversed clip')
   await shot('reversed-playing')
 
-  const check = JSON.parse(await call('audio_check', {})).jobId
-  const report = await call('job_get', { jobId: check, wait: 120 })
-  assert.match(report, /"state": "done"/)
+  const report = await call('audio_analyze', { transcribe: true, wait: 120 })
   assert.match(report, /LUFS/)
   assert.match(report, /Heard/)
-  await writeFile(join(dir, 'audio-check.txt'), report)
+  await writeFile(join(dir, 'audio-analyze.txt'), report)
 }

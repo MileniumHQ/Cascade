@@ -1,13 +1,22 @@
 import { definePlugin } from '@core/plugin-api'
 import { Value } from '@core/value'
 import { findClip, uid, type Clip, type Id, type MediaItem, type PropertyInstance } from '@shared/project'
+import type { Flicks } from '@shared/time'
 import type { TranscribeProgress } from '@shared/ipc'
 import { pushToast } from '@ui/kit'
 import { constantMap } from '@core/time-remap'
 import { groupCaptions } from './group'
 import { mountCaptionProgress } from './progress'
 
-export interface GenerateCaptionsOptions { clipId?: Id; mediaId?: Id; language?: string }
+export interface GenerateCaptionsOptions {
+  clipId?: Id; mediaId?: Id; language?: string
+  /** Existing visual track to put the captions on (replacing what it holds in their range) instead of a new track. */
+  trackId?: Id
+  /** Parameter overrides by property type (transform, size, text, shadow) for every caption. */
+  style?: Record<string, Record<string, unknown>>
+  /** With trackId: clear what the track holds in the captioned range first (default true). */
+  replace?: boolean
+}
 export interface CaptionsService {
   generate(opts?: GenerateCaptionsOptions): Promise<Id[]>
   cancel(): Promise<void>
@@ -15,6 +24,20 @@ export interface CaptionsService {
 const supported = (media?: MediaItem) => !!media?.path && (media.type === 'audio' || media.type === 'video') && media.meta.hasAudio !== false
 const property = (type: string, values: Record<string, unknown>): PropertyInstance => ({ id: uid('pi_'), type, enabled: true,
   params: Object.fromEntries(Object.entries(values).map(([k, value]) => [k, { value }])) })
+
+/** A caption text clip in the default caption look; `style` overrides parameters by property type. */
+export function captionClip(text: string, start: Flicks, end: Flicks, style?: Record<string, Record<string, unknown>>, data: Record<string, unknown> = {}): Clip {
+  const styled = (type: string, values: Record<string, unknown>) => property(type, { ...values, ...style?.[type] })
+  return { id: uid('cl_'), type: 'element', name: text.replace(/\n/g, ' '),
+    start, duration: end - start, sourceIn: 0, data: { kind: 'text', ...data },
+    properties: [
+      styled('transform', { position: [0, 0.34], scale: 1, rotation: 0, anchor: [0.5, 0.5] }),
+      styled('size', { size: [0.88, 0.16], padding: 0 }),
+      styled('text', { font: 'Inter', size: 0.046, weight: 750, color: '#ffffff', align: 'center', italic: false, tracking: 0, leading: 1.2, stroke: 0.006, strokeColor: '#111111', text }),
+      // Soft shadow keeps captions legible over bright footage.
+      styled('shadow', { offset: [0, 0.002], blur: 0.006, color: '#000000cc' })
+    ] }
+}
 
 export const captionsPlugin = definePlugin({
   id: 'cascade.captions', name: 'Captions',
@@ -44,6 +67,12 @@ export const captionsPlugin = definePlugin({
         const sourceIn = clip?.sourceIn ?? 0
         const sourceEnd = clip ? Math.round(sourceIn + speed.offset(clip.duration)) : media.meta.duration
         if (!sourceEnd || sourceEnd <= sourceIn) throw new Error('The source has no usable duration')
+        const usableTrack = () => {
+          const tr = opts.trackId ? app.timeline().tracks.find((t) => t.id === opts.trackId) : undefined
+          if (opts.trackId && (!tr || tr.kind !== 'visual' || tr.locked)) throw new Error('The captions track must be an unlocked visual track')
+          return tr
+        }
+        usableTrack()
         const mapping = { sourceIn, start: clip?.start ?? app.playback.time.get(), speed, end: 0 }
         mapping.end = mapping.start + (clip?.duration ?? sourceEnd)
         busy = true
@@ -80,16 +109,10 @@ export const captionsPlugin = definePlugin({
           }
           const captions = groupCaptions(transcript, mapping)
           if (!captions.length) { toast('info', 'No speech found in this range'); return [] }
-          const clips: Clip[] = captions.map((c) => ({ id: uid('cl_'), type: 'element', name: c.text.replace(/\n/g, ' '),
-            start: c.start, duration: c.end - c.start, sourceIn: 0, data: { kind: 'text', caption: { mediaId: media.id, model: transcript.model, language: transcript.language } },
-            properties: [
-              property('transform', { position: [0, 0.34], scale: 1, rotation: 0, anchor: [0.5, 0.5] }),
-              property('size', { size: [0.88, 0.16], padding: 0 }),
-              property('text', { text: c.text, font: 'Inter', size: 0.046, weight: 750, color: '#ffffff', align: 'center', italic: false, tracking: 0, leading: 1.2, stroke: 0.006, strokeColor: '#111111' }),
-              // Soft shadow keeps captions legible over bright footage.
-              property('shadow', { offset: [0, 0.002], blur: 0.006, color: '#000000cc' })
-            ] }))
-          app.edit.addTrack('visual', { name: 'Captions', clips, label: 'Generate captions' })
+          const clips = captions.map((c) => captionClip(c.text, c.start, c.end, opts.style, { caption: { mediaId: media.id, model: transcript.model, language: transcript.language } }))
+          const target = usableTrack()
+          if (target) app.edit.placeClips(target.id, clips, { label: 'Generate captions', replace: opts.replace === false ? undefined : [mapping.start, mapping.end] })
+          else app.edit.addTrack('visual', { name: 'Captions', clips, label: 'Generate captions' })
           app.selection.setClips([clips[0].id])
           app.layout.reveal('timeline')
           toast('success', `Created ${clips.length} captions`, 'Editable text clips · undo in one step')

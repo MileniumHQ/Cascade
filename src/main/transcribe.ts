@@ -8,18 +8,25 @@ import { availableParallelism } from 'node:os'
 import type { Transcript, TranscriptWord, TranscribeOptions, TranscribeProgress, TranscribeStatus } from '../shared/ipc'
 import { FLICKS } from '../shared/time'
 import { capture, getFFmpegTools, spawnTracked } from './ffmpeg'
+import { applyAlignment, planAlignment, type AlignResult } from './align'
 
 export const DEFAULT_MODEL = 'ggml-large-v3-turbo-q8_0.bin'
 const VAD_MODEL = 'ggml-silero-v6.2.0.bin'
+export const ALIGN_MODEL = 'qwen3-forced-aligner-0.6b-q8_0.gguf'
 const MODELS = [
   { id: DEFAULT_MODEL, name: 'Whisper Large v3 Turbo Q8', sizeBytes: 874188075,
     sha256: '317eb69c11673c9de1e1f0d459b253999804ec71ac4c23c17ecf5fbe24e259a1',
     url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/0b364b566045a405be7225ee1e415a073e04da77/ggml-large-v3-turbo-q8_0.bin' },
   { id: VAD_MODEL, name: 'Silero VAD 6.2', sizeBytes: 885098,
     sha256: '2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987',
-    url: 'https://huggingface.co/ggml-org/whisper-vad/resolve/9ffd54a1e1ee413ddf265af9913beaf518d1639b/ggml-silero-v6.2.0.bin' }
+    url: 'https://huggingface.co/ggml-org/whisper-vad/resolve/9ffd54a1e1ee413ddf265af9913beaf518d1639b/ggml-silero-v6.2.0.bin' },
+  // Word timing (native/cascade-align). Q8 matches the PyTorch reference; Q4/Q5 move ~3% of words by a frame.
+  { id: ALIGN_MODEL, name: 'Qwen3 ForcedAligner 0.6B Q8', sizeBytes: 985594624,
+    sha256: '539df5dd0fe1721e378ac13bfac9a26b1260dafb62d892c518c1f21244762636',
+    url: 'https://huggingface.co/cstr/qwen3-forced-aligner-0.6b-GGUF/resolve/1ec5110602ccab18c878ddebedab0891e290a95c/qwen3-forced-aligner-0.6b-q8_0.gguf' }
 ] as const
-const VERSION = 'v1.9.5-vad-dtw-acoustic-6'
+const VERSION = 'v1.9.5-vad-dtw-acoustic-qwen3fa-7'
+export const ALIGN_TIMING = 'qwen3-forced-aligner-0.6b-q8'
 
 interface WhisperToken { text: string; id: number; p: number; t_dtw?: number; offsets?: { from: number; to: number } }
 interface WhisperJSON {
@@ -215,7 +222,11 @@ export function createTranscriptionService(userData: string, resourcesPath = pro
       if (!binary) throw new Error('whisper-cli is missing. Run bun run setup:whisper, then retry.')
       const source = await stat(path)
       if (!source.isFile()) throw new Error('The transcription source must be a file')
-      const key = createHash('sha256').update(JSON.stringify([VERSION, resolve(path), source.mtimeMs, source.size, range, model, language, !!opts.verbatim])).digest('hex')
+      // cascade-align ships beside whisper-cli. Without it (a checkout built before it existed) words keep
+      // whisper's timing, cached under a separate key.
+      const alignerPath = join(dirname(binary), process.platform === 'win32' ? 'cascade-align.exe' : 'cascade-align')
+      const aligner = await access(alignerPath, constants.X_OK).then(() => alignerPath, () => null)
+      const key = createHash('sha256').update(JSON.stringify([VERSION, resolve(path), source.mtimeMs, source.size, range, model, language, !!opts.verbatim, !!aligner])).digest('hex')
       await mkdir(cacheDir, { recursive: true })
       const cached = join(cacheDir, `${key}.json`)
       try {
@@ -224,6 +235,7 @@ export function createTranscriptionService(userData: string, resourcesPath = pro
       } catch { /* Cache miss or interrupted cache write. */ }
       await install(model, signal)
       await install(VAD_MODEL, signal)
+      if (aligner) await install(ALIGN_MODEL, signal)
       const temp = await mkdtemp(join(cacheDir, '.work-'))
       try {
         const wav = join(temp, 'audio.wav')
@@ -247,7 +259,7 @@ export function createTranscriptionService(userData: string, resourcesPath = pro
             if (end && silenceStart !== undefined) { silences.push({ start: silenceStart, end: sourceTime(Number(end[1])) }); silenceStart = undefined }
           }
         })
-        emit({ phase: 'transcribe', progress: 0, message: 'Aligning speech and words locally' })
+        emit({ phase: 'transcribe', progress: 0, message: 'Transcribing speech' })
         let progressBuffer = ''
         const args = ['-m', join(modelsDir, model), '-f', wav, '-l', language, '--vad', '-vm', join(modelsDir, VAD_MODEL),
           '--dtw', 'large.v3.turbo', '--no-flash-attn', '-ojf', '--split-on-word', '-pp', '-of', join(temp, 'transcript'),
@@ -256,7 +268,7 @@ export function createTranscriptionService(userData: string, resourcesPath = pro
         const report = (text: string) => {
           progressBuffer = (progressBuffer + text).slice(-1024)
           const matches = [...progressBuffer.matchAll(/progress\s*=\s*(\d+)%/g)]
-          if (matches.length) { const percent = Number(matches.at(-1)![1]); emit({ phase: 'transcribe', progress: percent / 100, message: `Aligning speech and words · ${percent}%` }); progressBuffer = '' }
+          if (matches.length) { const percent = Number(matches.at(-1)![1]); emit({ phase: 'transcribe', progress: percent / 100 * (aligner ? 0.85 : 1), message: `Transcribing speech · ${percent}%` }); progressBuffer = '' }
         }
         // whisper.cpp's DTW aligner can segfault on some inputs (seen on 1.9.5), so the first
         // fallback drops DTW (token offsets only) for this job; a GPU failure latches CPU for the
@@ -276,6 +288,34 @@ export function createTranscriptionService(userData: string, resourcesPath = pro
         const json = JSON.parse(await readFile(join(temp, 'transcript.json'), 'utf8')) as WhisperJSON
         const transcript = constrainToSpeech(parseWhisperJSON(json, path, model, range?.start, range?.end), silences)
         transcript.silences = silences
+        transcript.timing = 'whisper-dtw'
+        const spoken = transcript.segments.some((s) => s.words.length)
+        if (aligner && spoken) {
+          const offset = range?.start ?? 0
+          const ms = (t: number) => (t - offset) / (FLICKS / 1000)
+          const words = transcript.segments.flatMap((s) => s.words)
+          const chunks = planAlignment(words.map((w) => ({ text: w.text, start: ms(w.start), end: ms(w.end) })),
+            ((await stat(wav)).size - 44) / 32, silences.map((s) => ({ start: ms(s.start), end: ms(s.end) })))
+          await writeFile(join(temp, 'chunks.json'), JSON.stringify({ chunks: chunks.map((c) => ({ start: Math.round(c.start), end: Math.round(c.end), words: c.units })) }))
+          const alignArgs = ['-m', join(modelsDir, ALIGN_MODEL), '-f', wav, '-j', join(temp, 'chunks.json'), '-o', join(temp, 'aligned.json'), '-t', String(Math.min(8, availableParallelism()))]
+          const alignReport = (text: string) => {
+            const matches = [...text.matchAll(/progress\s*=\s*(\d+)%/g)]
+            if (matches.length) { const percent = Number(matches.at(-1)![1]); emit({ phase: 'transcribe', progress: 0.85 + percent / 100 * 0.15, message: `Timing words · ${percent}%` }) }
+          }
+          emit({ phase: 'transcribe', progress: 0.85, message: 'Timing words' })
+          // A GPU failure retries on CPU; a second failure keeps whisper's timing rather than losing the transcript.
+          for (const cpu of cpuOnly ? [true] : [false, true]) {
+            try {
+              await execute(aligner, [...alignArgs, ...(cpu ? ['-ng'] : [])], signal, alignReport)
+              const results = (JSON.parse(await readFile(join(temp, 'aligned.json'), 'utf8')) as { chunks: AlignResult[] }).chunks
+              if (applyAlignment(transcript, chunks, results, offset)) transcript.timing = ALIGN_TIMING
+              break
+            } catch (error) {
+              if (signal.aborted) throw error
+              console.warn(`cascade-align failed${cpu ? '' : ' on GPU'}:`, error)
+            }
+          }
+        }
         signal.throwIfAborted()
         const staging = join(temp, 'cache.json')
         await writeFile(staging, JSON.stringify(transcript))

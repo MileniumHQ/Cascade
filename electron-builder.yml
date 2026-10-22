@@ -70,7 +70,7 @@ linux:
     # Built by `bun run setup:whisper`; resolved via process.resourcesPath in src/main/transcribe.ts.
     - from: resources/whisper/linux-x64
       to: whisper/linux-x64
-      filter: ["whisper-cli", "LICENSE", "build.json"]
+      filter: ["whisper-cli", "cascade-align", "LICENSE", "LICENSE-crispasr", "build.json"]
     # Per-user mime/desktop integration (src/main/desktop-integration.ts).
     - from: resources
       to: icons
@@ -95,7 +95,7 @@ win:
     # Cross-compiled by `node scripts/setup-whisper.mjs --target win32-x64`.
     - from: resources/whisper/win32-x64
       to: whisper/win32-x64
-      filter: ["whisper-cli.exe", "LICENSE", "build.json"]
+      filter: ["whisper-cli.exe", "cascade-align.exe", "LICENSE", "LICENSE-crispasr", "build.json"]
 nsis:
   oneClick: false
   perMachine: false

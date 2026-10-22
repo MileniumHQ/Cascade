@@ -10,6 +10,8 @@ export interface LoudnessReading {
   momentaryMax: number
   /** Sample peak in dBFS. */
   peak: number
+  /** RMS level in dBFS (both channels). */
+  rms: number
   /** Samples at or above full scale (|x| ≥ 0.999): audible clipping. */
   clipped: number
   /** Start times (s, relative to the measured range) of clipped stretches, at most 20. */
@@ -66,6 +68,17 @@ export class LoudnessMeter {
     this.weighted = this.channels.map((ch) => filter(ch, k))
   }
 
+  /** How the two channels relate: stereo, mono carried on both, one side only, or silence. */
+  layout(): 'stereo' | 'mono (same on both channels)' | 'left only' | 'right only' | 'silent' {
+    const [l, r] = this.channels
+    let ll = 0, rr = 0, diff = 0
+    for (let i = 0; i < l.length; i++) { ll += l[i] * l[i]; rr += r[i] * r[i]; diff += (l[i] - r[i]) ** 2 }
+    if (ll + rr < 1e-9 * l.length) return 'silent'
+    if (rr < ll * 1e-4) return 'left only'
+    if (ll < rr * 1e-4) return 'right only'
+    return diff < (ll + rr) * 1e-4 ? 'mono (same on both channels)' : 'stereo'
+  }
+
   get duration() {
     return this.channels[0].length / this.rate
   }
@@ -77,11 +90,13 @@ export class LoudnessMeter {
     const i1 = Math.min(n, Math.ceil(to * this.rate))
     let peak = 0
     let clipped = 0
+    let square = 0
     const clipTimes: number[] = []
     let lastClip = -Infinity
     for (const ch of this.channels) {
       for (let i = i0; i < i1; i++) {
         const v = Math.abs(ch[i])
+        square += v * v
         if (v > peak) peak = v
         if (v >= 0.999) {
           clipped++
@@ -112,8 +127,47 @@ export class LoudnessMeter {
       const rel = abs.filter((p) => lufs(p) > gate)
       if (rel.length) integrated = lufs(mean(rel))
     }
-    return { integrated, momentaryMax, peak: peak > 0 ? 20 * Math.log10(peak) : -Infinity, clipped, clipTimes }
+    const meanSquare = square / Math.max(1, (i1 - i0) * this.channels.length)
+    return { integrated, momentaryMax, peak: peak > 0 ? 20 * Math.log10(peak) : -Infinity, rms: meanSquare > 0 ? 10 * Math.log10(meanSquare) : -Infinity, clipped, clipTimes }
+  }
+
+  /** Mean K-weighted power of samples [s, e). */
+  private power(s: number, e: number): number {
+    let sum = 0
+    for (const w of this.weighted) for (let i = s; i < e; i++) sum += w[i] * w[i]
+    return e > s ? sum / (e - s) : 0
+  }
+
+  /** Loudness (LUFS) of the 400 ms window starting every `step` seconds: the shape of the mix over time. */
+  envelope(step: number): number[] {
+    const n = this.channels[0].length, block = Math.round(0.4 * this.rate), out: number[] = []
+    for (let t = 0; t * this.rate < n; t += step) {
+      const s = Math.floor(t * this.rate)
+      out.push(lufs(this.power(s, Math.min(n, s + block))))
+    }
+    return out
+  }
+
+  /** Stretches of at least `min` seconds where the 400 ms loudness stays below `threshold` LUFS, as [start, end] seconds. */
+  silences(threshold = -50, min = 0.5): [number, number][] {
+    const n = this.channels[0].length, block = Math.round(0.4 * this.rate), hop = Math.round(0.1 * this.rate)
+    const out: [number, number][] = []
+    let from = -1
+    for (let s = 0; s < n; s += hop) {
+      const quiet = lufs(this.power(s, Math.min(n, s + block))) < threshold
+      if (quiet && from < 0) from = s
+      if ((!quiet || s + hop >= n) && from >= 0) {
+        const end = quiet ? n : Math.min(n, s + block - hop)
+        if ((end - from) / this.rate >= min) out.push([from / this.rate, end / this.rate])
+        from = -1
+      }
+    }
+    return out
   }
 }
+
+const BARS = '▁▂▃▄▅▆▇█'
+/** One character per value: space below -60 LUFS (silence), then ▁ (-60) … █ (-12 and louder). */
+export const sparkline = (values: number[]) => values.map(v => v < -60 ? ' ' : BARS[Math.min(BARS.length - 1, Math.max(0, Math.floor((v + 60) / 6)))]).join('')
 
 export const formatDb = (v: number) => (Number.isFinite(v) ? v.toFixed(1) : '-inf')

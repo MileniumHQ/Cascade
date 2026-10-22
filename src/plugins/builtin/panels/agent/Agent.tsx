@@ -6,9 +6,10 @@ import type { AgentAttachment, AgentUsage, KeyProvider, SessionConfigOption } fr
 import { markdown } from './markdown'
 import { describeTool, modelParts, thoughtPreview } from './describe'
 import type { AgentTools } from '../../mcp'
+import type { Session } from '../../../../renderer/app/session'
 import {
   active, activeId, askFirst, cancel, chats, chooseProvider, closeChat, connect, draftProvider, flatOptions, newChat, providers, refreshProviders,
-  dropQueued, fetchKeyProviders, fetchUsage, installProvider, setProviderKey, setEditorContext, startError, setStartError, installs, respond, status, resumeActive, send, sendQueued, setActiveId, setAskFirst, setOption, startChat, starting, type Chat, type Entry
+  dropQueued, fetchKeyProviders, fetchUsage, installProvider, setProviderKey, setEditorContext, setProjectContext, startError, setStartError, installs, respond, status, resumeActive, send, sendQueued, setActiveId, setAskFirst, setOption, startChat, starting, type Chat, type Entry
 } from './state'
 
 // Brand marks (inline SVG keeps them crisp at 12–24px).
@@ -49,6 +50,7 @@ function groupWork(entries: readonly Entry[]): Item[] {
 export function AgentPanel(props: { ctx: PanelContext }) {
   connect(props.ctx.app.host?.agents)
   setEditorContext(() => (props.ctx.app.services.get('agent-tools') as AgentTools | undefined)?.editorState() ?? '')
+  setProjectContext(() => (props.ctx.app.services.get('session') as Session | undefined)?.screen() === 'editor' ? props.ctx.app.project().id : undefined)
   return (
     <div class="ag">
       <Show when={props.ctx.app.host?.agents} fallback={<div class="ag-empty"><p>Agents are only available in the desktop app.</p></div>}>

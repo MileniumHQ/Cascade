@@ -56,11 +56,11 @@ test('formats an interleaved, id-addressable transcript', () => {
   const { app, analyses } = editor()
   const ids = new Ids()
   const out = formatTranscript(buildIndex(app.project(), analyses), { fps: app.fps(), view: 'sentences', maxLines: 100, ...labels(ids) })
-  expect(out).toContain('s1 00:00:01.00–00:00:02.21 w1–w5 So, {um,} this is great.')
+  expect(out).toContain('s1 00:00:01.000–00:00:02.700 w1–w5 So, {um,} this is great.')
   expect(out).toContain('⏸ 1.50s w5.end → w6.start')
-  expect(out).toContain('✂ 00:00:03.15')
-  expect(out).toContain('s2 00:00:04.06–00:00:05.03 w6–w7 [lively] ↗ *Really* great!')
-  expect(out).toContain('[APPLAUSE 00:00:05.09–00:00:07.00 .90]')
+  expect(out).toContain('✂ 00:00:03.500')
+  expect(out).toContain('s2 00:00:04.200–00:00:05.100 w6–w7 [lively] ↗ *Really* great!')
+  expect(out).toContain('[APPLAUSE 00:00:05.300–00:00:07.000 .90]')
   // Chronological: pause, then the shot cut, then the next sentence.
   expect(out.indexOf('⏸')).toBeLessThan(out.indexOf('✂'))
   expect(out.indexOf('✂')).toBeLessThan(out.indexOf('s2 '))
@@ -69,8 +69,8 @@ test('formats an interleaved, id-addressable transcript', () => {
 test('the words view gives exact pitch and loudness per word', () => {
   const { app, analyses } = editor()
   const out = formatTranscript(buildIndex(app.project(), analyses), { fps: app.fps(), view: 'words', maxLines: 100, ...labels(new Ids()) })
-  expect(out).toContain('w6 00:00:04.06–00:00:04.18 *Really* +4.0st +3.0dB')
-  expect(out).toContain('w7 00:00:04.19–00:00:05.03 great! +1.2st -1.0dB')
+  expect(out).toContain('w6 00:00:04.200–00:00:04.600 *Really* +4.0st +3.0dB')
+  expect(out).toContain('w7 00:00:04.650–00:00:05.100 great! +1.2st -1.0dB')
 })
 
 test('search finds phrases across punctuation and returns word ranges', () => {

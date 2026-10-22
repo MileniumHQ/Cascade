@@ -178,7 +178,7 @@ export const visualPropertiesPlugin = definePlugin({
         name: 'Shadow',
         description: 'Drop shadow that follows the shape (including text and transparency)',
         icon: 'sun-dim',
-        category: 'Effects',
+        category: 'Stylize',
         keywords: ['drop shadow', 'glow'],
         appliesTo: visualOnly,
         stackable: true,
@@ -193,20 +193,6 @@ export const visualPropertiesPlugin = definePlugin({
         }
       },
       {
-        id: 'skew',
-        name: 'Skew',
-        description: 'Slant the clip horizontally or vertically',
-        icon: 'italic',
-        category: 'Transform',
-        keywords: ['shear', 'slant'],
-        appliesTo: visualOnly,
-        params: [
-          { id: 'x', label: 'Skew X', type: 'angle', unit: 'deg', default: 0 },
-          { id: 'y', label: 'Skew Y', type: 'angle', unit: 'deg', default: 0 }
-        ],
-        apply: (v) => ({ transform: [`skew(${r(n(v.x), 3)}deg, ${r(n(v.y), 3)}deg)`] })
-      },
-      {
         id: 'flip',
         name: 'Flip',
         description: 'Mirror horizontally or vertically',
@@ -219,6 +205,20 @@ export const visualPropertiesPlugin = definePlugin({
           { id: 'v', label: 'Vertical', type: 'toggle', default: false }
         ],
         apply: (v) => ({ transform: [`scale(${v.h ? -1 : 1}, ${v.v ? -1 : 1})`] })
+      },
+      {
+        id: 'skew',
+        name: 'Skew',
+        description: 'Slant the clip horizontally or vertically',
+        icon: 'italic',
+        category: 'Transform',
+        keywords: ['shear', 'slant'],
+        appliesTo: visualOnly,
+        params: [
+          { id: 'x', label: 'Skew X', type: 'angle', unit: 'deg', default: 0 },
+          { id: 'y', label: 'Skew Y', type: 'angle', unit: 'deg', default: 0 }
+        ],
+        apply: (v) => ({ transform: [`skew(${r(n(v.x), 3)}deg, ${r(n(v.y), 3)}deg)`] })
       },
       {
         id: 'perspective',
@@ -236,6 +236,7 @@ export const visualPropertiesPlugin = definePlugin({
         apply: (v, { u }) => ({ transform: [`perspective(${u.len(n(v.distance))}) rotateX(${r(n(v.rx), 3)}deg) rotateY(${r(n(v.ry), 3)}deg)`] })
       }
     ]
-    for (const p of props) ctx.properties.register(p)
+    // Registry order is priority, then id: keep the menu in list order.
+    props.forEach((p, i) => ctx.properties.register({ priority: 500 + i, ...p }))
   }
 })

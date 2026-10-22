@@ -31,8 +31,9 @@ export function createSession(app: CascadeApp) {
     const p = await defaultPath(name)
     let target = p
     for (let i = 2; await host.fs.exists(target); i++) target = p.replace(/\.cascade$/, ` ${i}.cascade`)
+    // The file is written on the first edit (autosave) or an explicit save, so an untouched new project leaves nothing behind.
     setPath(target)
-    await save()
+    host.window.setTitle(`${project.name} — Cascade`)
     setScreen('editor')
   }
 

@@ -45,9 +45,9 @@ test('source transcript: positional m1:w#/m1:s# ids in source time, with word en
   const { app, ids, analyses } = await editor()
   const index = buildSourceIndex('src', analyses.get(PATH))
   const out = formatTranscript(index, { legend: SOURCE_LEGEND, fps: app.fps(), view: 'words', maxLines: 100, wordId: w => `m1:w${index.wordNo.get(w)}`, sentenceId: s => `m1:s${index.sentenceNo.get(s)}`, clipLabel: () => '', trackLabel: () => '' })
-  expect(out).toContain('m1:s2 00:01:43.06–00:01:44.03 m1:w5–m1:w6')
-  expect(out).toContain('m1:w5 00:01:43.06–00:01:43.18 Really')
-  expect(out).toContain('✂ 00:01:42.15')
+  expect(out).toContain('m1:s2 00:01:43.200–00:01:44.100 m1:w5–m1:w6')
+  expect(out).toContain('m1:w5 00:01:43.200–00:01:43.600 Really')
+  expect(out).toContain('✂ 00:01:42.500')
   expect(ids.resolve('m1')).toBe('src')
 })
 
@@ -117,6 +117,6 @@ test('wiggle and add_keyframes write keyframes; fonts must be installed; source 
   expect(text.properties.find(p => p.type === 'opacity')!.params.opacity.keyframes).toHaveLength(2)
   const fontParam = app.registries.properties.get('text')!.params.find(p => p.type === 'font')!
   expect(() => applyEdits(app, { ops: [{ op: 'set_param', clipId: text.id, propertyId: 'text', paramId: fontParam.id, value: 'Comic Sans MS' }] }, ids, analyses, { fonts: ['Inter', 'Comic Neue'] })).toThrow(/not installed; similar: Comic Neue/)
-  expect(() => applyEdits(app, { ops: [{ op: 'split', clipId: text.id, time: 'm1:w2' }] }, ids, analyses)).toThrow(/Expected flicks or an anchor/)
+  expect(() => applyEdits(app, { ops: [{ op: 'split', clipId: text.id, time: 'm1:w2' }] }, ids, analyses)).toThrow(/or an anchor like w12/)
   expect(clip(app, text.id).duration).toBe(S(2))
 })

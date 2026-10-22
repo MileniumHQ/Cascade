@@ -46,8 +46,10 @@ export type AgentAttachment =
   | { kind: 'file'; name: string; path: string }
 
 export interface StartOptions {
-  /** Defaults to the projects folder. */
+  /** Working directory to reuse (a resumed chat's). Defaults to the project's workspace. */
   cwd?: string
+  /** Open project id: new chats work in `<userData>/workspaces/<id>`, one folder per project. */
+  project?: string
   /** Agent session id to reload (ACP session/load) when the agent supports it. */
   resume?: string
 }

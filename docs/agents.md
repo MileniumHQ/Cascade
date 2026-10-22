@@ -26,14 +26,14 @@ The gauge chip in the composer shows usage for the current chat's agent (`agents
 ## Architecture
 - `src/main/agents/index.ts`: `createAgentHost` runs one agent subprocess per chat and talks ndjson ACP over its stdio. It does `initialize`, then `session/new` with `{type:'http', name:'cascade', url, Authorization}` when the agent supports http MCP. It relays `session/update`, permission requests, config options and process exit to the renderer (`agents:*` IPC; types in `src/shared/agents.ts`).
 - `src/plugins/builtin/panels/agent/`: the panel plugin. `state.ts` is a Solid store that folds updates into entries; `Agent.tsx` holds the thread, composer, model picker and approval banner, laid out after T3 Code.
-- The first prompt is prefixed with a short context preamble (`CONTEXT`) that names the Cascade tools.
+- The panel's instructions (`CONTEXT` in `src/main/agents/index.ts`) go in as an ACP `systemPrompt` (append) when the agent advertises `sessionCapabilities.systemPrompt` (Claude does), otherwise as a preamble on the first prompt. They tell the agent it's a sidebar in a full editor, and to check once, briefly, before taking over creative direction wholesale ("edit this whole video"), offering seeds instead of a canned reply; mechanical asks skip that. Panel-only: the MCP server's instructions stay neutral for outside clients.
 - Model, effort, mode and other options are the agent's own ACP `configOptions`. The last value picked for each agent is remembered in localStorage and re-applied to new chats.
 
 ## Approvals
 - Off by default: the panel answers each permission request with the agent's allow option. Cascade edits are undoable.
 - **… → Ask before actions** turns approvals on. Each request then shows as a banner with the agent's own options.
 - With approvals on, Claude still runs Cascade's read-only MCP tools without asking (`readOnlyHint` in `src/main/mcp/catalog.ts`, passed as `_meta.claudeCode.options.allowedTools`).
-- The agent cwd is the Cascade projects dir. Cascade advertises no ACP fs or terminal capability, so agents use their own sandboxing.
+- A new chat's cwd is the open project's own folder, `<userData>/workspaces/<project id>` (`scratch` without a project), so agents' notes and scripts don't mix between projects or land in Cascade Projects. Resumed chats keep the cwd they started in. Cascade advertises no ACP fs or terminal capability, so agents use their own sandboxing.
 
 ## Composer
 - **Queue:** Enter while the agent works queues the message, and the queue sends in order when the turn ends. After Stop or an error the queue pauses; each item has Send now and Remove.

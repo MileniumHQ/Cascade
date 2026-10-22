@@ -211,6 +211,16 @@ export class Editing {
     return clips.map((c) => c.clip.id)
   }
 
+  /** Place clips on an existing track in one undo step, overwriting what they cover; `replace` first empties that range of the track. */
+  placeClips(trackId: Id, clips: Clip[], opts: { label?: string; replace?: [Flicks, Flicks] } = {}) {
+    this.doc.transact(opts.label ?? 'Place clips', (d) => {
+      const track = this.tl(d).tracks.find((t) => t.id === trackId)
+      if (!track) return
+      if (opts.replace) ops.clearRange(track as Track, opts.replace[0], opts.replace[1], new Set())
+      for (const c of clips) ops.placeClip(track as Track, structuredClone(c))
+    })
+  }
+
   /** Insert an arbitrary clip object (used by MCP / plugins). */
   insertClip(clip: Partial<Clip> & { type: string }, trackId?: Id): Id | null {
     const mt = this.app.registries.mediaTypes.get(clip.type)

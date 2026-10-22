@@ -20,7 +20,7 @@ export default async ({ win, shot, sleep }) => {
     if (!allowError) assert(!result.isError, `${name}: ${summary}`)
     return result
   }
-  const listed = await client.listTools(); assert.equal(listed.tools.length, 32)
+  const listed = await client.listTools(); assert.equal(listed.tools.length, 39)
   output.push(`tools=${listed.tools.length}`)
   await call('project_get', {}, true)
   await call('project_new', { name: 'MCP integration' })
@@ -42,8 +42,8 @@ export default async ({ win, shot, sleep }) => {
   const unchanged = await win.evaluate(() => JSON.stringify(window.cascadeApp.project()))
   const invalid = await call('timeline_apply_edits', { ops: [{ op: 'add_text', text: 'Must roll back', start: 0, duration: F }, { op: 'delete', clipId: 'does-not-exist' }] }, true)
   assert(invalid.isError); assert.equal(await win.evaluate(() => JSON.stringify(window.cascadeApp.project())), unchanged)
-  await call('history_get')
-  const raw = await call('media_contact_sheet', { mediaId, start: 600 * F, end: 615 * F, count: 6, columns: 3 })
+  await call('history_list')
+  const raw = await call('contact_sheet', { mediaId, start: 600 * F, end: 615 * F, count: 6, columns: 3 })
   await writeFile('/tmp/cascade-mcp-source-sheet.jpg', Buffer.from(raw.content.find(c => c.type === 'image').data, 'base64'))
   const rendered = await call('contact_sheet', { start: 0, end: 13 * F, count: 6 }, true)
   if (rendered.isError) {
@@ -70,8 +70,8 @@ export default async ({ win, shot, sleep }) => {
   assert(badPlugin.isError); await call('plugin_remove', { name: 'bad-plugin' })
   await win.evaluate(() => { window.cascadeApp.playback.seek(705600000 * 3); window.cascadeApp.view.pxPerSecond.set(60) })
   await sleep(1500); await shot('agent-edit')
-  await call('timeline_undo'); assert.equal(await win.evaluate(() => window.cascadeApp.duration()), 0)
-  await call('timeline_redo'); assert.equal(await win.evaluate(() => window.cascadeApp.duration()), 13 * F)
+  await call('history_undo'); assert.equal(await win.evaluate(() => window.cascadeApp.duration()), 0)
+  await call('history_redo'); assert.equal(await win.evaluate(() => window.cascadeApp.duration()), 13 * F)
   for (const [headers, status] of [[{}, 401], [{ Authorization: 'Bearer incorrect' }, 401], [{ Authorization: `Bearer ${info.mcp.token}`, Origin: 'https://evil.example' }, 403]]) assert.equal((await fetch(info.mcp.url, { method: 'POST', headers })).status, status)
   await win.evaluate(async () => { const app = window.cascadeApp; app.settings.set('mcp.enabled', false); await app.host.settings.save(app.settings.values.get()) })
   assert.equal((await fetch(info.mcp.url, { method: 'POST', headers: { Authorization: `Bearer ${info.mcp.token}` } })).status, 503)
@@ -79,7 +79,7 @@ export default async ({ win, shot, sleep }) => {
   const stdio = new Client({ name: 'stdio-e2e', version: '1' })
   const env = { ...process.env, CASCADE_USER_DATA: info.paths.userData }; delete env.ELECTRON_RUN_AS_NODE
   await stdio.connect(new StdioClientTransport({ command: resolve('node_modules/electron/dist/electron'), args: ['.', '--no-sandbox', '--mcp-stdio'], env, stderr: 'pipe' }))
-  assert.equal((await stdio.listTools()).tools.length, 32)
+  assert.equal((await stdio.listTools()).tools.length, 39)
   const stdioRegistry = await stdio.callTool({ name: 'registry_list', arguments: {} }); assert(!stdioRegistry.isError)
   await stdio.close(); output.push('PASS: stdio proxy SDK tools/list + registry_list; auth 401/403; settings disable 503; undo/redo; atomic rollback; plugin build errors and reload')
   await call('project_save')

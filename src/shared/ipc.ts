@@ -24,6 +24,8 @@ export interface Transcript {
   silences?: { start: Flicks; end: Flicks }[]
   path: string
   model: string
+  /** Word timing source: 'qwen3-forced-aligner-0.6b-q8', or 'whisper-dtw' when the aligner is unavailable or failed. */
+  timing?: string
   language: string
   segments: TranscriptSegment[]
 }

@@ -25,8 +25,9 @@ Whisper jobs. An inference call may finish its current native operation before w
 
 ## Outputs and precision
 
-- **Speech:** existing whisper.cpp Large v3 Turbo Q8 + Silero VAD + DTW, including its bounded
-  alignment/GPU fallback. A filler-rich initial prompt requests verbatim words, with a separate
+- **Speech:** existing whisper.cpp Large v3 Turbo Q8 + Silero VAD for the words; word start/end
+  times from Qwen3-ForcedAligner (80 ms classes, ~30 ms typical error), falling back to whisper's
+  DTW timing per chunk (see [captions.md](captions.md#word-timing-qwen3-forcedaligner)). A filler-rich initial prompt requests verbatim words, with a separate
   transcript cache key. Prompting cannot guarantee preservation of disfluencies. Filled pauses
   (`um`, `uh`, `erm`, `er`, `hmm`, `mm`, `ah`, including elongated variants) receive `filler: true`;
   discourse markers such as “like” stay unflagged. Token confidence is the minimum per word.
@@ -98,7 +99,7 @@ No upstream Python training implementation is included.
 
 | Part | Download | Archive bytes | Installed required bytes |
 | --- | --- | ---: | ---: |
-| Speech | Existing Whisper Large v3 Turbo Q8 + Silero v6.2 | See `src/main/transcribe.ts` | 874,188,075 + 885,098 |
+| Speech | Existing Whisper Large v3 Turbo Q8 + Silero v6.2 + Qwen3-ForcedAligner 0.6B Q8 | See `src/main/transcribe.ts` | 874,188,075 + 885,098 + 985,594,624 |
 | Events | [CED-Mini 2024-04-19 release](https://github.com/k2-fsa/sherpa-onnx/releases/tag/audio-tagging-models) | 47,658,399 | 10,451,715 ONNX + 14,675 labels |
 
 Prosody needs no model. The CED archive includes an unused float model and test WAVs; installation extracts only the

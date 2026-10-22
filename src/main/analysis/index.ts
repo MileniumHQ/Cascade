@@ -232,7 +232,7 @@ export function createAnalysisService(userData: string, resourcesPath = process.
             result.speechDb = applyLoudness(words, energy)
           })
           result.words = words; result.sentences = sentences(words); result.language = transcript.language
-          result.models.speech = `${transcript.model}; verbatim-prompt-v1`
+          result.models.speech = `${transcript.model}; timing ${transcript.timing ?? 'whisper-dtw'}; verbatim-prompt-v1`
         },
         events: async () => {
           const model = MODELS.find(m => m.part === 'events')!
