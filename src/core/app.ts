@@ -1,4 +1,4 @@
-import { createProject, timelineDuration, type Id, type Project, type Timeline } from '@shared/project'
+import { createProject, timelineDuration, type Id, type Project, type Timeline, type TrackKind } from '@shared/project'
 import type { HostBridge } from '@shared/ipc'
 import { FLICKS, frameToFlicks, flicksToFrame, snapToFrame, type Flicks } from '@shared/time'
 import { DocumentStore } from './document'
@@ -157,6 +157,8 @@ export class SelectionService {
   readonly media = new Value<Id[]>([], shallowArrayEqual)
   /** The track that receives pasted/inserted clips. */
   readonly track = new Value<Id | null>(null)
+  /** Target track per kind for source edits (insert/overwrite/append); absent = the first unlocked track of that kind. */
+  readonly targets = new Value<Partial<Record<TrackKind, Id>>>({})
   /** Property instance focused in the inspector (keyframe panel highlights it). */
   readonly property = new Value<Id | null>(null)
 
