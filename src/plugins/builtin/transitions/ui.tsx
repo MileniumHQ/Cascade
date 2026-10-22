@@ -1,14 +1,16 @@
 import { createMemo, For, onCleanup, Show } from 'solid-js'
+import type { PopupMenuItem, TimelineDecorationContext } from '@core/plugin-api'
 import type { CascadeAPI } from '@core/app'
 import { findTransition, nearestTransitionEdge, transitionWindow } from '@core/transitions'
 import { clipEnd, type Clip, type Id, type Track, type TransitionInstance } from '@shared/project'
 import { FLICKS, frameDuration, snapToFrame, type Flicks } from '@shared/time'
 import { useRegistry, useValue } from '@ui/reactive'
-import { openContextMenu, type MenuItem } from '@ui/kit'
+import { openContextMenu } from '@ui/kit'
+import { useSub } from '../solid'
 import './transitions.css'
 
 /** Registry-driven submenu used both on cuts and the clip context menu. */
-export function transitionMenu(app: CascadeAPI, track: Track, time: Flicks): MenuItem | null {
+export function transitionMenu(app: CascadeAPI, track: Track, time: Flicks): PopupMenuItem | null {
   const edge = nearestTransitionEdge(track, time)
   if (!edge) return null
   const types = app.registries.transitions.all().filter(t => t.kinds.includes(track.kind) && (edge.from && edge.to || t.singleSided !== false))
@@ -18,8 +20,19 @@ export function transitionMenu(app: CascadeAPI, track: Track, time: Flicks): Men
   } })) }
 }
 
-export function Transitions(props: { app: CascadeAPI; track: Track; x: (t: Flicks) => number; width: number; h: number }) {
-  const app = props.app, selected = useValue(app.selection.transitions), types = useRegistry(app.registries.transitions)
+/** Transition chips on a track lane plus the fade-in/out handles on its clips (a `timelineDecorations` track mount). */
+export function Transitions(deco: { ctx: TimelineDecorationContext }) {
+  const app = deco.ctx.app
+  const view = useSub(deco.ctx.subscribe, () => ({ track: deco.ctx.track()!, width: deco.ctx.width(), h: deco.ctx.height() }))
+  // Reading view() makes every use below re-run on zoom, scroll, resize and edits.
+  const props = {
+    get app() { return app },
+    get track() { return view().track },
+    get width() { return view().width },
+    get h() { return view().h },
+    x: (t: Flicks) => (view(), deco.ctx.x(t))
+  }
+  const selected = useValue(app.selection.transitions), types = useRegistry(app.registries.transitions)
   let cleanup: (() => void) | undefined
   onCleanup(() => cleanup?.())
   const select = (id: Id) => { app.selection.setTransitions([id]); app.selection.track.set(props.track.id) }

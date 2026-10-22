@@ -34,6 +34,7 @@ import { mixerPlugin } from './panels/mixer'
 import { audioToolsPlugin } from './audio-tools'
 import { colorPlugin } from './color'
 import { transitionsPlugin } from './transitions'
+import { transitionsEditorPlugin } from './transitions/editor'
 import { masksPlugin } from './masks'
 import { sequencePlugin } from './sequence'
 import { timelinesPlugin } from './timelines'
@@ -64,6 +65,7 @@ export const builtinPlugins: PluginDefinition[] = [
   audioPropertiesPlugin,
   timePropertiesPlugin,
   transitionsPlugin,
+  transitionsEditorPlugin,
   sequencePlugin,
   timelinesPlugin,
   previewPlugin,

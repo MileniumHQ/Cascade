@@ -259,22 +259,10 @@ export function clipsInRange(track: Track, a: Flicks, b: Flicks): Clip[] {
   return out
 }
 
-/** Snap candidates: clip edges, playhead, markers. */
+/** Clip edges, zero and `extra`. Plugins add more through `snapTargets` (see snap.ts). */
 export function snapPoints(tl: Timeline, exclude: Set<Id>, extra: Flicks[] = []): Flicks[] {
   const pts = new Set<Flicks>([0, ...extra])
   for (const tr of tl.tracks) for (const c of tr.clips) if (!exclude.has(c.id)) pts.add(c.start).add(clipEnd(c))
-  for (const m of tl.markers) if (!exclude.has(m.id)) { pts.add(m.t); if (m.duration) pts.add(m.t + m.duration) }
-  for (const tr of tl.tracks) for (const c of tr.clips) if (!exclude.has(c.id)) for (const m of c.markers ?? []) {
-    if (exclude.has(m.id)) continue
-    const t = clipMarkerTimelineTime(c, resolveTimeMap(c), m)
-    if (t !== null) {
-      pts.add(t)
-      if (m.duration) {
-        const end = clipMarkerTimelineTime(c, resolveTimeMap(c), { ...m, t: m.t + m.duration })
-        if (end !== null) pts.add(end)
-      }
-    }
-  }
   return [...pts].sort((a, b) => a - b)
 }
 

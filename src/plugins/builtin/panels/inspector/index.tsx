@@ -13,7 +13,7 @@ import { ClipHeader } from './ClipHeader'
 import { MediaInfo } from './MediaInfo'
 import { PropertyCard } from './PropertyCard'
 import './inspector.css'
-import { TransitionInspector } from './TransitionInspector'
+import { ClipSections, SubjectSection, useSubjectSection } from './Sections'
 
 function MultiClip(props: { app: CascadeAPI }) {
   const app = props.app
@@ -149,6 +149,7 @@ function ClipInspector(props: { app: CascadeAPI; clipId: Id }) {
               </div>
             </Show>
           </div>
+          <ClipSections app={app} clipId={clipId} />
           <div class="ins-foot">
             <AddPropertyAnchor app={app} clipId={() => clipId}>
               {(a) => (
@@ -221,7 +222,7 @@ function Inspector(props: { ctx: PanelContext }) {
   const app = props.ctx.app
   const { clips, group, focused, setPick } = useFocus(app)
   const media = useValue(app.selection.media)
-  const transitions = useValue(app.selection.transitions)
+  const section = useSubjectSection(app)
   return (
     <div class="ins">
       <Switch>
@@ -238,7 +239,7 @@ function Inspector(props: { ctx: PanelContext }) {
         <Match when={clips().length > 1}>
           <MultiClip app={app} />
         </Match>
-        <Match when={transitions()[0]} keyed>{id => <TransitionInspector app={app} id={id} />}</Match>
+        <Match when={section()} keyed>{(s) => <SubjectSection app={app} section={s} />}</Match>
         <Match when={media().length > 0}>
           <MediaInfo app={app} />
         </Match>

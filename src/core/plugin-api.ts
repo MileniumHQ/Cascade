@@ -22,6 +22,8 @@ import type { FFmpegExportPlan } from '@shared/ipc'
 import type { Flicks, FrameRate } from '@shared/time'
 import type { CascadeAPI } from './app'
 import type { TimeMap } from './time-remap'
+import type { InspectorSectionContribution, SnapTargetContribution, SourceItemDecorationContribution, SourceSectionContribution, TimelineDecorationContribution, TimelineDropContribution, TimelineMenuContribution } from './ui-contributions'
+export * from './ui-contributions'
 
 export type Cleanup = () => void
 /** Mount a UI into `el`; return cleanup. */
@@ -72,6 +74,20 @@ export interface PluginContext {
   readonly exportPresets: Registrar<ExportPresetContribution>
   readonly presets: Registrar<PresetContribution>
   readonly timelineTools: Registrar<TimelineToolContribution>
+  /** Mount UI on the timeline ruler, track lanes or clip bodies (markers, transition handles…). Editor only. */
+  readonly timelineDecorations: Registrar<TimelineDecorationContribution>
+  /** Extra snap points for timeline drags (markers, beat grids…). */
+  readonly snapTargets: Registrar<SnapTargetContribution>
+  /** Handle drags dropped onto the timeline (dragging a sequence from Sources…). Editor only. */
+  readonly timelineDrops: Registrar<TimelineDropContribution>
+  /** Items added to the timeline's clip / lane context menus (Add transition…). Editor only. */
+  readonly timelineMenus: Registrar<TimelineMenuContribution>
+  /** Inspector views for a selection kind (transition, marker…) or extra sections under a clip. Editor only. */
+  readonly inspectorSections: Registrar<InspectorSectionContribution>
+  /** Extra blocks in the Sources panel. Editor only. */
+  readonly sourceSections: Registrar<SourceSectionContribution>
+  /** Badges / bars on Sources panel media items. Editor only. */
+  readonly sourceItemDecorations: Registrar<SourceItemDecorationContribution>
   /** Register any disposable to be cleaned up when the plugin unloads (hot reload!). */
   track<T extends Disposable>(d: T): T
   log(...args: unknown[]): void

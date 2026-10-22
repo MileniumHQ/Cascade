@@ -6,7 +6,7 @@ import { Icon } from '@ui/icon'
 import { IconButton, openMenu, Toggle, type Anchor } from '@ui/kit'
 import { useRegistry, useValue } from '@ui/reactive'
 import { instanceOf, makePropertyContext, subscribeEditing } from './context'
-import { MountHost } from './MountHost'
+import { MountHost } from '@ui/mount-host'
 import { ParamRow } from './ParamRow'
 import { isCollapsed, setCardCollapsed } from './state'
 

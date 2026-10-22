@@ -30,6 +30,7 @@ import { MediaStatusService } from './media-status'
 import { MeterService } from './meters'
 import { ClipboardService, type ClipboardFormatContribution } from './clipboard'
 import type { MarkerKindContribution } from './plugin-api'
+import type { InspectorSectionContribution, SnapTargetContribution, SourceItemDecorationContribution, SourceSectionContribution, TimelineDecorationContribution, TimelineDropContribution, TimelineMenuContribution } from './ui-contributions'
 
 export interface Registries {
   markerKinds: Registry<MarkerKindContribution>
@@ -51,6 +52,13 @@ export interface Registries {
   exportPresets: Registry<ExportPresetContribution>
   presets: Registry<PresetContribution>
   timelineTools: Registry<TimelineToolContribution>
+  timelineDecorations: Registry<TimelineDecorationContribution>
+  snapTargets: Registry<SnapTargetContribution>
+  timelineDrops: Registry<TimelineDropContribution>
+  timelineMenus: Registry<TimelineMenuContribution>
+  inspectorSections: Registry<InspectorSectionContribution>
+  sourceSections: Registry<SourceSectionContribution>
+  sourceItemDecorations: Registry<SourceItemDecorationContribution>
 }
 
 export const createRegistries = (): Registries => ({
@@ -72,7 +80,14 @@ export const createRegistries = (): Registries => ({
   generators: new Registry('generators'),
   exportPresets: new Registry('exportPresets'),
   presets: new Registry('presets'),
-  timelineTools: new Registry('timelineTools')
+  timelineTools: new Registry('timelineTools'),
+  timelineDecorations: new Registry('timelineDecorations'),
+  snapTargets: new Registry('snapTargets'),
+  timelineDrops: new Registry('timelineDrops'),
+  timelineMenus: new Registry('timelineMenus'),
+  inspectorSections: new Registry('inspectorSections'),
+  sourceSections: new Registry('sourceSections'),
+  sourceItemDecorations: new Registry('sourceItemDecorations')
 })
 
 // ───────────────────────────── services ─────────────────────────────
