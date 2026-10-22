@@ -22,6 +22,8 @@ import type { FFmpegExportPlan } from '@shared/ipc'
 import type { Flicks, FrameRate } from '@shared/time'
 import type { CascadeAPI } from './app'
 import type { TimeMap } from './time-remap'
+import type { InspectorSectionContribution, SnapTargetContribution, SourceItemDecorationContribution, SourceSectionContribution, TimelineDecorationContribution, TimelineDropContribution, TimelineMenuContribution } from './ui-contributions'
+export * from './ui-contributions'
 
 export type Cleanup = () => void
 /** Mount a UI into `el`; return cleanup. */
@@ -72,6 +74,20 @@ export interface PluginContext {
   readonly exportPresets: Registrar<ExportPresetContribution>
   readonly presets: Registrar<PresetContribution>
   readonly timelineTools: Registrar<TimelineToolContribution>
+  /** Mount UI on the timeline ruler, track lanes or clip bodies (markers, transition handles…). Editor only. */
+  readonly timelineDecorations: Registrar<TimelineDecorationContribution>
+  /** Extra snap points for timeline drags (markers, beat grids…). */
+  readonly snapTargets: Registrar<SnapTargetContribution>
+  /** Handle drags dropped onto the timeline (dragging a sequence from Sources…). Editor only. */
+  readonly timelineDrops: Registrar<TimelineDropContribution>
+  /** Items added to the timeline's clip / lane context menus (Add transition…). Editor only. */
+  readonly timelineMenus: Registrar<TimelineMenuContribution>
+  /** Inspector views for a selection kind (transition, marker…) or extra sections under a clip. Editor only. */
+  readonly inspectorSections: Registrar<InspectorSectionContribution>
+  /** Extra blocks in the Sources panel. Editor only. */
+  readonly sourceSections: Registrar<SourceSectionContribution>
+  /** Badges / bars on Sources panel media items. Editor only. */
+  readonly sourceItemDecorations: Registrar<SourceItemDecorationContribution>
   /** Register any disposable to be cleaned up when the plugin unloads (hot reload!). */
   track<T extends Disposable>(d: T): T
   log(...args: unknown[]): void
@@ -334,6 +350,11 @@ export interface ParamTypeContribution<T = any> extends Contribution {
   format?(v: T, def: ParamDef): string
   /** Numeric channels for the graph editor (e.g. vec2 → 2). */
   channels?(v: T): number[]
+  /**
+   * Id of the preview overlay that edits params of this type directly (e.g. `path-editor`). The
+   * overlay finds its targets by this capability and the focused param in `app.selection.param`.
+   */
+  directEdit?: string
 }
 
 export interface EasingContribution extends Contribution {
@@ -557,6 +578,8 @@ export interface PanelContribution extends Contribution {
   /**
    * Panels of one region that share a `group` share a single slot and show as tabs (e.g. the
    * timeline Preview and a Source monitor use the same viewer space). The first one listed is the default tab.
+   * The bottom and side regions already present every panel as a tab / switch button in one slot, so a
+   * `group` there changes nothing visible; `LayoutService.reveal` still focuses the panel in every region.
    */
   group?: string
   mount: Mount<PanelContext>
@@ -578,6 +601,18 @@ export interface OverlayContext {
   clipElement(clipId: Id): HTMLElement | null
   /** Called every rendered frame and on resize. */
   onFrame(fn: () => void): Cleanup
+  /** The clip's corners (TL, TR, BR, BL) in overlay-local px, honoring its full CSS transform; null while it isn't rendered. */
+  clipCorners(clipId: Id): { x: number; y: number }[] | null
+  /**
+   * Input ownership: an overlay that edits something directly (path handles, a crop box…) calls this
+   * while it is active, and returns the release function. Overlays that would fight for the same
+   * pointer / keys (the transform gizmo) check `inputClaimedByOther()` and hide while it is true.
+   */
+  claimInput(): Cleanup
+  /** True while another overlay holds a claim (this overlay's own claims don't count). */
+  inputClaimedByOther(): boolean
+  /** Fires when any overlay claims or releases input. */
+  onInputClaims(fn: () => void): Cleanup
 }
 
 export interface OverlayContribution extends Contribution {

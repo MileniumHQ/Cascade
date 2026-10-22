@@ -3,7 +3,8 @@ import { clipEnd, findClip } from '@shared/project'
 import { frameDuration } from '@shared/time'
 import { solidMount } from '../solid'
 import { chapterText, markerCsv } from './data'
-import { closeMarkerEditors, MarkersPanel, openMarkerEditor } from './ui'
+import { closeMarkerEditors, MarkerDecoration, MarkersPanel, openMarkerEditor } from './ui'
+import { markerSnapTarget } from './snap'
 import { registerMarkerClipboard, timelineMarkerEntries as entries } from './clipboard'
 export const markersPlugin = definePlugin({
   id:'builtin.markers',name:'Markers',
@@ -11,6 +12,8 @@ export const markersPlugin = definePlugin({
     for (const [id,name,color] of [['marker','Marker','#ffffff'],['chapter','Chapter','#82cbff'],['todo','To do','#f2c14e']]) ctx.markerKinds.register({id,name,color,icon:'bookmark'})
     ctx.settings.register({id:'timeline.rippleMarkers',label:'Ripple markers',description:'Shift timeline markers when inserting or removing time.',section:'Timeline',type:'toggle',default:true})
     ctx.panels.register({id:'markers',title:'Markers',icon:'bookmark',region:'bottom',order:4,mount:solidMount(MarkersPanel)})
+    ctx.snapTargets.register(markerSnapTarget)
+    for (const target of ['ruler','clip'] as const) ctx.timelineDecorations.register({id:`markers.${target}`,target,order:20,mount:solidMount(MarkerDecoration)})
     ctx.track({dispose:()=>closeMarkerEditors(ctx.app)})
     const copyText=async(app:typeof ctx.app,text:string)=>{
       try {await navigator.clipboard.writeText(text);app.notify('success','Copied to clipboard')}

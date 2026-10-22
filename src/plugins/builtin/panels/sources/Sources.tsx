@@ -4,8 +4,9 @@ import { clipEnd, findClip, type Id, type Project, type Timeline } from '@shared
 import { Icon } from '@ui/icon'
 import { Button, IconButton, openContextMenu, openMenu, Segmented, type MenuItem } from '@ui/kit'
 import { useProject, useRegistry, useValue } from '@ui/reactive'
-import { TimelineSources } from '../../sequence/TimelineSources'
-import { MediaCard, setDragImage, type PanelApi } from './Item'
+import { SourceSections } from './SourceSections'
+import { setDragImage } from '@ui/drag-image'
+import { MediaCard, type PanelApi } from './Item'
 import { Breadcrumb, dropTarget, FolderRow, type FolderApi } from './Folder'
 import { deleteBinFolder, moveBinFolder, moveMediaToFolder, newFolder, renameBinFolder } from './bin'
 import { BIN_KEY, childFolders, folderById, folderOf, mediaIn, pathTo, readBin } from './folders'
@@ -545,7 +546,7 @@ export function Sources(props: { ctx: PanelContext }) {
           </Show>
         </section>
 
-        <TimelineSources app={app} />
+        <SourceSections app={app} />
         <section class="sc-section sc-section-media">
           <div class="sc-section-head sc-static">
             <span>Media</span>

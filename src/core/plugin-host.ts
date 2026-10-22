@@ -4,7 +4,7 @@ import type { PluginContext, PluginDefinition, Registrar } from './plugin-api'
 import { Emitter } from './events'
 
 /** Registries that only make sense with a UI; in the render env, registering is a no-op. */
-const EDITOR_ONLY: (keyof Registries)[] = ['panels', 'overlays', 'keybindings', 'menus', 'statusItems', 'timelineTools']
+const EDITOR_ONLY: (keyof Registries)[] = ['panels', 'overlays', 'keybindings', 'menus', 'statusItems', 'timelineTools', 'timelineDecorations', 'timelineDrops', 'timelineMenus', 'inspectorSections', 'sourceSections', 'sourceItemDecorations']
 
 export interface LoadedPlugin {
   def: PluginDefinition
@@ -62,6 +62,13 @@ export class PluginHost {
       exportPresets: reg('exportPresets'),
       presets: reg('presets'),
       timelineTools: reg('timelineTools'),
+      timelineDecorations: reg('timelineDecorations'),
+      snapTargets: reg('snapTargets'),
+      timelineDrops: reg('timelineDrops'),
+      timelineMenus: reg('timelineMenus'),
+      inspectorSections: reg('inspectorSections'),
+      sourceSections: reg('sourceSections'),
+      sourceItemDecorations: reg('sourceItemDecorations'),
       track: (d) => store.add(d),
       log: (...args) => console.log(`[${def.id}]`, ...args)
     }

@@ -2,10 +2,12 @@ import type { CascadeAPI } from '@core/app'
 import type { Id, MediaItem, Project } from '@shared/project'
 import type { Flicks } from '@shared/time'
 import type { Disposable } from '@core/disposable'
-import type { OverlayContext } from '@core/plugin-api'
+import type { OverlayContext, Viewer, ViewerFeed } from '@core/plugin-api'
 import { Emitter } from '@core/events'
 import { Value } from '@core/value'
 import { Stage } from '@stage/stage'
+import { corners } from './overlays'
+import { InputClaims } from '@core/input-claims'
 
 const QUALITY_STEPS = [1, 0.75, 0.5, 0.375, 0.25]
 
@@ -25,18 +27,8 @@ function fontCss(): string {
   return out.join('\n') + '\n' + out.filter((r) => r.includes('Inter Variable')).map((r) => r.replace(/'Inter Variable'|"Inter Variable"/, "'Inter'")).join('\n')
 }
 
-/** What an engine shows and how it is driven: the editor timeline by default, or any other project (the source monitor). */
-export interface EngineFeed {
-  project(): Project
-  timelineId(): Id
-  time: Value<Flicks>
-  playing: Value<boolean>
-  rate: Value<number>
-  /** Fires when the project's content changes. */
-  onChange(fn: () => void): Disposable
-  /** The editor's own preview: its audio feeds the app's meters and its frame rate the playback stats. */
-  primary: boolean
-}
+/** What an engine shows and how it is driven (the public contract is `ViewerFeed`). */
+export type EngineFeed = ViewerFeed
 
 const mainFeed = (app: CascadeAPI): EngineFeed => ({
   project: () => app.project(),
@@ -52,13 +44,15 @@ const mainFeed = (app: CascadeAPI): EngineFeed => ({
  * Drives the preview: an iframe holding a Stage, rendered at an adaptive internal resolution
  * ("bite off only what it can handle") and scaled up to the display size.
  */
-export class PreviewEngine {
+export class PreviewEngine implements Viewer {
   readonly iframe: HTMLIFrameElement
   stage: Stage | null = null
   audio: AudioContext | null = null
   private master: GainNode | null = null
   readonly quality = new Value(1)
   readonly onFrame = new Emitter<void>()
+  /** Overlay input claims (OverlayContext.claimInput). */
+  readonly claims = new InputClaims()
   private display = { width: 0, height: 0 }
   private raf = 0
   private disposers: (() => void)[] = []
@@ -200,6 +194,7 @@ export class PreviewEngine {
   /** Overlay context for a layer whose box equals the displayed frame. */
   overlayContext(layer: HTMLElement): OverlayContext {
     const engine = this
+    const claims = this.claims.forOverlay()
     return {
       app: this.app,
       frameRect: () => ({ x: 0, y: 0, width: layer.clientWidth, height: layer.clientHeight }),
@@ -214,7 +209,12 @@ export class PreviewEngine {
           d.dispose()
           ro.disconnect()
         }
-      }
+      },
+      clipCorners: (id) => {
+        const el = engine.stage?.clipElement(id)
+        return el ? corners(el, engine) : null
+      },
+      ...claims
     }
   }
 

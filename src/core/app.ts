@@ -30,6 +30,7 @@ import { MediaStatusService } from './media-status'
 import { MeterService } from './meters'
 import { ClipboardService, type ClipboardFormatContribution } from './clipboard'
 import type { MarkerKindContribution } from './plugin-api'
+import type { InspectorSectionContribution, SnapTargetContribution, SourceItemDecorationContribution, SourceSectionContribution, TimelineDecorationContribution, TimelineDropContribution, TimelineMenuContribution } from './ui-contributions'
 
 export interface Registries {
   markerKinds: Registry<MarkerKindContribution>
@@ -51,6 +52,13 @@ export interface Registries {
   exportPresets: Registry<ExportPresetContribution>
   presets: Registry<PresetContribution>
   timelineTools: Registry<TimelineToolContribution>
+  timelineDecorations: Registry<TimelineDecorationContribution>
+  snapTargets: Registry<SnapTargetContribution>
+  timelineDrops: Registry<TimelineDropContribution>
+  timelineMenus: Registry<TimelineMenuContribution>
+  inspectorSections: Registry<InspectorSectionContribution>
+  sourceSections: Registry<SourceSectionContribution>
+  sourceItemDecorations: Registry<SourceItemDecorationContribution>
 }
 
 export const createRegistries = (): Registries => ({
@@ -72,7 +80,14 @@ export const createRegistries = (): Registries => ({
   generators: new Registry('generators'),
   exportPresets: new Registry('exportPresets'),
   presets: new Registry('presets'),
-  timelineTools: new Registry('timelineTools')
+  timelineTools: new Registry('timelineTools'),
+  timelineDecorations: new Registry('timelineDecorations'),
+  snapTargets: new Registry('snapTargets'),
+  timelineDrops: new Registry('timelineDrops'),
+  timelineMenus: new Registry('timelineMenus'),
+  inspectorSections: new Registry('inspectorSections'),
+  sourceSections: new Registry('sourceSections'),
+  sourceItemDecorations: new Registry('sourceItemDecorations')
 })
 
 // ───────────────────────────── services ─────────────────────────────
@@ -181,6 +196,8 @@ export class SelectionService {
   readonly targets = new Value<Partial<Record<TrackKind, Id>>>({})
   /** Property instance focused in the inspector (keyframe panel highlights it). */
   readonly property = new Value<Id | null>(null)
+  /** Param of the focused property that a direct-editing overlay should target (see ParamTypeContribution.directEdit). */
+  readonly param = new Value<string | null>(null)
 
   constructor() {
     // Direct Value writes by existing panels/plugins obey the same selection exclusivity.
@@ -264,9 +281,11 @@ export class LayoutService {
   /** Panels request focus/visibility via this. */
   reveal(panelId: string) {
     const cfg = this.config.get()
-    if (cfg.bottom.includes(panelId)) this.activeBottom.set(panelId)
-    if (cfg.side.includes(panelId)) this.activeSide.set(panelId)
-    const group = this.panels().find((p) => p.id === panelId)?.group
+    const panel = this.panels().find(p => p.id === panelId)
+    const region = cfg.bottom.includes(panelId) ? 'bottom' : cfg.side.includes(panelId) ? 'side' : cfg.top.includes(panelId) ? 'top' : panel?.region
+    if (region === 'bottom') this.activeBottom.set(panelId)
+    if (region === 'side') this.activeSide.set(panelId)
+    const group = panel?.group
     if (group) this.activeTab.set({ ...this.activeTab.get(), [group]: panelId })
   }
 }

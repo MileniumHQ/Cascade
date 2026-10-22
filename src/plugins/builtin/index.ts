@@ -4,6 +4,7 @@ import type { PluginDefinition } from '@core/plugin-api'
 import { exportersPlugin } from './exporters'
 import { exportPresetsPlugin } from './export-presets'
 import { paramsPlugin } from './params'
+import { pathEditorPlugin } from './params/path-editor'
 import { easingsPlugin } from './easings'
 import { settingsPlugin } from './settings'
 import { commandsPlugin } from './commands'
@@ -34,6 +35,8 @@ import { mixerPlugin } from './panels/mixer'
 import { audioToolsPlugin } from './audio-tools'
 import { colorPlugin } from './color'
 import { transitionsPlugin } from './transitions'
+import { transitionsEditorPlugin } from './transitions/editor'
+import { sequenceEditorPlugin } from './sequence/editor'
 import { masksPlugin } from './masks'
 import { sequencePlugin } from './sequence'
 import { timelinesPlugin } from './timelines'
@@ -46,6 +49,7 @@ export const builtinPlugins: PluginDefinition[] = [
   exportersPlugin,
   exportPresetsPlugin,
   paramsPlugin,
+  pathEditorPlugin,
   easingsPlugin,
   settingsPlugin,
   commandsPlugin,
@@ -64,7 +68,9 @@ export const builtinPlugins: PluginDefinition[] = [
   audioPropertiesPlugin,
   timePropertiesPlugin,
   transitionsPlugin,
+  transitionsEditorPlugin,
   sequencePlugin,
+  sequenceEditorPlugin,
   timelinesPlugin,
   previewPlugin,
   sourcePlugin,

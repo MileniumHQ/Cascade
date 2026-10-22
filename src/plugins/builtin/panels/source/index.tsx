@@ -3,6 +3,7 @@ import type { PlaceMode } from '@core/three-point'
 import { definePlugin, type CommandContribution, type KeybindingContribution } from '@core/plugin-api'
 import { formatTimecode } from '@shared/time'
 import { solidMount } from '../../solid'
+import { marksDecoration } from './item-marks'
 import { markedRange, marksOf } from './marks'
 import { SourceMonitor } from './service'
 import { SourceMonitorView } from './SourceMonitor'
@@ -51,6 +52,8 @@ export const sourcePlugin = definePlugin({
     // Timeline playback shows the timeline: bring the Preview tab forward when it starts.
     ctx.track(ctx.app.playback.playing.subscribe((p) => p && ctx.app.layout.reveal('preview')))
     ctx.panels.register({ id: 'source', title: 'Source', icon: 'source-monitor', region: 'top', order: 1, group: 'viewer', mount: solidMount(SourceMonitorView) })
+
+    ctx.sourceItemDecorations.register(marksDecoration)
 
     const hasItem = (a: CascadeAPI) => !!sourceItem(a)
     const cmds: CommandContribution[] = [

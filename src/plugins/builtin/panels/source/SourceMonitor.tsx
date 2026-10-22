@@ -1,13 +1,12 @@
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from 'solid-js'
 import { Emitter } from '@core/events'
 import { SOURCE_RANGE_MIME } from '@core/three-point'
-import type { ClipBodyContext, PanelContext } from '@core/plugin-api'
+import { VIEWER_SERVICE, type ClipBodyContext, type PanelContext, type Viewer, type ViewerService } from '@core/plugin-api'
 import { FLICKS, formatTimecode, snapToFrame } from '@shared/time'
 import { Icon } from '@ui/icon'
 import { IconButton } from '@ui/kit'
 import { useEmitter, useProject, useValue } from '@ui/reactive'
-import { PreviewEngine } from '../preview/engine'
-import { setDragImage } from '../sources/Item'
+import { setDragImage } from '@ui/drag-image'
 import { markedRange } from './marks'
 import type { SourceMonitor } from './service'
 import './source.css'
@@ -33,7 +32,12 @@ export function SourceMonitorView(props: { ctx: PanelContext }) {
   const bodyChanges = new Emitter<void>()
 
   onMount(() => {
-    const engine = new PreviewEngine(app, stageHost, mon.feed())
+    const viewers = app.services.get(VIEWER_SERVICE) as ViewerService | undefined
+    if (!viewers) {
+      stageHost.textContent = 'No viewer available'
+      return
+    }
+    const engine: Viewer = viewers.create(stageHost, mon.feed())
     const layout = () => {
       const s = project().settings
       const scale = Math.min((viewport.clientWidth - 24) / s.width, (viewport.clientHeight - 24) / s.height)

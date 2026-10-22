@@ -1,5 +1,6 @@
 import type { Registries } from '@core/app'
-import type { PropertyOutput, TransitionApplyContext } from '@core/plugin-api'
+import { applyMasks } from './masks'
+import type { MaskLayer, PropertyOutput, TransitionApplyContext } from '@core/plugin-api'
 import { transitionWindow } from '@core/transitions'
 import { clipEnd } from '@shared/project'
 import type { Clip, Id, Track, TransitionInstance } from '@shared/project'
@@ -48,9 +49,10 @@ export function transitionGain(regs: Registries, track: Track, clip: Clip, t: Fl
   return gain
 }
 
+const contentLayers = new WeakMap<HTMLElement, HTMLElement>()
 const previous = new WeakMap<HTMLElement, Set<string>>()
 const outputStyle = (out: PropertyOutput, svgId: string): Record<string, string> => ({
-  ...out.contentStyle, ...out.style,
+  ...out.style,
   ...(out.transform ? { transform: out.transform.join(' ') } : {}),
   ...(out.filter || out.svgFilter ? { filter: [...(out.filter ?? []), ...(out.svgFilter ? [`url(#${svgId})`] : [])].join(' ') } : {}),
   ...(out.backdropFilter ? { 'backdrop-filter': out.backdropFilter.join(' ') } : {})
@@ -59,6 +61,8 @@ const outputStyle = (out: PropertyOutput, svgId: string): Record<string, string>
 /** Compose generic outputs on frame-sized parents, leaving each clip's own properties intact. */
 export function renderTransitionLayers(regs: Registries, track: Track, t: Flicks, layers: Map<Id, HTMLElement>, context: Omit<TransitionApplyContext, 'id' | 'from' | 'to' | 'duration' | 'elements'> & { scope?: string }): void {
   const styles = new Map<Id, Record<string, string>>()
+  const contents = new Map<Id, Record<string, string>>()
+  const masks = new Map<Id, MaskLayer[]>()
   const owners = new Set<string>()
   const svgs = new Map<Id, string[]>()
   for (const { tx, window: w } of resolvedTrack(regs, track).entries) {
@@ -72,6 +76,8 @@ export function renderTransitionLayers(regs: Registries, track: Track, t: Flicks
       })
       for (const [id, result, side] of [[tx.from, out?.from, 'from'], [tx.to, out?.to, 'to']] as const) {
         if (!id || !result || !layers.has(id)) continue
+        if (result.contentStyle) contents.set(id, { ...contents.get(id), ...result.contentStyle })
+        if (result.mask) masks.set(id, [...(masks.get(id) ?? []), ...result.mask])
         const svgId = `txf_${context.scope ? `${context.scope}_` : ''}${tx.id}_${side}`
         if (result.svgFilter) {
           const list = svgs.get(id) ?? []
@@ -93,6 +99,22 @@ export function renderTransitionLayers(regs: Registries, track: Track, t: Flicks
     for (const key of keys) if (!(key in next)) layer.style.removeProperty(key)
     for (const [key, value] of Object.entries(next)) layer.style.setProperty(key, value)
     previous.set(layer, new Set(Object.keys(next)))
+    applyMasks(layer, masks.get(id) ?? [], context.u.frame)
+    let content = contentLayers.get(layer)
+    if (!content && contents.has(id)) {
+      content = layer.ownerDocument.createElement('div')
+      content.className = 'cs-transition-content'
+      content.style.cssText = 'position:absolute;inset:0'
+      for (const child of Array.from(layer.children)) content.appendChild(child)
+      layer.appendChild(content)
+      contentLayers.set(layer, content)
+    }
+    if (content) {
+      const nextContent = contents.get(id) ?? {}
+      for (const key of previous.get(content) ?? []) if (!(key in nextContent)) content.style.removeProperty(key)
+      for (const [key, value] of Object.entries(nextContent)) content.style.setProperty(key, value)
+      previous.set(content, new Set(Object.keys(nextContent)))
+    }
     for (const el of layer.querySelectorAll<HTMLElement>('[data-cs-owner^="tx:"]')) if (!owners.has(el.dataset.csOwner!)) el.remove()
     let svg = layer.querySelector<SVGElement>(':scope > .cs-transition-defs')
     const markup = svgs.get(id)?.join('') ?? ''

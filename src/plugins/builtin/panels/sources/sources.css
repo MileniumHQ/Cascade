@@ -654,39 +654,6 @@ button.sc-section-head:hover {
   }
 }
 
-/* ───────── drag image ───────── */
-.sc-dragimg {
-  position: fixed;
-  left: -1000px;
-  top: -1000px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  max-width: 220px;
-  height: 28px;
-  padding: 0 11px 0 8px;
-  border-radius: 8px;
-  background: #1e1e22;
-  color: var(--text);
-  font: 600 11.5px var(--font);
-  box-shadow: 0 0 0 1px var(--line-3), 0 6px 18px rgba(0, 0, 0, 0.5);
-}
-.sc-dragimg-icon {
-  display: grid;
-  width: 14px;
-  height: 14px;
-  color: var(--tc);
-}
-.sc-dragimg-icon svg {
-  width: 14px;
-  height: 14px;
-}
-.sc-dragimg-label {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 /* ───────── bin folders ───────── */
 .sc-crumbs {
   display: flex;
@@ -831,14 +798,8 @@ button.sc-section-head:hover {
   text-transform: uppercase;
 }
 
-/* In/out range marked in the source monitor. */
-.sc-marks {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  height: 3px;
-  background: #82cbff;
-  opacity: 0.85;
-  border-radius: 2px;
-  pointer-events: none;
-}
+/* Plugin-contributed sections lay out like the built-in ones. */
+.sc-contrib { display: contents; }
+
+/* Item decorations position themselves against the thumbnail. */
+.sc-item-deco { display: contents; }

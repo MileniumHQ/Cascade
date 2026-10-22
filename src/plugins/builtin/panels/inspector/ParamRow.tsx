@@ -5,7 +5,7 @@ import type { Id } from '@shared/project'
 import { openContextMenu } from '@ui/kit'
 import { useRegistry } from '@ui/reactive'
 import { makeParamContext } from './context'
-import { MountHost } from './MountHost'
+import { MountHost } from '@ui/mount-host'
 import { KeyframeControl, useKeyframeState } from './KeyframeControl'
 
 /**

@@ -3,7 +3,7 @@ import { createProject, type Clip } from '@shared/project'
 import { FLICKS as S } from '@shared/time'
 import { clipMarkerSourceTime, clipMarkerTimelineTime, normalizeProjectMarkers, shiftMarkers } from './markers'
 import { constantMap, reverseMap } from './time-remap'
-import { splitClip, withTimeMaps, snapPoints } from './timeline-ops'
+import { splitClip, withTimeMaps } from './timeline-ops'
 import { insertTime, closeLinkedGap, rippleTrim } from './advanced-timeline-ops'
 const clip = (): Clip => ({ id: 'c', type: 'unknown', name: '', start: 10*S, duration: 4*S, sourceIn: 20*S, properties: [], data: {} })
 describe('source markers', () => {
@@ -28,12 +28,6 @@ describe('source markers', () => {
     tl.markers = [{ id:'m', t: 1.8, name: '', duration: -4, kind: 'third-party', data: { x: 42 }, ...{ future: true } }]
     normalizeProjectMarkers(p)
     expect(tl.markers[0]).toMatchObject({ t:2, duration:0, kind:'third-party', data:{ x:42 }, future:true })
-  })
-  it('adds only visible source markers to snapping', () => {
-    const p = createProject(''), tl = p.timelines[p.activeTimeline], c = clip()
-    c.markers = [{id:'m', t:22*S, name:''}, {id:'hidden', t:90*S, name:''}]; tl.tracks[0].clips=[c]
-    withTimeMaps(() => constantMap(2), () => expect(snapPoints(tl, new Set())).toContain(11*S))
-    expect(snapPoints(tl, new Set(['m']))).not.toContain(12*S)
   })
 })
 describe('marker ripple', () => {

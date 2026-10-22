@@ -15,15 +15,18 @@ class ElementDouble {
   style = Object.assign({} as Record<string, any>, {
     setProperty: (k: string, v: string) => { this.style[k] = v },
     getPropertyValue: (k: string) => this.style[k] ?? '',
-    removeProperty: (k: string) => { delete this.style[k] }
+    removeProperty: (k: string) => { delete this.style[k]; if (k === 'mask-image') delete this.style.maskImage }
   })
+  offsetWidth = 1920
+  offsetHeight = 1080
+  get firstElementChild() { return this.children[0] ?? null }
   dataset: Record<string, string> = {}
   className = ''
   children: ElementDouble[] = []
   parentElement?: ElementDouble
   classList = { add: () => {} }
   constructor(public ownerDocument: Document) {}
-  appendChild(el: ElementDouble) { this.children.push(el); el.parentElement = this; return el }
+  appendChild(el: ElementDouble) { el.remove(); this.children.push(el); el.parentElement = this; return el }
   remove() { if (this.parentElement) this.parentElement.children = this.parentElement.children.filter(el => el !== this) }
   setAttribute() {}
   querySelector() { return null }
@@ -132,4 +135,22 @@ test('reversed preview buffers include transition handles and cannot start after
   await Promise.resolve(); await Promise.resolve()
   expect(starts).toEqual([0.5])
   inst.dispose()
+})
+
+test('custom transitions apply masks and isolate content styles from outer and clip styles', async () => {
+  const app = new CascadeApp('render', null, project())
+  app.registries.mediaTypes.register({ id: 'test', name: 'Test', icon: 'film', color: '#fff', track: 'visual', stage: { mount: m => ({ el: m.document.createElement('div'), update() {}, dispose() {} }) } }, 'test', false)
+  app.registries.transitions.register({ id: 'cross-dissolve', name: 'Custom', icon: 'layers', description: '', kinds: ['visual'], params: [], apply: () => ({ to: { style: { opacity: '0.5' }, contentStyle: { opacity: '0.25', 'object-fit': 'cover' }, mask: [{ mode: 'intersect', svg: '<rect width="0.5" height="1" fill="white"/>' }] } }) }, 'test', false)
+  const stage = new Stage({ document: documentDouble(), registries: app.registries, mode: 'render', mediaUrl: x => x })
+  await stage.renderExact(app.project(), app.project().activeTimeline, S(4))
+  const wrapper = stage.clipElement('b')!, content = wrapper.parentElement!, layer = content.parentElement!
+  expect(layer.style.opacity).toBe('0.5')
+  expect(content.style.opacity).toBe('0.25')
+  expect(layer.style['object-fit' as any]).toBeUndefined()
+  expect(layer.style.maskImage).toContain('data:image/svg+xml,')
+  await stage.renderExact(app.project(), app.project().activeTimeline, S(6))
+  expect(content.style.opacity).toBeUndefined()
+  expect(layer.style.opacity).toBeUndefined()
+  expect(layer.style.maskImage).toBeUndefined()
+  stage.dispose()
 })

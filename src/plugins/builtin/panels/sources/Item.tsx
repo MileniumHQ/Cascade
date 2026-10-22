@@ -2,12 +2,13 @@ import { createMemo, onCleanup, onMount, Show, type Accessor } from 'solid-js'
 import type { CascadeAPI } from '@core/app'
 import type { MediaTypeContribution } from '@core/plugin-api'
 import type { Id, MediaItem, Project } from '@shared/project'
-import { Icon, iconMarkup } from '@ui/icon'
+import { Icon } from '@ui/icon'
+import { setDragImage } from '@ui/drag-image'
 import { useValue } from '@ui/reactive'
 import { formatDuration, mediaDetail, waveformGlyph } from './format'
 import { GeneratorTile } from './tiles'
 import { MEDIA_IDS_TYPE } from './Folder'
-import { marksOf } from '../source/marks'
+import { ItemDecorations } from './ItemDecorations'
 import type { ViewMode } from './state'
 
 /** Everything an item needs from the panel, so items stay small and keyed by id. */
@@ -25,17 +26,6 @@ export interface PanelApi {
   contextMenu(e: MouseEvent, id: Id): void
   commitRename(id: Id, name: string | null): void
   dragIds(id: Id): Id[]
-}
-
-export function setDragImage(e: DragEvent, icon: string, label: string, color: string) {
-  const pill = document.createElement('div')
-  pill.className = 'sc-dragimg'
-  pill.style.setProperty('--tc', color)
-  pill.innerHTML = `<span class="sc-dragimg-icon">${iconMarkup(icon, 2.2)}</span><span class="sc-dragimg-label"></span>`
-  pill.querySelector('.sc-dragimg-label')!.textContent = label
-  document.body.appendChild(pill)
-  e.dataTransfer?.setDragImage(pill, 14, 14)
-  setTimeout(() => pill.remove(), 0)
 }
 
 /** Poster/thumbnail area. The media type mounts into a surface once the item is (nearly) visible. */
@@ -105,15 +95,6 @@ export function MediaCard(props: { id: Id; api: PanelApi }) {
   }
   const detail = createMemo(() => (media() ? mediaDetail(media()!, generatorName() ?? mt()?.name ?? media()!.type) : ''))
   const color = () => mt()?.color ?? 'var(--muted)'
-  /** Where the source monitor's in/out marks sit on the item, as fractions of its length. */
-  const markBar = createMemo(() => {
-    const d = media()?.meta.duration
-    const m = marksOf(api.project(), props.id)
-    if (!d || (m.in === undefined && m.out === undefined)) return null
-    const a = Math.min(1, Math.max(0, (m.in ?? 0) / d))
-    const b = Math.min(1, Math.max(a, (m.out ?? d) / d))
-    return { left: `${a * 100}%`, width: `${(b - a) * 100}%` }
-  })
   const renaming = () => api.renaming() === props.id
   const offline = useValue(api.app.media.offline)
   const isOffline = () => offline().has(props.id)
@@ -176,9 +157,7 @@ export function MediaCard(props: { id: Id; api: PanelApi }) {
           <span class="sc-used-overlay">
             <Used />
           </span>
-          <Show when={markBar()}>
-            <span class="sc-marks" style={markBar()!} data-tip="Marked in the source monitor" />
-          </Show>
+          <ItemDecorations api={api} id={props.id} />
         </div>
         <div class="sc-meta">
           <Show

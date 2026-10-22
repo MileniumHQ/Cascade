@@ -6,8 +6,8 @@ import type { Id } from '@shared/project'
 import { FLICKS, frameDuration } from '@shared/time'
 import { Button, NumberField, Select } from '@ui/kit'
 import { useProject, useRegistry } from '@ui/reactive'
-import { unitHelpers } from './context'
-import { MountHost } from './MountHost'
+import { unitHelpers } from '@ui/param-units'
+import { MountHost } from '@ui/mount-host'
 
 /** Static transition parameters use the same framework-neutral editors as clip properties. */
 function TransitionParam(props: { app: CascadeAPI; id: Id; def: ParamDef }) {
@@ -25,9 +25,9 @@ function TransitionParam(props: { app: CascadeAPI; id: Id; def: ParamDef }) {
   </div>
 }
 
-export function TransitionInspector(props: { app: CascadeAPI; id: Id }) {
-  const app = props.app, project = useProject(app), types = useRegistry(app.registries.transitions)
-  const found = createMemo(() => (project(), findTransition(app.timeline(), props.id)))
+export function TransitionInspector(props: { ctx: { app: CascadeAPI; id: Id } }) {
+  const app = props.ctx.app, id = props.ctx.id, project = useProject(app), types = useRegistry(app.registries.transitions)
+  const found = createMemo(() => (project(), findTransition(app.timeline(), id)))
   const def = createMemo(() => (types(), app.registries.transitions.get(found()?.transition.type ?? '')))
   const params = createMemo(() => def()?.params.filter(p => !p.hidden) ?? [])
   return <Show when={found()}>{f => <div class="ins-scroll">
@@ -35,14 +35,14 @@ export function TransitionInspector(props: { app: CascadeAPI; id: Id }) {
       <div class="ins-row"><div class="ins-label">Transition</div><Select value={f().transition.type} options={[
         ...(!def() ? [{ value: f().transition.type, label: `${f().transition.type} (missing plugin)` }] : []),
         ...types().filter(t => t.kinds.includes(f().track.kind) && (f().transition.from && f().transition.to || t.singleSided !== false)).map(t => ({ value: t.id, label: t.name, icon: t.icon }))
-      ]} onChange={type => app.edit.updateTransition(props.id, { type })} /></div>
+      ]} onChange={type => app.edit.updateTransition(id, { type })} /></div>
       <div class="ins-row"><div class="ins-label">Duration</div><NumberField value={f().transition.duration / FLICKS} min={frameDuration(app.fps()) / FLICKS} step={frameDuration(app.fps()) / FLICKS} precision={3} suffix="s" disabled={f().track.locked}
-        onChange={(duration, gesture) => app.edit.updateTransition(props.id, { duration: Math.round(duration * FLICKS) }, { gesture })} /></div>
+        onChange={(duration, gesture) => app.edit.updateTransition(id, { duration: Math.round(duration * FLICKS) }, { gesture })} /></div>
       <Show when={f().transition.from && f().transition.to}><div class="ins-row"><div class="ins-label">Alignment</div><Select value={f().transition.align} options={[
         { value: 'center', label: 'Center on cut' }, { value: 'end', label: 'End at cut' }, { value: 'start', label: 'Start at cut' }
-      ]} onChange={align => app.edit.updateTransition(props.id, { align })} /></div></Show>
-      <For each={params()}>{p => <TransitionParam app={app} id={props.id} def={p} />}</For>
-      <Button size="sm" icon="trash-2" disabled={f().track.locked} onClick={() => app.edit.removeTransitions([props.id])}>Delete transition</Button>
+      ]} onChange={align => app.edit.updateTransition(id, { align })} /></div></Show>
+      <For each={params()}>{p => <TransitionParam app={app} id={id} def={p} />}</For>
+      <Button size="sm" icon="trash-2" disabled={f().track.locked} onClick={() => app.edit.removeTransitions([id])}>Delete transition</Button>
     </fieldset>
   </div>}</Show>
 }

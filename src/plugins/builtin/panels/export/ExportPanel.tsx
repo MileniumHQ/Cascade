@@ -1,8 +1,9 @@
+import { exportFrameRate, exportFrameRateOptions } from './presets'
 import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from 'solid-js'
 import type { CascadeAPI } from '@core/app'
 import type { ExporterContribution, PanelContext, ParamDef } from '@core/plugin-api'
 import type { ExportProgress } from '@shared/ipc'
-import { FPS_PRESETS, fpsKey, RESOLUTION_PRESETS } from '@shared/formats'
+import { fpsKey, RESOLUTION_PRESETS } from '@shared/formats'
 import { FLICKS, formatTimecode, type FrameRate } from '@shared/time'
 import { Icon } from '@ui/icon'
 import { Button, IconButton, NumberField, pushToast, Segmented, Select, TextField, Toggle } from '@ui/kit'
@@ -116,7 +117,7 @@ export function ExportPanel(props: { ctx: PanelContext }) {
     const p = RESOLUTION_PRESETS.find((x) => x.id === r)
     return p ? { w: p.w, h: p.h } : { w: s.width, h: s.height }
   })
-  const fps = createMemo<FrameRate>(() => (prefs().fps === 'project' ? project().settings.fps : FPS_PRESETS.find((p) => p.value === prefs().fps)?.fps ?? project().settings.fps))
+  const fps = createMemo<FrameRate>(() => (prefs().fps === 'project' ? project().settings.fps : exportFrameRate(prefs().fps) ?? project().settings.fps))
   const frames = () => Math.ceil(((range().end - range().start) * fps().num) / (FLICKS * fps().den))
   const seconds = () => (range().end - range().start) / FLICKS
 
@@ -322,7 +323,7 @@ export function ExportPanel(props: { ctx: PanelContext }) {
             <Select
               value={prefs().fps}
               width="180px"
-              options={[{ value: 'project', label: `Project · ${fpsKey(project().settings.fps)} fps` }, ...FPS_PRESETS.map((p) => ({ value: p.value, label: `${p.label} fps` }))]}
+              options={[{ value: 'project', label: `Project · ${fpsKey(project().settings.fps)} fps` }, ...exportFrameRateOptions(prefs().fps)]}
               onChange={(v) => setPrefs({ fps: v })}
             />
           </div>

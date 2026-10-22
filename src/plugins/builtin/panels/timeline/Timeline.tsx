@@ -1,10 +1,11 @@
 import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from 'solid-js'
 import type { CascadeAPI } from '@core/app'
-import type { ClipBodyContext, PanelContext, TimelineToolContext } from '@core/plugin-api'
+import type { ClipBodyContext, PanelContext, PopupMenuItem, TimelineDecorationContext, TimelineToolContext } from '@core/plugin-api'
 import { Emitter } from '@core/events'
 import { shallowArrayEqual } from '@core/value'
 import { clipKeyframeTimes } from '@core/evaluate'
-import { clipsInRange, expandLinked, snapPoints, type MoveRequest } from '@core/timeline-ops'
+import { clipsInRange, expandLinked, type MoveRequest } from '@core/timeline-ops'
+import { collectSnapPoints } from '@core/snap'
 import { resolveTarget, SOURCE_RANGE_MIME } from '@core/three-point'
 import { clipEnd, findClip, type Clip, type Id, type Track } from '@shared/project'
 import { FLICKS, formatTimecode, snapToFrame, type Flicks } from '@shared/time'
@@ -13,9 +14,7 @@ import { openContextMenu, type MenuItem } from '@ui/kit'
 import { useProject, useRegistry, useValue } from '@ui/reactive'
 import { drawRuler } from './ruler'
 import { TimelineTabs } from './TimelineTabs'
-import { MarkerLayer } from '../../markers/ui'
-import { withTimeMaps } from '@core/timeline-ops'
-import { Transitions, transitionMenu } from './Transitions'
+import { Decorations } from './decorations'
 import { linkedSelection } from './state'
 import { rippleOptions } from '../../ripple'
 export { linkedSelection } from './state'
@@ -171,7 +170,7 @@ export function Timeline(props: { ctx: PanelContext }) {
   const snapThreshold = () => app.view.pxToTime(SNAP_PX)
   const snapTo = (t: Flicks, exclude: Set<Id>, alt: boolean): { t: Flicks; at: Flicks | null } => {
     if (!snapping() || alt) return { t: snapToFrame(t, app.fps()), at: null }
-    const pts = withTimeMaps(c => app.edit.timeMap(c), () => snapPoints(tl(), exclude, [app.playback.time.get()]))
+    const pts = collectSnapPoints(app, exclude, [app.playback.time.get()])
     let best: Flicks | null = null
     let bd = snapThreshold()
     for (const p of pts) {
@@ -183,6 +182,25 @@ export function Timeline(props: { ctx: PanelContext }) {
     }
     return best === null ? { t: snapToFrame(t, app.fps()), at: null } : { t: best, at: best }
   }
+
+  // ───────── decorations (markers, transition chips… contributed by plugins) ─────────
+  const viewChanges = new Emitter<void>()
+  createEffect(on([pps, scrollX, width, project], () => viewChanges.emit()))
+  const decoBase = {
+    timeAt: (px: number) => app.view.pxToTime(px + app.view.scrollX.get()),
+    snap: (t: Flicks, ex?: Set<Id>, disable?: boolean) => snapTo(t, ex ?? new Set(), !!disable).t,
+    showSnapGuide: (t: Flicks | null) => setSnapLine(t)
+  }
+  const laneGeometry = (height: () => number, track: () => Track | null = () => null): Omit<TimelineDecorationContext, 'app' | 'target'> => ({
+    ...decoBase,
+    x: (t) => app.view.timeToPx(t) - app.view.scrollX.get(),
+    width: () => width(),
+    height,
+    range: () => ({ start: app.view.pxToTime(app.view.scrollX.get()), end: app.view.pxToTime(app.view.scrollX.get() + width()) }),
+    track,
+    clip: () => null,
+    subscribe: (fn) => { const d = viewChanges.on(fn); return () => d.dispose() }
+  })
 
   // ───────── selection ─────────
   const selectClip = (id: Id, e: PointerEvent | MouseEvent) => {
@@ -263,7 +281,7 @@ export function Timeline(props: { ctx: PanelContext }) {
       // snap: try every dragged clip's start/end
       let snapAt: Flicks | null = null
       if (snapping() && !ev.altKey) {
-        const pts = withTimeMaps(c => app.edit.timeMap(c), () => snapPoints(t, ids, [app.playback.time.get()]))
+        const pts = collectSnapPoints(app, ids, [app.playback.time.get()])
         let bd = snapThreshold()
         let bestDt = dt
         for (const c of clips) {
@@ -442,9 +460,10 @@ export function Timeline(props: { ctx: PanelContext }) {
   }
 
   // ───────── drag & drop from Sources / OS ─────────
-  const dropKinds = ['application/x-cascade-timeline', 'application/x-cascade-media', 'application/x-cascade-generator', 'Files']
+  const dropKinds = ['application/x-cascade-media', 'application/x-cascade-generator', 'Files']
+  const dropHandler = (dt: DataTransfer) => app.registries.timelineDrops.all().find((h) => h.accepts(dt))
   const onDragOver = (e: DragEvent) => {
-    if (!e.dataTransfer || !dropKinds.some((k) => e.dataTransfer!.types.includes(k))) return
+    if (!e.dataTransfer || !(dropKinds.some((k) => e.dataTransfer!.types.includes(k)) || dropHandler(e.dataTransfer))) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'copy'
     const s = snapTo(Math.max(0, timeAt(e.clientX)), new Set(), e.altKey)
@@ -465,8 +484,9 @@ export function Timeline(props: { ctx: PanelContext }) {
     e.preventDefault()
     const trackId = d.row && !d.row.track.locked ? d.row.track.id : undefined
     const opts = { start: d.t, trackId, audioTrackId: d.row?.track.kind === 'audio' ? trackId : undefined }
-    const timelineId = e.dataTransfer.getData('application/x-cascade-timeline')
-    if (timelineId) { app.run('sequence.add', timelineId, d.t, trackId); return }
+    // Contributed handlers first; they must read the data synchronously (the browser clears it after the event).
+    const handler = dropHandler(e.dataTransfer)
+    if (handler) { await handler.drop(app, e.dataTransfer, { start: d.t, trackId, trackKind: d.row?.track.kind }); return }
     const mediaId = e.dataTransfer.getData('application/x-cascade-media')
     const genId = e.dataTransfer.getData('application/x-cascade-generator')
     // A marked range dragged from the source monitor lands as a three-point overwrite at the drop point.
@@ -489,13 +509,15 @@ export function Timeline(props: { ctx: PanelContext }) {
   }
 
   // ───────── context menus ─────────
+  const menuItems = (target: 'clip' | 'lane', hit: { track: Track; clipId?: Id; time: Flicks }): PopupMenuItem[] =>
+    app.registries.timelineMenus.all().filter((m) => m.target === target).sort((a, b) => (a.order ?? 100) - (b.order ?? 100)).flatMap((m) => m.items(app, hit))
   const clipMenu = (e: MouseEvent, id: Id) => {
     e.preventDefault()
     if (!app.selection.clips.get().includes(id)) selectClip(id, e)
     const f = findClip(tl(), id)
-    const transition = f && transitionMenu(app, f.track, timeAt(e.clientX))
+    const contributed = f ? menuItems('clip', { track: f.track, clipId: id, time: timeAt(e.clientX) }) : []
     const items: MenuItem[] = [
-      ...(transition ? [transition, { separator: true }] : []),
+      ...(contributed.length ? [...contributed, { separator: true }] : []),
       { label: 'Split at playhead', icon: 'scissors', shortcut: 'S', run: () => app.run('timeline.split') },
       { label: 'Duplicate', icon: 'copy-plus', shortcut: 'Mod+D', run: () => app.run('timeline.duplicate') },
       { separator: true },
@@ -584,7 +606,7 @@ export function Timeline(props: { ctx: PanelContext }) {
         </div>
         <div class="tl-ruler-wrap" onPointerDown={onRulerDown}>
           <canvas class="tl-ruler" ref={ruler} />
-          <MarkerLayer app={app} x={x} width={width()} snap={(t,ids,alt)=>snapTo(t,ids,alt).t}/>
+          <Decorations app={app} target="ruler" geometry={laneGeometry(() => RULER_H)} />
           <div class="tl-playhead-head" ref={playheadHead}>
             <svg width="13" height="16" viewBox="0 0 13 16">
               <path d="M1 1h11v9l-5.5 5L1 10z" />
@@ -612,8 +634,7 @@ export function Timeline(props: { ctx: PanelContext }) {
               const target = { trackId: row.track.id, t: snapToFrame(Math.max(0, timeAt(e.clientX)), app.fps()) }
               app.selection.track.set(row.track.id)
               const items: MenuItem[] = app.registries.menus.all().filter((m) => m.location === 'timeline/context' && (!m.when || m.when(app, target))).map((m) => ({ label: m.label, icon: m.icon, run: () => app.run(m.command, target) }))
-              const transition = transitionMenu(app, row.track, timeAt(e.clientX))
-              if (transition) items.push(transition)
+              items.push(...menuItems('lane', { track: row.track, time: timeAt(e.clientX) }))
               if (items.length) openContextMenu(e, items)
             }
           }}
@@ -645,11 +666,12 @@ export function Timeline(props: { ctx: PanelContext }) {
                               selected={selSet().has(cid)}
                               primary={selected()[selected().length - 1] === cid}
                               dragging={!!drag()?.ids.has(cid)}
+                              deco={decoBase}
                             />
                           </Show>
                         )}
                       </For>
-                      <Transitions app={app} track={row().track} x={x} width={width()} h={row().h} />
+                      <Decorations app={app} target="track" geometry={laneGeometry(() => rowById().get(id)?.h ?? row().h, () => rowById().get(id)?.track ?? null)} subject={() => ({ track: row().track })} />
                     </div>
                   </div>
                 </Show>
@@ -794,6 +816,8 @@ function ClipView(props: {
   selected: boolean
   primary: boolean
   dragging: boolean
+  /** Shared decoration helpers (snapping, snap guide); geometry is per clip. */
+  deco: Pick<TimelineDecorationContext, 'timeAt' | 'snap' | 'showSnapGuide'>
 }) {
   const app = props.app
   const doc = useProject(app)
@@ -877,7 +901,14 @@ function ClipView(props: {
           <For each={kfs()}>{(t) => <i style={{ left: `${geo().offset + (t / FLICKS) * props.pps}px` }} />}</For>
         </div>
       </Show>
-      <MarkerLayer app={app} clip={props.clip} x={t=>props.x(t)-geo().left} width={geo().width}/>
+      <Decorations app={app} target="clip" subject={() => ({ track: props.track, clip: props.clip })} geometry={{
+        ...props.deco,
+        x: (t) => props.x(t) - geo().left, width: () => geo().width, height: () => props.h,
+        timeAt: (px) => props.deco.timeAt(px + geo().left),
+        range: () => ({ start: props.deco.timeAt(geo().left), end: props.deco.timeAt(geo().left + geo().width) }),
+        track: () => props.track, clip: () => props.clip,
+        subscribe: (fn) => { const d = changes.on(fn); return () => d.dispose() }
+      }} />
       <div class="tl-edge start" data-edge="start" />
       <div class="tl-edge end" data-edge="end" />
     </div>

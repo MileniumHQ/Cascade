@@ -561,3 +561,37 @@
 .field-row > label {
   color: var(--muted);
 }
+
+/* ───────── drag image ───────── */
+.ui-dragimg {
+  position: fixed;
+  left: -1000px;
+  top: -1000px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 220px;
+  height: 28px;
+  padding: 0 11px 0 8px;
+  border-radius: 8px;
+  background: #1e1e22;
+  color: var(--text);
+  font: 600 11.5px var(--font);
+  box-shadow: 0 0 0 1px var(--line-3), 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+.ui-dragimg-icon {
+  display: grid;
+  width: 14px;
+  height: 14px;
+  color: var(--tc);
+}
+.ui-dragimg-icon svg {
+  width: 14px;
+  height: 14px;
+}
+.ui-dragimg-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+

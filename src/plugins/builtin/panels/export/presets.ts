@@ -92,7 +92,7 @@ export interface PresetPrefs {
   /** 'project', a RESOLUTION_PRESETS id or 'custom' (then `custom` is the size). */
   resolution?: string
   custom?: { w: number; h: number }
-  /** 'project' or a FPS_PRESETS value. */
+  /** 'project', a FPS_PRESETS value, or an exact num/den rational. */
   fps?: string
   range?: 'all' | 'inout'
 }
@@ -104,8 +104,7 @@ export function presetPrefs(p: PresetData): PresetPrefs {
     out.resolution = known ? known.id : 'custom'
     if (!known) out.custom = { w: p.size.width, h: p.size.height }
   }
-  // Frame rates outside the panel's list (FPS_PRESETS) can't be shown, so the preset leaves the choice alone.
-  if (p.fps && knownFps(p.fps)) out.fps = fpsKey(p.fps)
+  if (isFps(p.fps)) out.fps = FPS_PRESETS.find(f => sameFps(f.fps, p.fps!))?.value ?? `${p.fps.num}/${p.fps.den}`
   if (p.range) out.range = p.range
   return out
 }
@@ -119,4 +118,20 @@ export function uniquePresetId(name: string, taken: Iterable<string>): string {
   let id = `user:${slug}`
   for (let n = 2; used.has(id); n++) id = `user:${slug}-${n}`
   return id
+}
+
+/** Decode a stored choice without rounding custom rational frame rates. */
+export function exportFrameRate(choice: string): FrameRate | undefined {
+  const known = FPS_PRESETS.find(p => p.value === choice)
+  if (known) return known.fps
+  const match = /^(\d+)\/(\d+)$/.exec(choice)
+  if (!match) return
+  const fps = { num: Number(match[1]), den: Number(match[2]) }
+  return isFps(fps) ? fps : undefined
+}
+export function exportFrameRateOptions(choice: string): { value: string; label: string }[] {
+  const options = FPS_PRESETS.map(p => ({ value: p.value, label: `${p.label} fps` }))
+  const fps = exportFrameRate(choice)
+  if (fps && !options.some(p => p.value === choice)) options.push({ value: choice, label: `Custom · ${fps.num}/${fps.den} fps` })
+  return options
 }

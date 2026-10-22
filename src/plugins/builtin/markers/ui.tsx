@@ -1,12 +1,12 @@
 import { createMemo, createSignal, For, onCleanup, Show } from 'solid-js'
 import type { CascadeAPI } from '@core/app'
-import type { PanelContext } from '@core/plugin-api'
+import type { PanelContext, TimelineDecorationContext } from '@core/plugin-api'
 import { clipMarkerTimelineTime, findMarker, visibleMarkers } from '@core/markers'
-import { snapPoints, snapTime, withTimeMaps } from '@core/timeline-ops'
 import { clipEnd, type Clip, type Id, type Marker } from '@shared/project'
-import { FLICKS, formatTimecode, snapToFrame, type Flicks } from '@shared/time'
+import { FLICKS, formatTimecode, type Flicks } from '@shared/time'
 import { Button, IconButton, NumberField, openContextMenu, openDialog, Popover, Select, TextField, type Anchor, type MenuItem } from '@ui/kit'
 import { useProject, useRegistry, useValue } from '@ui/reactive'
+import { useSub } from '../solid'
 import { markerColor } from './data'
 import './markers.css'
 export const swatches = ['#ffffff','#82cbff','#f2c14e','#ef8d8d','#bda3f5','#8dd5ac']
@@ -52,8 +52,12 @@ export function markerMenu(app: CascadeAPI, marker: Marker, anchor: Anchor): Men
     {label:'Delete marker',icon:'trash-2',danger:true,disabled:locked,run:()=>app.edit.removeMarkers([marker.id])}
   ]
 }
-/** Marker controls live with the marker plugin; timeline supplies coordinates and its snap function. */
-export function MarkerLayer(props: {app:CascadeAPI;clip?:Clip;x:(t:Flicks)=>number; width:number;snap?:(t:Flicks,exclude:Set<Id>,alt:boolean)=>Flicks}) {
+/** Marker pins on the ruler (timeline markers) or a clip body (source markers); the timeline supplies geometry and snapping. */
+export function MarkerDecoration(props: {ctx:TimelineDecorationContext}) {
+  const ctx=props.ctx, view=useSub(ctx.subscribe,()=>({width:ctx.width(),clip:ctx.clip()}))
+  return <MarkerLayer app={ctx.app} clip={view().clip ?? undefined} x={t=>(view(),ctx.x(t))} width={view().width} snap={(t,exclude,alt)=>ctx.snap(t,exclude,alt)} />
+}
+function MarkerLayer(props: {app:CascadeAPI;clip?:Clip;x:(t:Flicks)=>number; width:number;snap:(t:Flicks,exclude:Set<Id>,alt:boolean)=>Flicks}) {
   const app=props.app, project=useProject(app), selected=useValue(app.selection.markers), kinds=useRegistry(app.registries.markerKinds)
   const entries=createMemo(()=>{
     project()
@@ -61,11 +65,7 @@ export function MarkerLayer(props: {app:CascadeAPI;clip?:Clip;x:(t:Flicks)=>numb
     const c=props.clip,map=app.edit.timeMap(c)
     return (c.markers ?? []).flatMap(marker=>{const t=clipMarkerTimelineTime(c,map,marker);return t===null ? [] : [{marker,t}]})
   })
-  const snap=(t:Flicks,id:Id,alt:boolean)=>{
-    if (props.snap) return props.snap(t,new Set([id]),alt)
-    if (!app.view.snapping.get() || alt) return snapToFrame(t,app.fps())
-    return withTimeMaps(c=>app.edit.timeMap(c),()=>snapTime(snapToFrame(t,app.fps()),snapPoints(app.timeline(),new Set([id]),[app.playback.time.get()]),app.view.pxToTime(8)).t)
-  }
+  const snap=(t:Flicks,id:Id,alt:boolean)=>props.snap(t,new Set([id]),alt)
   let cleanup: (()=>void)|undefined
   onCleanup(()=>cleanup?.())
   const select=(id:Id,add=false)=>app.selection.setMarkers(add ? selected().includes(id) ? selected().filter(m=>m!==id) : [...selected(),id] : [id])
