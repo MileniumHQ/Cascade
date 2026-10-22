@@ -107,6 +107,17 @@ describe('property paste', () => {
     app.doc.undo()
     expect(JSON.stringify(app.project())).toBe(before)
   })
+  it('keeps opaque properties whose plugin is unavailable, unless the destination declares incompatibility', async () => {
+    const app = await editor()
+    app.registries.properties.register({ id: 'declined', name: 'Declined', icon: '', description: '', category: '', params: [], appliesTo: ['sound'] } satisfies PropertyContribution, 'test', true)
+    const opaque: PropertyInstance = { id: 'o', type: 'gone.plugin', enabled: true, params: { mystery: { value: { a: [1] }, keyframes: [{ id: 'kf', t: S, value: 3, easing: { id: 'x' } }] } } }
+    app.edit.pasteProperties(['v1'], [opaque, { id: 'd', type: 'declined', enabled: true, params: {} }])
+    const props = get(app, 'v1').properties
+    expect(props.map(p => p.type)).toEqual(['gone.plugin'])
+    expect(props[0].id).not.toBe('o')
+    expect(props[0].params.mystery.value).toEqual({ a: [1] })
+    expect(props[0].params.mystery.keyframes![0].id).not.toBe('kf')
+  })
   it('copies a single property through the clipboard and skips locked paste targets', async () => {
     const app = await editor()
     const prop = app.edit.addProperty('v1', 'speed')!

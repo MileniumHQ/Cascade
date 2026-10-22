@@ -655,14 +655,15 @@ export class Editing {
         if (!f || f.track.locked) continue
         for (const source of properties) {
           const contrib = this.app.registries.properties.get(source.type)
-          if (!contrib || !this.propertyApplies(contrib, f.clip as Clip)) continue
+          // An unavailable plugin is not an incompatibility: keep its payload opaque.
+          if (contrib && !this.propertyApplies(contrib, f.clip as Clip)) continue
           const p = JSON.parse(JSON.stringify(source)) as PropertyInstance
           p.id = uid('pi_')
           for (const pv of Object.values(p.params)) {
             if (opts.includeKeyframes === false) delete pv.keyframes
             else for (const k of pv.keyframes ?? []) k.id = uid('kf_')
           }
-          if (!contrib.stackable) f.clip.properties = f.clip.properties.filter((old) => old.type !== p.type)
+          if (!contrib?.stackable) f.clip.properties = f.clip.properties.filter((old) => old.type !== p.type)
           f.clip.properties.push(p)
         }
       }

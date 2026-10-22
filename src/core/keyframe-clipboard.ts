@@ -6,15 +6,17 @@ import { defaultParams } from './evaluate'
 export interface KeyframeClipboardData {
   channels: { clipId: Id; propertyId: Id; type: string; param: string; valueType: string; keys: Keyframe[] }[]
 }
+const OPAQUE = 'opaque'
 export function captureKeyframes(tl: Timeline, selection: KeyframeSelection[], definitions: (id: string) => PropertyContribution | undefined): KeyframeClipboardData | null {
   const channels: KeyframeClipboardData['channels'] = []
   for (const sel of selection) {
     const c = findClip(tl, sel.clipId)?.clip, p = c?.properties.find(p => p.id === sel.propertyId)
     const k = p?.params[sel.paramId]?.keyframes?.find(k => k.id === sel.keyframeId)
-    const def = p && definitions(p.type)?.params.find(d => d.id === sel.paramId)
-    if (!c || !p || !k || !def) continue
+    const contrib = p && definitions(p.type), def = contrib?.params.find(d => d.id === sel.paramId)
+    // Unavailable plugin: keep the channel opaque so it can be pasted back onto the same type id.
+    if (!c || !p || !k || (contrib && !def)) continue
     let channel = channels.find(ch => ch.clipId === c.id && ch.propertyId === p.id && ch.param === sel.paramId)
-    if (!channel) channels.push(channel = { clipId: c.id, propertyId: p.id, type: p.type, param: sel.paramId, valueType: def.type, keys: [] })
+    if (!channel) channels.push(channel = { clipId: c.id, propertyId: p.id, type: p.type, param: sel.paramId, valueType: def?.type ?? OPAQUE, keys: [] })
     if (!channel.keys.some(key => key.id === k.id)) channel.keys.push({ ...structuredClone(k), t: c.start + k.t })
   }
   if (!channels.length) return null
@@ -37,7 +39,18 @@ export function pasteKeyframes(clip: Clip, data: KeyframeClipboardData, at: Flic
   const selected: KeyframeSelection[] = []
   for (const ch of data.channels) {
     const def = definitions(ch.type), param = def?.params.find(d => d.id === ch.param)
-    if (!def || !param || param.type !== ch.valueType || param.animatable === false || !applies(def, clip)) continue
+    if (!def) {
+      const prop = clip.properties.find(p => p.id === ch.propertyId && clip.id === ch.clipId && p.type === ch.type) ?? clip.properties.find(p => p.type === ch.type)
+      if (!prop) continue
+      const keys = [...new Map(ch.keys.map(k => ({ ...structuredClone(k), id: uid('kf_'), t: Math.round(at - clip.start + k.t) })).filter(k => k.t >= 0 && k.t < clip.duration).map(k => [k.t, k])).values()]
+      if (!keys.length) continue
+      const pv = (prop.params[ch.param] ??= { value: structuredClone(keys[0].value) })
+      const times = new Set(keys.map(k => k.t))
+      pv.keyframes = [...(pv.keyframes ?? []).filter(k => !times.has(k.t)), ...keys].sort((a, b) => a.t - b.t)
+      selected.push(...keys.map(k => ({ clipId: clip.id, propertyId: prop.id, paramId: ch.param, keyframeId: k.id })))
+      continue
+    }
+    if (!param || param.type !== ch.valueType || param.animatable === false || !applies(def, clip)) continue
     const mapped = ch.keys.filter(k => compatibleValue(k.value,param.default)).map(k => ({ ...structuredClone(k), id: uid('kf_'), t: Math.round(at - clip.start + k.t) })).filter(k => k.t >= 0 && k.t < clip.duration)
     const keys = [...new Map(mapped.map(k => [k.t, k])).values()]
     if (!keys.length) continue
