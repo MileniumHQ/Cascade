@@ -243,6 +243,7 @@ function mountWaveform(el: HTMLElement, c: ClipBodyContext) {
     if (!data) return
     const v = c.view()
     const clip = c.clip()
+    if (!clip) return
     const map = c.app.edit.timeMap(clip)
     const src = (px: number) => (clip.sourceIn + map.offset((px / v.pxPerSecond) * FLICKS)) / FLICKS
     const startPx = Math.floor((v.visibleStart / FLICKS) * v.pxPerSecond)
