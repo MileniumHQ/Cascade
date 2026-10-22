@@ -1,5 +1,6 @@
 import { definePlugin, type ClipBodyContext, type ClipFrameState, type ClipMountContext } from '@core/plugin-api'
 import { FLICKS } from '@shared/time'
+import { sourceLocalRange } from '@core/time-remap'
 import { pitchOf } from '../properties/audio'
 import { frameSeconds, MediaSync } from './common'
 
@@ -41,9 +42,9 @@ export const audioPlugin = definePlugin({
                 if (key === chunkKey) return
                 chunkKey = key
                 const clipStart = s.clip.start / FLICKS
-                const clipEnd = clipStart + s.clip.duration / FLICKS
-                const from = Math.max(chunk.start, clipStart)
-                const to = Math.min(chunk.start + chunk.duration, clipEnd)
+                const available = sourceLocalRange(s.clip, s.remap, s.media.meta.duration)
+                const from = Math.max(chunk.start, (s.activeRange?.start ?? s.clip.start) / FLICKS, clipStart + available.start / FLICKS)
+                const to = Math.min(chunk.start + chunk.duration, (s.activeRange?.end ?? s.clip.start + s.clip.duration) / FLICKS, clipStart + available.end / FLICKS)
                 if (to <= from) return
                 const local = from - clipStart
                 // Time-stretched by ffmpeg (pitch independent of speed): play as is.
@@ -144,13 +145,15 @@ class ReversePlayer {
   /** Context time and buffer position (s) when the node started, and its rate. */
   private anchor = { at: 0, pos: 0, rate: 1 }
   private disposed = false
+  private generation = 0
   constructor(private audio: NonNullable<ClipMountContext['audio']>, private out: AudioNode) {}
 
   update(s: ClipFrameState) {
     const map = s.remap
     if (!s.playing || !s.media || !this.audio.getBuffer) return this.stop()
-    const hi = s.clip.sourceIn / FLICKS
-    const lo = Math.max(0, (s.clip.sourceIn + map.offset(s.clip.duration)) / FLICKS)
+    const range = s.activeRange ?? { start: s.clip.start, end: s.clip.start + s.clip.duration }
+    const hi = Math.min((s.media.meta.duration ?? Infinity) / FLICKS, (s.clip.sourceIn + map.offset(range.start - s.clip.start)) / FLICKS)
+    const lo = Math.max(0, (s.clip.sourceIn + map.offset(range.end - s.clip.start)) / FLICKS)
     const key = `${s.media.id}:${lo}:${hi}`
     if (key !== this.key) {
       this.stop()
@@ -158,8 +161,8 @@ class ReversePlayer {
       const ctx = this.audio.context
       this.buffer = this.audio.getBuffer(s.media, lo, hi - lo).then((b) => (b ? reversed(ctx, b) : null)).catch(() => null)
     }
-    // Position in the reversed buffer: how far the source has run down from sourceIn.
-    const pos = -map.offset(s.local) / FLICKS
+    // Position in the reversed buffer, whose high end includes the transition handle.
+    const pos = hi - s.sourceTime
     const rate = Math.abs(s.rate)
     const now = this.audio.context.currentTime
     if (this.node) {
@@ -168,8 +171,9 @@ class ReversePlayer {
       this.stop()
     }
     const pending = this.buffer
+    const generation = this.generation
     void pending?.then((buffer) => {
-      if (!buffer || this.disposed || this.node || pending !== this.buffer) return
+      if (!buffer || this.disposed || this.node || pending !== this.buffer || generation !== this.generation) return
       const node = this.audio.context.createBufferSource()
       node.buffer = buffer
       node.playbackRate.value = rate
@@ -184,6 +188,7 @@ class ReversePlayer {
   }
 
   stop() {
+    this.generation++
     const node = this.node
     this.node = null
     if (!node) return

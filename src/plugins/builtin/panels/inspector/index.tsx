@@ -13,6 +13,7 @@ import { ClipHeader } from './ClipHeader'
 import { MediaInfo } from './MediaInfo'
 import { PropertyCard } from './PropertyCard'
 import './inspector.css'
+import { TransitionInspector } from './TransitionInspector'
 
 function MultiClip(props: { app: CascadeAPI }) {
   const app = props.app
@@ -220,6 +221,7 @@ function Inspector(props: { ctx: PanelContext }) {
   const app = props.ctx.app
   const { clips, group, focused, setPick } = useFocus(app)
   const media = useValue(app.selection.media)
+  const transitions = useValue(app.selection.transitions)
   return (
     <div class="ins">
       <Switch>
@@ -236,6 +238,7 @@ function Inspector(props: { ctx: PanelContext }) {
         <Match when={clips().length > 1}>
           <MultiClip app={app} />
         </Match>
+        <Match when={transitions()[0]} keyed>{id => <TransitionInspector app={app} id={id} />}</Match>
         <Match when={media().length > 0}>
           <MediaInfo app={app} />
         </Match>

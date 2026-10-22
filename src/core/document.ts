@@ -1,6 +1,7 @@
 import { applyPatches, enablePatches, produceWithPatches, setAutoFreeze, type Draft, type Patch } from 'immer'
 import type { Project } from '@shared/project'
 import { Emitter } from './events'
+import { normalizeProjectTransitions } from './transitions'
 
 enablePatches()
 setAutoFreeze(true)
@@ -64,6 +65,7 @@ export class DocumentStore {
   transact(label: string, recipe: (draft: Draft<Project>) => void, opts: TransactOptions = {}): boolean {
     const [next, patches, inverse] = produceWithPatches(this._state, (d) => {
       recipe(d)
+      normalizeProjectTransitions(d)
     })
     if (patches.length === 0) return false
     this._state = next

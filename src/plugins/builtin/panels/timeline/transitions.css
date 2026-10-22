@@ -1,0 +1,9 @@
+.tl-transitions { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 5; }
+.tl-transition { position: absolute; top: 20px; height: 23px; background: rgba(220,220,220,.18); border: 1px solid rgba(255,255,255,.35); border-radius: 3px; pointer-events: auto; color: #eee; cursor: pointer; display: flex; align-items: center; justify-content: center; min-width: 4px; }
+.tl-transition.selected { background: rgba(130,203,255,.25); border-color: #b6dfff; }
+.tl-transition > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; pointer-events: none; padding: 0 6px; }
+.tl-transition-edge { position: absolute; inset-block: -1px; width: 6px; border: 0; background: transparent; cursor: ew-resize; padding: 0; }
+.tl-transition-edge.left { left: -2px; } .tl-transition-edge.right { right: -2px; }
+.tl-fade-handle { position: absolute; top: 3px; width: 9px; height: 9px; border: 1px solid rgba(255,255,255,.55); border-radius: 2px; background: #444; opacity: .6; pointer-events: auto; padding: 0; cursor: ew-resize; }
+.tl-fade-handle:hover { opacity: 1; background: #ccc; }
+.locked .tl-fade-handle { pointer-events: none; opacity: .2; }

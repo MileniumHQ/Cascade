@@ -19,12 +19,14 @@ import type {
   PluginEnv,
   PropertyContribution,
   SettingContribution,
-  StatusItemContribution
+  StatusItemContribution,
+  TransitionContribution
 } from './plugin-api'
 import { Editing } from './editing'
 
 export interface Registries {
   mediaTypes: Registry<MediaTypeContribution>
+  transitions: Registry<TransitionContribution>
   properties: Registry<PropertyContribution>
   paramTypes: Registry<ParamTypeContribution>
   easings: Registry<EasingContribution>
@@ -41,6 +43,7 @@ export interface Registries {
 
 export const createRegistries = (): Registries => ({
   mediaTypes: new Registry('mediaTypes'),
+  transitions: new Registry('transitions'),
   properties: new Registry('properties'),
   paramTypes: new Registry('paramTypes'),
   easings: new Registry('easings'),
@@ -150,6 +153,7 @@ export interface KeyframeSelection {
 }
 
 export class SelectionService {
+  readonly transitions = new Value<Id[]>([], shallowArrayEqual)
   readonly clips = new Value<Id[]>([], shallowArrayEqual)
   readonly keyframes = new Value<KeyframeSelection[]>([], shallowArrayEqual)
   readonly media = new Value<Id[]>([], shallowArrayEqual)
@@ -158,11 +162,22 @@ export class SelectionService {
   /** Property instance focused in the inspector (keyframe panel highlights it). */
   readonly property = new Value<Id | null>(null)
 
+  constructor() {
+    // Direct Value writes by existing panels/plugins obey the same selection exclusivity.
+    this.clips.subscribe(ids => { if (ids.length) this.transitions.set([]) })
+    this.media.subscribe(ids => { if (ids.length) this.transitions.set([]) })
+  }
+
   get primaryClip(): Id | null {
     const c = this.clips.get()
     return c.length ? c[c.length - 1] : null
   }
+  setTransitions(ids: Id[]) {
+    this.transitions.set(ids)
+    if (ids.length) { this.clips.set([]); this.media.set([]); this.keyframes.set([]) }
+  }
   setClips(ids: Id[]) {
+    this.transitions.set([])
     this.clips.set(ids)
     if (ids.length) this.media.set([])
   }
@@ -288,6 +303,9 @@ export class CascadeApp implements CascadeAPI {
       if (!tl) return
       const alive = new Set<Id>()
       for (const tr of tl.tracks) for (const c of tr.clips) alive.add(c.id)
+      const transitions = new Set(tl.tracks.flatMap(tr => (tr.transitions ?? []).map(tx => tx.id)))
+      const selected = this.selection.transitions.get()
+      if (selected.some(id => !transitions.has(id))) this.selection.transitions.set(selected.filter(id => transitions.has(id)))
       const sel = this.selection.clips.get()
       if (sel.some((id) => !alive.has(id))) this.selection.clips.set(sel.filter((id) => alive.has(id)))
     })

@@ -122,3 +122,38 @@ test('reverse: the pair plays its source range backwards; split, trim limits and
   const r = app.timeline().tracks.flatMap((t) => t.clips).find((c) => c.id === right)!
   expect(r.sourceIn + app.edit.timeMap(r).offset(r.duration)).toBe(0)
 })
+
+test('transition handles extrapolate at clip boundary speeds, with inverse and reverse symmetry', async () => {
+  const { extendMap, reverseMap } = await import('./time-remap')
+  const app = await editor()
+  // Curve continues beyond a clip trimmed to 1 s; the handle must stay at its 2× boundary speed.
+  const raw = curveMap(1, [{ id: 'a', t: 0, value: 1, easing: { id: 'linear' } }, { id: 'b', t: S(2), value: 3, easing: { id: 'linear' } }], app.registries)
+  const m = extendMap(raw, S(1))
+  near(m.offset(-S(1)), -S(1))
+  near(m.offset(S(2)), S(3.5))
+  expect(m.speedAt(S(2))).toBe(2)
+  const reversed = extendMap(reverseMap(raw), S(1))
+  for (const t of [-S(1), 0, S(0.5), S(1), S(2)]) {
+    near(m.localAt(m.offset(t)), t)
+    near(reversed.offset(t), -m.offset(t))
+    near(reversed.localAt(reversed.offset(t)), t)
+  }
+})
+
+test('retained keyframes before a split/trim keep offset zero at local zero', async () => {
+  const { extendMap } = await import('./time-remap')
+  const app = await editor()
+  const m = extendMap(curveMap(1, [{ id: 'a', t: -S(1), value: 1, easing: { id: 'linear' } }, { id: 'b', t: S(1), value: 3, easing: { id: 'linear' } }], app.registries), S(0.5))
+  expect(m.offset(0)).toBe(0)
+  near(m.offset(S(0.5)), S(1.125))
+  near(m.offset(-S(0.5)), -S(1))
+  near(m.localAt(S(1.125)), S(0.5))
+})
+
+test('source availability covers forward and reversed handles', async () => {
+  const { reverseMap, sourceLocalRange } = await import('./time-remap')
+  const app = await editor()
+  const clip = app.timeline().tracks[0].clips[0]
+  expect(sourceLocalRange(clip, constantMap(2), S(120))).toEqual({ start: -S(50), end: S(10) })
+  expect(sourceLocalRange(clip, reverseMap(constantMap(2)), S(120))).toEqual({ start: -S(10), end: S(50) })
+})

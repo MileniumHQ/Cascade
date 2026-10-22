@@ -79,14 +79,18 @@ export function curveMap(base: number, kfs: Keyframe[], regs: EvalRegistries): T
     return lo
   }
   const speedAt = (t: Flicks) => (t <= kfs[0].t ? first : t >= kfs[kfs.length - 1].t ? last : speedIn(seg(t), t))
-  const offset = (t: Flicks) => {
+  const integrated = (t: Flicks) => {
     if (t <= kfs[0].t) return first * t
     const n = kfs.length - 1
     if (t >= kfs[n].t) return cum[n] + last * (t - kfs[n].t)
     const i = seg(t)
     return cum[i] + partial(i, t, 16)
   }
+  // Retained keyframes can precede a trimmed clip. Source offset is always relative to local 0.
+  const origin = integrated(0)
+  const offset = (t: Flicks) => integrated(t) - origin
   const localAt = (o: Flicks) => {
+    o += origin
     if (o <= cum[0]) return o / first
     const n = kfs.length - 1
     if (o >= cum[n]) return kfs[n].t + (o - cum[n]) / last
@@ -97,13 +101,26 @@ export function curveMap(base: number, kfs: Keyframe[], regs: EvalRegistries): T
     let hi = kfs[i + 1].t
     for (let k = 0; k < 40 && hi - lo > 1; k++) {
       const mid = (lo + hi) / 2
-      if (offset(mid) < o) lo = mid
+      if (integrated(mid) < o) lo = mid
       else hi = mid
     }
     return (lo + hi) / 2
   }
   const speeds = kfs.map((k) => clampSpeed(base * v(k)))
   return { constant: null, min: Math.min(...speeds), max: Math.max(...speeds), speedAt, offset, localAt }
+}
+
+/** Transition handles extrapolate at the actual clip boundary, even with keyframes beyond a trim. */
+export function extendMap(map: TimeMap, duration: Flicks): TimeMap {
+  if (map.constant !== null) return map
+  const startSpeed = map.speedAt(0), endSpeed = map.speedAt(duration), endOffset = map.offset(duration)
+  const sign = map.reversed ? -1 : 1
+  return {
+    ...map,
+    speedAt: t => map.speedAt(Math.max(0, Math.min(duration, t))),
+    offset: t => t < 0 ? t * startSpeed * sign : t > duration ? endOffset + (t - duration) * endSpeed * sign : map.offset(t),
+    localAt: o => o * sign < 0 ? o / (startSpeed * sign) : o * sign > endOffset * sign ? duration + (o - endOffset) / (endSpeed * sign) : map.localAt(o)
+  }
 }
 
 /** The same mapping played backwards: the source runs from `sourceIn` down. */
@@ -160,7 +177,13 @@ export function clipTimeMap(clip: Clip, timeline: Timeline | undefined, regs: Re
   const pv = found?.pv
   const kfs = pv?.keyframes?.length ? (shift ? pv.keyframes.map((k) => ({ ...k, t: k.t + shift })) : pv.keyframes) : null
   const forward = !pv ? constantMap(base) : kfs ? curveMap(base, kfs, regs) : constantMap(base * Number(pv.value ?? 1))
-  const map = found?.reversed ? reverseMap(forward) : forward
+  const map = extendMap(found?.reversed ? reverseMap(forward) : forward, clip.duration)
   if (cacheable) cache.set(clip, { partner, map })
   return map
+}
+
+/** Clip-local interval backed by available media, including handles beyond the clip edges. */
+export function sourceLocalRange(clip: Clip, map: TimeMap, sourceDuration: Flicks = Infinity): { start: Flicks; end: Flicks } {
+  const a = map.localAt(-clip.sourceIn), b = map.localAt(sourceDuration - clip.sourceIn)
+  return { start: Math.min(a, b), end: Math.max(a, b) }
 }

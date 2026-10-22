@@ -15,7 +15,7 @@
  */
 import type { Disposable } from './disposable'
 import type { Contribution } from './registry'
-import type { Clip, EasingRef, Id, MediaItem, MediaMeta, Project, PropertyInstance, Timeline, Track } from '@shared/project'
+import type { Clip, EasingRef, Id, MediaItem, MediaMeta, Project, PropertyInstance, Timeline, Track, TransitionInstance } from '@shared/project'
 import type { FFmpegExportPlan } from '@shared/ipc'
 import type { Flicks, FrameRate } from '@shared/time'
 import type { CascadeAPI } from './app'
@@ -52,6 +52,7 @@ export interface PluginContext {
   readonly env: PluginEnv
   readonly app: CascadeAPI
   readonly mediaTypes: Registrar<MediaTypeContribution>
+  readonly transitions: Registrar<TransitionContribution>
   readonly properties: Registrar<PropertyContribution>
   readonly paramTypes: Registrar<ParamTypeContribution>
   readonly easings: Registrar<EasingContribution>
@@ -137,6 +138,35 @@ export interface PropertyOutput {
   svgFilter?: string
   /** Free-form data for the media type (e.g. text props) — merged into ClipFrameState.extra. */
   extra?: Record<string, unknown>
+}
+
+export interface TransitionContribution extends Contribution {
+  name: string
+  description: string
+  icon: Icon
+  category?: string
+  keywords?: string[]
+  kinds: ('visual' | 'audio')[]
+  singleSided?: boolean
+  /** Seconds; default 0.5. Document durations are integer flicks. */
+  defaultDuration?: number
+  params: ParamDef[]
+  apply?(p: number, values: Record<string, unknown>, ctx: TransitionApplyContext): { from?: PropertyOutput; to?: PropertyOutput } | void
+  /** Linear gains; absent uses an equal-power crossfade. */
+  gain?(p: number, values: Record<string, unknown>): { from: number; to: number }
+}
+
+export interface TransitionApplyContext {
+  /** Instance id, for escape-hatch DOM ownership. */
+  id: Id
+  u: StageUnits
+  mode: 'preview' | 'render'
+  project: Project
+  from?: Clip
+  to?: Clip
+  duration: Flicks
+  /** Tag added nodes data-cs-owner="tx:<transition id>" for automatic cleanup. */
+  elements: { from?: HTMLElement; to?: HTMLElement; document: Document }
 }
 
 export interface PropertyApplyContext {
@@ -258,6 +288,8 @@ export interface ClipFrameState {
   rate: number
   /** Clip-local → source mapping (speed may vary over time). */
   remap: TimeMap
+  /** Active timeline range including transition handles (audio scheduling). */
+  activeRange?: { start: Flicks; end: Flicks }
   clip: Clip
   media?: MediaItem
   project: Project
@@ -496,4 +528,4 @@ export interface ExporterContribution extends Contribution {
 
 // ───────────────────────────── helpers re-exported for plugin authors ─────────────────────────────
 
-export type { Clip, EasingRef, Id, MediaItem, MediaMeta, Project, PropertyInstance, Timeline, Track, Flicks, FrameRate }
+export type { Clip, EasingRef, Id, MediaItem, MediaMeta, Project, PropertyInstance, TransitionInstance, Timeline, Track, Flicks, FrameRate }

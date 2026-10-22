@@ -146,14 +146,21 @@ export interface MenuItem {
   checked?: boolean
   separator?: boolean
   run?: () => void
+  children?: MenuItem[]
 }
 
 export function Menu(props: { anchor: Anchor; items: MenuItem[]; onClose: () => void; placement?: 'bottom' | 'top' | 'right' }) {
   const [active, setActive] = createSignal(-1)
+  const [submenu, setSubmenu] = createSignal<{ items: MenuItem[]; anchor: HTMLElement } | null>(null)
   const runnable = () => props.items.map((it, i) => (it.separator || it.disabled ? -1 : i)).filter((i) => i >= 0)
   const key = (e: KeyboardEvent) => {
     const r = runnable()
-    if (e.key === 'ArrowDown') {
+    if (submenu()) return
+    if (e.key === 'ArrowRight' && active() >= 0) {
+      const row = document.querySelector<HTMLElement>('.menu-item.active')
+      const items = props.items[active()].children
+      if (row && items) { e.preventDefault(); setSubmenu({ items, anchor: row }) }
+    } else if (e.key === 'ArrowDown') {
       e.preventDefault()
       setActive(r[(r.indexOf(active()) + 1) % r.length])
     } else if (e.key === 'ArrowUp') {
@@ -161,8 +168,10 @@ export function Menu(props: { anchor: Anchor; items: MenuItem[]; onClose: () => 
       setActive(r[(r.indexOf(active()) - 1 + r.length) % r.length])
     } else if (e.key === 'Enter' && active() >= 0) {
       e.preventDefault()
-      props.items[active()].run?.()
-      props.onClose()
+      const item = props.items[active()]
+      const row = document.querySelector<HTMLElement>('.menu-item.active')
+      if (item.children && row) setSubmenu({ items: item.children, anchor: row })
+      else { item.run?.(); props.onClose() }
     }
   }
   onMount(() => window.addEventListener('keydown', key))
@@ -176,9 +185,13 @@ export function Menu(props: { anchor: Anchor; items: MenuItem[]; onClose: () => 
           ) : (
             <div
               class={`menu-item ${it.danger ? 'danger' : ''} ${it.disabled ? 'disabled' : ''} ${active() === i() ? 'active' : ''}`}
-              onPointerEnter={() => setActive(i())}
-              onClick={() => {
+              onPointerEnter={e => {
+                setActive(i())
+                setSubmenu(it.children && !it.disabled ? { items: it.children, anchor: e.currentTarget } : null)
+              }}
+              onClick={e => {
                 if (it.disabled) return
+                if (it.children) { setSubmenu({ items: it.children, anchor: e.currentTarget }); return }
                 it.run?.()
                 props.onClose()
               }}
@@ -191,6 +204,7 @@ export function Menu(props: { anchor: Anchor; items: MenuItem[]; onClose: () => 
                 </Show>
               </span>
               <span class="menu-label">{it.label}</span>
+              <Show when={it.children}><Icon name="chevron-right" size={14} /></Show>
               <Show when={it.shortcut}>
                 <Kbd keys={it.shortcut!} />
               </Show>
@@ -198,8 +212,30 @@ export function Menu(props: { anchor: Anchor; items: MenuItem[]; onClose: () => 
           )
         }
       </For>
+      <Show when={submenu()} keyed>{sub => <MenuSubmenu items={sub.items} anchor={sub.anchor} onClose={props.onClose} onBack={() => setSubmenu(null)} />}</Show>
     </Popover>
   )
+}
+
+function MenuSubmenu(props: { items: MenuItem[]; anchor: HTMLElement; onClose: () => void; onBack: () => void }) {
+  let el!: HTMLDivElement
+  const [active, setActive] = createSignal(-1)
+  const choose = (item: MenuItem) => { if (!item.disabled) { item.run?.(); props.onClose() } }
+  const key = (e: KeyboardEvent) => {
+    const indices = props.items.map((it, i) => it.separator || it.disabled ? -1 : i).filter(i => i >= 0)
+    if (e.key === 'ArrowLeft') { e.preventDefault(); props.onBack() }
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      setActive(indices[(indices.indexOf(active()) + (e.key === 'ArrowDown' ? 1 : indices.length - 1)) % indices.length])
+    } else if (e.key === 'Enter' && active() >= 0) { e.preventDefault(); choose(props.items[active()]) }
+  }
+  onMount(() => { placePopover(props.anchor, el, 'right', 2); window.addEventListener('keydown', key) })
+  onCleanup(() => window.removeEventListener('keydown', key))
+  return <div ref={el} class="popover glass menu menu-submenu" style={{ position: 'fixed' }}>
+    <For each={props.items}>{(item, i) => item.separator ? <div class="menu-sep" /> : <div class={`menu-item ${item.disabled ? 'disabled' : ''} ${active() === i() ? 'active' : ''}`} onPointerEnter={() => setActive(i())} onClick={() => choose(item)}>
+      <span class="menu-icon"><Icon name={item.icon} size={14} /></span><span class="menu-label">{item.label}</span>
+    </div>}</For>
+  </div>
 }
 
 /** Imperative context menu helper. */

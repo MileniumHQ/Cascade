@@ -23,6 +23,7 @@ import { statusBarPlugin } from './statusbar'
 import { keyframesPlugin } from './panels/keyframes'
 import { exportPanelPlugin } from './panels/export'
 import { captionsPlugin } from './captions'
+import { transitionsPlugin } from './transitions'
 
 /**
  * Everything Cascade can do comes from these plugins. They load first (built-in priority)
@@ -43,6 +44,7 @@ export const builtinPlugins: PluginDefinition[] = [
   textPropertiesPlugin,
   audioPropertiesPlugin,
   timePropertiesPlugin,
+  transitionsPlugin,
   previewPlugin,
   timelinePlugin,
   inspectorPlugin,
@@ -56,4 +58,4 @@ export const builtinPlugins: PluginDefinition[] = [
 ]
 
 /** Plugins that are safe to load in headless export workers (no UI). */
-export const renderPlugins: PluginDefinition[] = [exportersPlugin, paramsPlugin, easingsPlugin, videoPlugin, imagePlugin, elementPlugin, audioPlugin, visualPropertiesPlugin, effectsPlugin, textPropertiesPlugin, audioPropertiesPlugin, timePropertiesPlugin]
+export const renderPlugins: PluginDefinition[] = [exportersPlugin, paramsPlugin, easingsPlugin, videoPlugin, imagePlugin, elementPlugin, audioPlugin, visualPropertiesPlugin, effectsPlugin, textPropertiesPlugin, audioPropertiesPlugin, timePropertiesPlugin, transitionsPlugin]
