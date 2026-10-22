@@ -104,7 +104,6 @@ export function registerTimelineTools(ctx: PluginContext) {
       if (t.key) ds.push(ctx.keybindings.register({ id: `tool:${t.id}`, command, key: t.key }))
       registrations.set(t.id, ds)
     }
-    if (!ctx.app.registries.timelineTools.has(ctx.app.view.tool.get())) ctx.app.view.tool.set('select')
   }
   sync()
   ctx.track(ctx.app.registries.timelineTools.onChange.on(sync))

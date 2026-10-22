@@ -212,7 +212,19 @@ export class TimelineViewService {
   readonly pxPerSecond = new Value(60)
   readonly scrollX = new Value(0)
   readonly snapping = new Value(true)
-  readonly tool = new Value<string>('select')
+  /** Active timeline tool id; kept valid against the tool registry (see `ensureTool`). */
+  readonly tool = new Value<string>('')
+  /** Falls back to the best (highest-priority) contributed tool when the active one isn't registered. */
+  ensureTool(tools: Registry<TimelineToolContribution>) {
+    const current = this.tool.get()
+    // An untouched default keeps following the registry as plugins activate one by one.
+    if (tools.has(current) && current !== this.autoTool) return
+    const first = tools.all()[0]
+    if (!first) return
+    this.autoTool = first.id
+    this.tool.set(first.id)
+  }
+  private autoTool = ''
   /** Width of the visible lane area in px (set by the timeline). */
   readonly viewportWidth = new Value(800)
   timeToPx(t: Flicks) {
@@ -332,6 +344,7 @@ export class CascadeApp implements CascadeAPI {
     project: Project = createProject('Untitled')
   ) {
     this.doc = new DocumentStore(project)
+    this.registries.timelineTools.onChange.on(() => this.view.ensureTool(this.registries.timelineTools))
     this.playback = new PlaybackService(this)
     this.settings = new SettingsService(this)
     this.edit = new Editing(this)
