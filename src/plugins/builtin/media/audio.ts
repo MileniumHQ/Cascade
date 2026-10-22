@@ -281,8 +281,9 @@ function mountWaveform(el: HTMLElement, c: ClipBodyContext) {
       g.fillRect(x, y0, 1, Math.max(1, y1 - y0))
     }
   }
+  let disposed = false
   const schedule = () => {
-    if (!raf) raf = requestAnimationFrame(draw)
+    if (!raf && !disposed) raf = requestAnimationFrame(draw)
   }
   void loadPeaks(c, media.path).then((d) => {
     data = d
@@ -290,6 +291,7 @@ function mountWaveform(el: HTMLElement, c: ClipBodyContext) {
   })
   const off = c.subscribe(schedule)
   return () => {
+    disposed = true
     off()
     cancelAnimationFrame(raf)
     canvas.remove()
