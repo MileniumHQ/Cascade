@@ -1,0 +1,7 @@
+.path-param { display: flex; gap: 4px; flex-wrap: wrap; min-width: 0; }
+.path-param > :first-child { flex: 1 1 100%; text-align: left; font-size: 11px; }
+.curve-param { width: 100%; min-width: 0; display: grid; gap: 6px; }
+.curve-tabs { display: flex; gap: 3px; }
+.curve-tabs > button { flex: 1; padding: 3px; font-size: 11px; }
+.curve-tabs [data-active='true'] { background: #444; color: #fff; }
+.curve-canvas { display: block; width: 100%; aspect-ratio: 1; border: 1px solid #444; border-radius: 5px; cursor: crosshair; touch-action: none; }

@@ -38,7 +38,7 @@ export function ParamRow(props: { app: CascadeAPI; clipId: Id; propId: Id; def: 
   }
 
   return (
-    <div class="ins-row" classList={{ stack: def.type === 'color' || (def.type === 'text' && !!def.config?.multiline), keyed: animatable && kf().keyed, animated: animatable && kf().animated }} onContextMenu={rowMenu}>
+    <div class="ins-row" classList={{ stack: def.type === 'curve' || def.type === 'path' || def.type === 'color' || (def.type === 'text' && !!def.config?.multiline), keyed: animatable && kf().keyed, animated: animatable && kf().animated }} onContextMenu={rowMenu}>
       <div class="ins-label" data-tip={def.label}>
         {def.label}
       </div>

@@ -1,0 +1,6 @@
+.pv-overlay > .path-overlay { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; outline: none; }
+.path-outline { fill: transparent; fill-rule: evenodd; stroke: #82cbff; stroke-width: 1.5; pointer-events: all; cursor: move; }
+.path-point { fill: #242424; stroke: white; stroke-width: 1.5; pointer-events: all; cursor: crosshair; }
+.path-point.selected { fill: #82cbff; }
+.path-tangent { stroke: #82cbff; stroke-width: 1; pointer-events: none; }
+.path-handle { fill: #242424; stroke: #82cbff; stroke-width: 1.5; pointer-events: all; cursor: crosshair; }

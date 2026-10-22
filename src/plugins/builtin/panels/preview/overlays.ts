@@ -2,6 +2,7 @@ import type { CascadeAPI } from '@core/app'
 import type { OverlayContribution, OverlayContext } from '@core/plugin-api'
 import { findClip, type Id } from '@shared/project'
 import type { PreviewEngine } from './engine'
+import { selectedPath } from './path-target'
 
 type Pt = { x: number; y: number }
 const SVG = 'http://www.w3.org/2000/svg'
@@ -11,7 +12,7 @@ const SNAP_PX = 7
  * Corners of a stage element (in display px), honoring its full CSS transform (incl. 3D). Layout
  * offsets are whole pixels, so the result is re-aligned to the element's sub-pixel bounding box.
  */
-function corners(el: HTMLElement, engine: PreviewEngine): Pt[] | null {
+export function corners(el: HTMLElement, engine: PreviewEngine): Pt[] | null {
   const win = el.ownerDocument.defaultView
   if (!win) return null
   const cs = win.getComputedStyle(el)
@@ -112,6 +113,7 @@ export const transformOverlay: OverlayContribution = {
     let snapLines: { x: number[]; y: number[] } = { x: [], y: [] }
 
     const target = (): { clipId: Id; el: HTMLElement } | null => {
+      if (selectedPath(app) && app.services.has('cascade.path.editor')) return null
       const id = app.selection.primaryClip
       if (!id) return null
       const f = findClip(app.timeline(), id)
