@@ -22,6 +22,7 @@ import type {
   StatusItemContribution
 } from './plugin-api'
 import { Editing } from './editing'
+import { MeterService } from './meters'
 
 export interface Registries {
   mediaTypes: Registry<MediaTypeContribution>
@@ -248,6 +249,8 @@ export interface CascadeAPI {
   readonly settings: SettingsService
   readonly events: EventBus
   readonly edit: Editing
+  /** Audio level taps (mixer, status bar…). */
+  readonly meters: MeterService
   readonly host: HostBridge | null
   /** Arbitrary named services contributed by plugins (e.g. "preview", "media"). */
   readonly services: Map<string, unknown>
@@ -269,6 +272,7 @@ export class CascadeApp implements CascadeAPI {
   readonly settings: SettingsService
   readonly events = new EventBus()
   readonly edit: Editing
+  readonly meters = new MeterService()
   readonly services = new Map<string, unknown>()
   readonly onNotify = new Emitter<Notification>()
   private notifyId = 0

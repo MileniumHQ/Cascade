@@ -71,6 +71,7 @@ export class PreviewEngine {
           css: fontCss() + '\n#cascade-stage{font-family:"Inter",system-ui,sans-serif}'
         })
         this.stage.onFrame.on(() => this.onFrame.emit())
+        this.disposers.push(app.meters.provide({ read: (channel) => this.stage?.meter(channel) ?? null }))
         resolve()
       }
       init()

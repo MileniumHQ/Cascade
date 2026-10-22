@@ -160,6 +160,11 @@ export interface AudioPropertyNode {
   output: AudioNode
   /** Called per frame (preview) or per automation step (render) with evaluated values. */
   update(values: Record<string, unknown>, at: number): void
+  /**
+   * Resolves once asynchronous setup (e.g. an AudioWorklet module) is wired into input → output.
+   * Export waits for it before rendering a chunk; until then the node should pass audio through.
+   */
+  ready?: Promise<void>
   dispose?(): void
 }
 

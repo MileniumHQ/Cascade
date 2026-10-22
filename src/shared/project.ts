@@ -103,6 +103,12 @@ export interface Track {
   hidden: boolean
   muted: boolean
   locked: boolean
+  /** Audio tracks: when any track is soloed, non-soloed audio tracks are silent. */
+  solo?: boolean
+  /** Audio tracks: fader level in dB (default 0). Not keyframeable. */
+  gain?: number
+  /** Audio tracks: stereo position -1 (left) … 1 (right), default 0. */
+  pan?: number
   /** Clips sorted by start, never overlapping. */
   clips: Clip[]
   height?: number

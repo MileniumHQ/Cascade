@@ -8,6 +8,8 @@
  * Resolution independence: the stage root is a size container, plugins express lengths with
  * container units (cqw/cqh) via `StageUnits`, so the same DOM renders at any output size.
  */
+import { anySolo, trackAudible, type MeterReading } from '@shared/audio-mix'
+import { StageMixer } from './mixer'
 import { clipEnd, type Clip, type Id, type MediaItem, type Project, type Track } from '@shared/project'
 import { FLICKS, type Flicks } from '@shared/time'
 import type { Registries } from '@core/app'
@@ -72,9 +74,12 @@ export class Stage {
   private lastPlaying = false
   private lastRate = 1
   private disposed = false
+  /** Track buses and the master bus every clip chain feeds (absent without audio). */
+  private mixer: StageMixer | null
 
   constructor(private opts: StageOptions) {
     const doc = opts.document
+    this.mixer = opts.audio ? new StageMixer(opts.audio) : null
     const style = doc.createElement('style')
     style.textContent = `
       html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
@@ -234,7 +239,7 @@ export class Stage {
       }
       const gain = ctx.createGain()
       prev.connect(gain)
-      gain.connect(audio.destination)
+      gain.connect(this.mixer ? this.mixer.input(track) : audio.destination)
       m.audio = { signature: sig, nodes, gain }
     }
     m.audio.gain.gain.setValueAtTime(track.muted ? 0 : 1, at)
@@ -261,6 +266,7 @@ export class Stage {
     const preroll = this.opts.mode === 'preview' ? PREROLL_PREVIEW : 0
     const postroll = this.opts.mode === 'preview' ? POSTROLL_PREVIEW : 0
     const needed = new Set<Id>()
+    this.mixer?.sync(tl.tracks)
     let z = 0
     const liveTracks = new Set<Id>()
     for (const track of tl.tracks) {
@@ -438,8 +444,10 @@ export class Stage {
     if (!audio?.chunk || !timeline) throw new Error('Audio chunk requires a timeline and StageAudio.chunk')
     const end = start + duration
     const prepare: Promise<void>[] = []
+    this.mixer?.sync(timeline.tracks, 0)
+    const solo = anySolo(timeline.tracks)
     for (const track of timeline.tracks) {
-      if (track.muted) continue
+      if (!trackAudible(track, solo)) continue
       for (const clip of track.clips) {
         if (clip.start >= end || clipEnd(clip) <= start) continue
         const mounted = this.mount(clip, track, project)
@@ -468,6 +476,7 @@ export class Stage {
         mounted.audio!.gain.gain.setValueAtTime(0, 0)
         mounted.audio!.gain.gain.setValueAtTime(1, (from - start) / FLICKS)
         mounted.audio!.gain.gain.setValueAtTime(0, (to - start) / FLICKS)
+        for (const n of mounted.audio!.nodes) if (n.node.ready) prepare.push(n.node.ready)
         const local = from - clip.start
         const remap = clipTimeMap(clip, timeline, this.opts.registries)
         const state: ClipFrameState = {
@@ -482,6 +491,11 @@ export class Stage {
     await Promise.all(prepare)
   }
 
+  /** Peak/RMS taps for the mixer: `master` or `track:<id>` (see shared/audio-mix). Null without audio or for unknown channels. */
+  meter(channel: string): MeterReading | null {
+    return this.mixer?.meter(channel) ?? null
+  }
+
   /** All currently mounted clip ids (for overlays/tests). */
   mountedClips() {
     return [...this.mounted.keys()]
@@ -491,6 +505,7 @@ export class Stage {
     this.disposed = true
     for (const m of this.mounted.values()) this.unmount(m)
     this.mounted.clear()
+    this.mixer?.dispose()
     this.resizeObs?.disconnect()
     this.root.remove()
   }

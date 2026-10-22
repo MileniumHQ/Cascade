@@ -1,6 +1,7 @@
 import { open, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ClipAudioPlan, ExportRequest, RenderWorkerJob } from '../../shared/ipc'
+import { anySolo, trackAudible } from '../../shared/audio-mix'
 import { FLICKS } from '../../shared/time'
 import { ExportScope } from './process'
 
@@ -27,8 +28,10 @@ export async function renderAudio(scope: ExportScope, ffmpeg: string, req: Expor
   } else {
     // Requests without an audio plan: constant clip speed, resampled.
     const end = req.range.start / FLICKS + duration
-    for (const track of req.project.timelines[req.timelineId].tracks) {
-      if (track.muted) continue
+    const tracks = req.project.timelines[req.timelineId].tracks
+    const solo = anySolo(tracks)
+    for (const track of tracks) {
+      if (!trackAudible(track, solo)) continue
       for (const clip of track.clips) {
         const media = clip.mediaId ? req.project.media[clip.mediaId] : undefined
         if (!media?.path || media.meta.hasAudio === false) continue

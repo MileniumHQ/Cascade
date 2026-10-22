@@ -1,5 +1,6 @@
 import type { CascadeAPI } from '@core/app'
 import type { ClipAudioPlan, ExportRequest } from '@shared/ipc'
+import { anySolo, trackAudible } from '@shared/audio-mix'
 import { clipEnd } from '@shared/project'
 import { FLICKS, type Flicks, type FrameRate } from '@shared/time'
 import { pitchOf } from './properties/audio'
@@ -18,7 +19,8 @@ export interface ExportJobSpec {
 /** True if any audible audio clip overlaps the range (decides whether formats get an audio stream). */
 export function rangeHasAudio(app: CascadeAPI, range: { start: Flicks; end: Flicks }): boolean {
   const tl = app.project().timelines[app.project().activeTimeline]
-  return !!tl?.tracks.some((t) => t.kind === 'audio' && !t.muted && t.clips.some((c) => c.start < range.end && clipEnd(c) > range.start))
+  const solo = anySolo(tl?.tracks ?? [])
+  return !!tl?.tracks.some((t) => t.kind === 'audio' && trackAudible(t, solo) && t.clips.some((c) => c.start < range.end && clipEnd(c) > range.start))
 }
 
 /** Max rubberband commands per clip for a varying speed (a 10 Hz control rate, capped). */
@@ -33,9 +35,10 @@ export function audioPlan(app: CascadeAPI, range: { start: Flicks; end: Flicks }
   const project = app.project()
   const tl = project.timelines[project.activeTimeline]
   const plan: Record<string, ClipAudioPlan> = {}
+  const solo = anySolo(tl?.tracks ?? [])
   for (const track of tl?.tracks ?? []) {
-    // Sound comes from audio tracks only (a video's picture clip is muted).
-    if (track.muted || track.kind !== 'audio') continue
+    // Sound comes from audible audio tracks only (a video's picture clip is muted; solo silences the rest).
+    if (!trackAudible(track, solo) || track.kind !== 'audio') continue
     for (const clip of track.clips) {
       const media = clip.mediaId ? project.media[clip.mediaId] : undefined
       if (!media?.path || media.meta.hasAudio === false) continue

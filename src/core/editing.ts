@@ -480,11 +480,19 @@ export class Editing {
     })
   }
 
-  updateTrack(trackId: Id, patch: Partial<Pick<Track, 'name' | 'hidden' | 'muted' | 'locked' | 'height'>>) {
+  /** Mixer fields (`solo`, `gain`, `pan`) coalesce per field while a fader/knob is dragged; pass `gesture` for exact undo steps. */
+  updateTrack(trackId: Id, patch: Partial<Pick<Track, 'name' | 'hidden' | 'muted' | 'locked' | 'height' | 'solo' | 'gain' | 'pan'>>, opts?: GestureOpts) {
+    const key = 'gain' in patch ? `track:${trackId}:gain` : 'pan' in patch ? `track:${trackId}:pan` : `track:${trackId}`
     this.doc.transact('Edit track', (d) => {
       const t = this.tl(d).tracks.find((x) => x.id === trackId)
-      if (t) Object.assign(t, patch)
-    }, { coalesce: `track:${trackId}` })
+      if (!t) return
+      Object.assign(t, patch)
+      // Defaults are not stored, so a reset fader leaves the document as it was.
+      if (!t.gain) delete t.gain
+      if (!t.pan) delete t.pan
+      if (!t.solo) delete t.solo
+    }, this.gesture(key, opts))
+    this.endGesture(opts)
   }
 
   // ───────────────────────── properties ─────────────────────────
