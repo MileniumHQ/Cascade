@@ -252,9 +252,11 @@ export class LayoutService {
   /** Panels request focus/visibility via this. */
   reveal(panelId: string) {
     const cfg = this.config.get()
-    if (cfg.bottom.includes(panelId)) this.activeBottom.set(panelId)
-    if (cfg.side.includes(panelId)) this.activeSide.set(panelId)
-    const group = this.panels().find((p) => p.id === panelId)?.group
+    const panel = this.panels().find(p => p.id === panelId)
+    const region = cfg.bottom.includes(panelId) ? 'bottom' : cfg.side.includes(panelId) ? 'side' : cfg.top.includes(panelId) ? 'top' : panel?.region
+    if (region === 'bottom') this.activeBottom.set(panelId)
+    if (region === 'side') this.activeSide.set(panelId)
+    const group = panel?.group
     if (group) this.activeTab.set({ ...this.activeTab.get(), [group]: panelId })
   }
 }

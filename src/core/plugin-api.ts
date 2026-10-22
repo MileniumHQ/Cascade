@@ -551,6 +551,8 @@ export interface PanelContribution extends Contribution {
   /**
    * Panels of one region that share a `group` share a single slot and show as tabs (e.g. the
    * timeline Preview and a Source monitor use the same viewer space). The first one listed is the default tab.
+   * The bottom and side regions already present every panel as a tab / switch button in one slot, so a
+   * `group` there changes nothing visible; `LayoutService.reveal` still focuses the panel in every region.
    */
   group?: string
   mount: Mount<PanelContext>
