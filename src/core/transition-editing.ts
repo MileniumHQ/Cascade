@@ -1,7 +1,8 @@
 import type { CascadeAPI } from './app'
 import type { GestureOpts } from './editing'
+import type { TransitionContribution } from './plugin-api'
 import { findTransition, transitionWindow } from './transitions'
-import { clipEnd, findClip, uid, type Id, type TransitionInstance } from '@shared/project'
+import { clipEnd, findClip, uid, type Id, type Timeline, type TransitionInstance } from '@shared/project'
 import { FLICKS, frameDuration, type Flicks } from '@shared/time'
 
 export interface AddTransitionOptions {
@@ -35,7 +36,11 @@ export class TransitionEditing {
       this.update(existing.id, { type: opts.type, ...(opts.duration !== undefined ? { duration: opts.duration } : {}), ...(opts.align ? { align: opts.align } : {}), ...(opts.params ? { params: opts.params } : {}) }, gesture)
       return existing.id
     }
-    const audio = found.track.kind === 'visual' && opts.linked !== false ? app.registries.transitions.all().find(t => t.kinds.includes('audio') && (opts.from && opts.to || t.singleSided !== false)) : undefined
+    const twoSided = !!(opts.from && opts.to)
+    const usable = (t: TransitionContribution | undefined): t is TransitionContribution => !!t?.kinds.includes('audio') && (twoSided || t.singleSided !== false)
+    const audio = found.track.kind === 'visual' && opts.linked !== false
+      ? [def.linked?.audio ? app.registries.transitions.get(def.linked.audio) : undefined, def].find(usable) ?? app.registries.transitions.all().find(usable)
+      : undefined
     const partners: { trackId: Id; from?: Id; to?: Id }[] = []
     if (audio) for (const tr of tl.tracks) {
       if (tr.kind !== 'audio' || tr.locked) continue
@@ -82,8 +87,8 @@ export class TransitionEditing {
   }
 
   update(id: Id, patch: TransitionPatch, opts?: GestureOpts): void {
-    const app = this.app, found = findTransition(app.timeline(), id)
-    if (!found || found.track.locked) return
+    const app = this.app, tl = app.timeline(), found = findTransition(tl, id)
+    if (!found || this.groupLocked(tl, found.transition)) return
     const def = patch.type ? app.registries.transitions.get(patch.type) : undefined
     if (patch.type && (!def?.kinds.includes(found.track.kind) || ((!found.transition.from || !found.transition.to) && def.singleSided === false))) return
     const key = `transition:${id}`
@@ -115,8 +120,15 @@ export class TransitionEditing {
     if (opts?.gesture === 'end') app.doc.endGesture()
   }
 
+  private groupLocked(tl: Timeline, tx: TransitionInstance): boolean {
+    return tl.tracks.some(tr => tr.locked && tr.transitions?.some(t => t.id === tx.id || (tx.linkId && t.linkId === tx.linkId)))
+  }
+
   remove(ids: Id[]): void {
-    const app = this.app, tl = app.timeline(), selected = new Set(ids.filter(id => !findTransition(tl, id)?.track.locked))
+    const app = this.app, tl = app.timeline()
+    // A linked group is edited as a whole, so one locked member protects every member.
+    const selected = new Set(ids.filter(id => { const f = findTransition(tl, id); return f && !this.groupLocked(tl, f.transition) }))
+    if (!selected.size) return
     const links = new Set([...selected].map(id => findTransition(tl, id)?.transition.linkId).filter(Boolean))
     app.doc.transact('Delete transitions', d => {
       for (const tr of d.timelines[d.activeTimeline].tracks) if (tr.transitions) tr.transitions = tr.transitions.filter(t => !selected.has(t.id) && (!t.linkId || !links.has(t.linkId)))

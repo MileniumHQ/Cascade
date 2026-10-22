@@ -177,6 +177,12 @@ export interface TransitionContribution extends Contribution {
   singleSided?: boolean
   /** Seconds; default 0.5. Document durations are integer flicks. */
   defaultDuration?: number
+  /**
+   * Transition type ids to pair with when this transition is added between linked clips on the other
+   * track kind. Without an entry (or when it isn't registered/compatible) a transition that itself
+   * supports the partner's kind is used, then the first registered transition for that kind.
+   */
+  linked?: { audio?: string; visual?: string }
   params: ParamDef[]
   apply?(p: number, values: Record<string, unknown>, ctx: TransitionApplyContext): { from?: PropertyOutput; to?: PropertyOutput } | void
   /** Linear gains; absent uses an equal-power crossfade. */

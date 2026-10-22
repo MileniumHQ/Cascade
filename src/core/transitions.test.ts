@@ -190,3 +190,32 @@ describe('undoable editing and plugin lifecycle', () => {
     expect(app.timeline().tracks[1].transitions![0].type).toBe('audio-crossfade')
   })
 })
+
+for (const operation of ['update', 'remove'] as const) test(`locked linked transition partner blocks ${operation} atomically`, async () => {
+  const app = await editor()
+  const id = app.edit.addTransition({ type: 'cross-dissolve', from: 'a', to: 'b' })!
+  app.edit.updateTrack('audio', { locked: true })
+  const before = app.project()
+  if (operation === 'update') app.edit.updateTransition(id, { duration: S(2), params: { changed: true } })
+  else app.edit.removeTransitions([id])
+  expect(app.project()).toBe(before)
+})
+
+test('a dual-kind external transition supplies its own linked audio implementation', async () => {
+  const app = await editor()
+  app.registries.transitions.register({ id: 'external-dual', name: 'Dual', description: '', icon: '', kinds: ['visual', 'audio'], params: [], gain: () => ({ from: .2, to: .8 }) }, 'external', false)
+  app.edit.addTransition({ type: 'external-dual', from: 'a', to: 'b' })
+  expect(app.timeline().tracks[1].transitions![0].type).toBe('external-dual')
+})
+
+test('an external transition can explicitly pair an audio type, with registry default fallback', async () => {
+  const app = await editor()
+  app.registries.transitions.register({ id: 'external-audio', name: 'Sound', description: '', icon: '', kinds: ['audio'], params: [] }, 'external', false)
+  app.registries.transitions.register({ id: 'external-visual', name: 'Picture', description: '', icon: '', kinds: ['visual'], params: [], linked: { audio: 'external-audio' } }, 'external', false)
+  app.edit.addTransition({ type: 'external-visual', from: 'a', to: 'b' })
+  expect(app.timeline().tracks[1].transitions![0].type).toBe('external-audio')
+  app.edit.removeTransitions(app.timeline().tracks[0].transitions!.map(t => t.id))
+  app.registries.transitions.register({ id: 'external-visual', name: 'Picture', description: '', icon: '', kinds: ['visual'], params: [], linked: { audio: 'unavailable' } }, 'external', false)
+  app.edit.addTransition({ type: 'external-visual', from: 'a', to: 'b' })
+  expect(app.timeline().tracks[1].transitions![0].type).toBe('audio-crossfade')
+})
