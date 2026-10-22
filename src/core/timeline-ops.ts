@@ -83,7 +83,13 @@ export function clearRange(track: Track, start: Flicks, end: Flicks, except: Set
       continue
     }
     if (cs < start && ce > end) {
+      const map = resolveTimeMap(c)
+      const positions = (c.markers ?? []).map(m => clipMarkerTimelineTime(c, map, m))
       const right = cloneClip(c)
+      if (c.markers) {
+        right.markers = right.markers!.filter((_, i) => positions[i] !== null && positions[i]! >= end)
+        c.markers = c.markers.filter((_, i) => positions[i] !== null && positions[i]! < start)
+      }
       transferTransitionEnd(track, c.id, right.id)
       trimEndTo(c, start)
       trimStartTo(right, end)
@@ -261,7 +267,13 @@ export function snapPoints(tl: Timeline, exclude: Set<Id>, extra: Flicks[] = [])
   for (const tr of tl.tracks) for (const c of tr.clips) if (!exclude.has(c.id)) for (const m of c.markers ?? []) {
     if (exclude.has(m.id)) continue
     const t = clipMarkerTimelineTime(c, resolveTimeMap(c), m)
-    if (t !== null) pts.add(t)
+    if (t !== null) {
+      pts.add(t)
+      if (m.duration) {
+        const end = clipMarkerTimelineTime(c, resolveTimeMap(c), { ...m, t: m.t + m.duration })
+        if (end !== null) pts.add(end)
+      }
+    }
   }
   return [...pts].sort((a, b) => a - b)
 }

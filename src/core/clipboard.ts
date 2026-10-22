@@ -44,6 +44,7 @@ export function captureClips(project: Project, ids: Iterable<Id>): ClipClipboard
 
 const record = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v)
 const time = (v: unknown) => Number.isSafeInteger(v) && Number(v) >= 0
+const markers = (v: unknown) => v === undefined || Array.isArray(v) && v.every(m => record(m) && typeof m.id === 'string' && typeof m.name === 'string' && time(m.t) && (m.duration === undefined || time(m.duration)) && ['color','kind','note'].every(k => m[k] === undefined || typeof m[k] === 'string'))
 const property = (v: unknown): v is PropertyInstance => record(v) && typeof v.id === 'string' && typeof v.type === 'string' && typeof v.enabled === 'boolean' && record(v.params) && Object.values(v.params).every((pv) => record(pv) && (!pv.keyframes || Array.isArray(pv.keyframes) && pv.keyframes.every((k: unknown) => record(k) && typeof k.id === 'string' && Number.isSafeInteger(k.t) && record(k.easing) && typeof k.easing.id === 'string')))
 export function parseClipboard(text: string): ClipboardPayload | null {
   try {
@@ -53,7 +54,7 @@ export function parseClipboard(text: string): ClipboardPayload | null {
     if (v.version !== 1) return null
     if (v.cascade === 'property') return property(v.property) ? v as PropertyClipboardPayload : null
     if (v.cascade !== 'clips' || !Array.isArray(v.clips) || !v.clips.length || !Array.isArray(v.media)) return null
-    if (!v.clips.every((e: unknown) => record(e) && (e.kind === 'visual' || e.kind === 'audio') && time(e.trackOffset) && e.trackOffset < 1000 && typeof e.sourceTrack === 'string' && record(e.clip) && typeof e.clip.id === 'string' && typeof e.clip.type === 'string' && typeof e.clip.name === 'string' && (e.clip.mediaId === undefined || typeof e.clip.mediaId === 'string') && (e.clip.linkId === undefined || typeof e.clip.linkId === 'string') && (e.clip.speed === undefined || Number.isFinite(e.clip.speed)) && time(e.clip.start) && time(e.clip.duration) && e.clip.duration > 0 && time(e.clip.sourceIn) && record(e.clip.data) && Array.isArray(e.clip.properties) && e.clip.properties.every(property))) return null
+    if (!v.clips.every((e: unknown) => record(e) && (e.kind === 'visual' || e.kind === 'audio') && time(e.trackOffset) && e.trackOffset < 1000 && typeof e.sourceTrack === 'string' && record(e.clip) && typeof e.clip.id === 'string' && typeof e.clip.type === 'string' && typeof e.clip.name === 'string' && (e.clip.mediaId === undefined || typeof e.clip.mediaId === 'string') && (e.clip.linkId === undefined || typeof e.clip.linkId === 'string') && (e.clip.speed === undefined || Number.isFinite(e.clip.speed)) && time(e.clip.start) && time(e.clip.duration) && e.clip.duration > 0 && time(e.clip.sourceIn) && record(e.clip.data) && Array.isArray(e.clip.properties) && e.clip.properties.every(property) && markers(e.clip.markers))) return null
     for (const kind of ['visual', 'audio']) if (v.clips.some((e: any) => e.kind === kind) && !v.clips.some((e: any) => e.kind === kind && e.trackOffset === 0)) return null
     if (!v.media.every((m: unknown) => record(m) && typeof m.id === 'string' && typeof m.type === 'string' && typeof m.name === 'string' && record(m.meta) && (m.path === undefined || typeof m.path === 'string'))) return null
     return v as ClipClipboardPayload

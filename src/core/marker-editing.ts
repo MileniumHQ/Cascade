@@ -11,7 +11,7 @@ export class MarkerEditing {
     const f = clipId ? findClip(this.app.timeline(), clipId) : null
     if (!Number.isFinite(t) || clipId && (!f || f.track.locked)) return ''
     const marker: Marker = { ...structuredClone(fields), id: uid('mk_'), name, t: Math.max(0, Math.round(f ? clipMarkerSourceTime(f.clip, this.app.edit.timeMap(f.clip), t) : t)) }
-    if (marker.duration !== undefined) marker.duration = Math.max(0, Math.round(marker.duration || 0))
+    if (marker.duration !== undefined) marker.duration = Number.isFinite(marker.duration) ? Math.max(0, Math.round(marker.duration)) : 0
     this.app.doc.transact('Add marker', d => {
       const tl = d.timelines[d.activeTimeline]
       const markers = clipId ? (findClip(tl, clipId)!.clip.markers ??= []) : tl.markers
@@ -29,7 +29,8 @@ export class MarkerEditing {
       Object.assign(marker, structuredClone(patch), { id })
       if (!Number.isFinite(marker.t)) marker.t = found.marker.t
       marker.t = Math.max(0, Math.round(marker.t))
-      if (marker.duration !== undefined) marker.duration = Math.max(0, Math.round(marker.duration || 0))
+      if (typeof marker.name !== 'string') marker.name = found.marker.name
+      if (marker.duration !== undefined) marker.duration = Number.isFinite(marker.duration) ? Math.max(0, Math.round(marker.duration)) : 0
     }, opts ? { coalesce: key } : {})
     if (opts?.gesture === 'end') this.app.doc.endGesture()
   }

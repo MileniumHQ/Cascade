@@ -186,7 +186,7 @@ export class SelectionService {
     // Direct Value writes by existing panels/plugins obey the same selection exclusivity.
     this.clips.subscribe(ids => { if (ids.length) { this.transitions.set([]); this.markers.set([]) } })
     this.markers.subscribe(ids => { if (ids.length) { this.clips.set([]); this.transitions.set([]); this.media.set([]); this.keyframes.set([]) } })
-    this.media.subscribe(ids => { if (ids.length) this.transitions.set([]) })
+    this.media.subscribe(ids => { if (ids.length) { this.transitions.set([]); this.markers.set([]) } })
   }
 
   get primaryClip(): Id | null {
@@ -200,6 +200,7 @@ export class SelectionService {
     if (ids.length) { this.clips.set([]); this.media.set([]); this.keyframes.set([]) }
   }
   setClips(ids: Id[]) {
+    this.markers.set([])
     this.transitions.set([])
     this.clips.set(ids)
     if (ids.length) this.media.set([])

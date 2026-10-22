@@ -26,13 +26,20 @@ const record = (v: unknown): v is Record<string, any> => !!v && typeof v === 'ob
 export function isKeyframeData(data: unknown): data is KeyframeClipboardData {
   return record(data) && Array.isArray(data.channels) && data.channels.length > 0 && data.channels.every((ch: unknown) => record(ch) && ['clipId','propertyId','type','param','valueType'].every(k => typeof ch[k] === 'string') && Array.isArray(ch.keys) && ch.keys.length > 0 && ch.keys.every((k: unknown) => record(k) && typeof k.id === 'string' && Number.isSafeInteger(k.t) && k.t >= 0 && Object.hasOwn(k,'value') && record(k.easing) && typeof k.easing.id === 'string' && (k.easing.params === undefined || Array.isArray(k.easing.params) && k.easing.params.every(Number.isFinite))))
 }
+const compatibleValue = (value: unknown, expected: unknown): boolean => {
+  if (expected === null) return value === null
+  if (Array.isArray(expected)) return Array.isArray(value) && value.length === expected.length && value.every((v,i) => compatibleValue(v,expected[i]))
+  if (typeof expected === 'number') return typeof value === 'number' && Number.isFinite(value)
+  return typeof value === typeof expected && !Array.isArray(value) && (value !== null || expected === null)
+}
 /** Mutable, property-neutral paste mapping. Returns selection refs for the newly pasted keys. */
 export function pasteKeyframes(clip: Clip, data: KeyframeClipboardData, at: Flicks, definitions: (id: string) => PropertyContribution | undefined, applies: (def: PropertyContribution, clip: Clip) => boolean): KeyframeSelection[] {
   const selected: KeyframeSelection[] = []
   for (const ch of data.channels) {
     const def = definitions(ch.type), param = def?.params.find(d => d.id === ch.param)
     if (!def || !param || param.type !== ch.valueType || param.animatable === false || !applies(def, clip)) continue
-    const keys = ch.keys.map(k => ({ ...structuredClone(k), id: uid('kf_'), t: Math.round(at - clip.start + k.t) })).filter(k => k.t >= 0 && k.t < clip.duration)
+    const mapped = ch.keys.filter(k => compatibleValue(k.value,param.default)).map(k => ({ ...structuredClone(k), id: uid('kf_'), t: Math.round(at - clip.start + k.t) })).filter(k => k.t >= 0 && k.t < clip.duration)
+    const keys = [...new Map(mapped.map(k => [k.t, k])).values()]
     if (!keys.length) continue
     let prop = clip.properties.find(p => p.id === ch.propertyId && clip.id === ch.clipId && p.type === ch.type) ?? clip.properties.find(p => p.type === ch.type)
     if (!prop) clip.properties.push(prop = { id: uid('pi_'), type: ch.type, enabled: true, params: defaultParams(def) })
@@ -41,5 +48,5 @@ export function pasteKeyframes(clip: Clip, data: KeyframeClipboardData, at: Flic
     pv.keyframes = [...(pv.keyframes ?? []).filter(k => !times.has(k.t)), ...keys].sort((a,b) => a.t - b.t)
     selected.push(...keys.map(k => ({ clipId: clip.id, propertyId: prop.id, paramId: ch.param, keyframeId: k.id })))
   }
-  return selected
+  return selected.filter(ref => clip.properties.find(p => p.id === ref.propertyId)?.params[ref.paramId]?.keyframes?.some(k => k.id === ref.keyframeId))
 }

@@ -2,7 +2,7 @@ import type { CascadeAPI } from '@core/app'
 import { formatRulerLabel, rulerStep, type Flicks } from '@shared/time'
 
 /** Draw the adaptive time ruler (labels shorten as you zoom out) into a canvas. */
-export function drawRuler(canvas: HTMLCanvasElement, app: CascadeAPI, opts: { inPoint?: Flicks; outPoint?: Flicks; markers: { t: Flicks; color?: string }[] }) {
+export function drawRuler(canvas: HTMLCanvasElement, app: CascadeAPI, opts: { inPoint?: Flicks; outPoint?: Flicks }) {
   const w = canvas.clientWidth
   const h = canvas.clientHeight
   if (!w || !h) return
@@ -58,17 +58,5 @@ export function drawRuler(canvas: HTMLCanvasElement, app: CascadeAPI, opts: { in
     g.fillText(formatRulerLabel(t, fps, major), x + 4, 5)
   }
 
-  for (const m of opts.markers) {
-    const x = Math.round(app.view.timeToPx(m.t) - scroll)
-    if (x < -10 || x > w + 10) continue
-    g.fillStyle = m.color ?? '#f2c14e'
-    g.beginPath()
-    g.moveTo(x - 4, h - 12)
-    g.lineTo(x + 4, h - 12)
-    g.lineTo(x + 4, h - 6)
-    g.lineTo(x, h - 2)
-    g.lineTo(x - 4, h - 6)
-    g.closePath()
-    g.fill()
-  }
+  // Marker pins and ranges are drawn by the built-in marker plugin overlay.
 }

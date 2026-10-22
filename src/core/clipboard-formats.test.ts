@@ -38,3 +38,8 @@ it('reads old clip payloads through the built-in clips format and writes envelop
   const payload=JSON.parse(text);expect(payload.format).toBe('clips');text=JSON.stringify(payload.data)
   a.playback.seek(2*S);expect(await a.clipboard.paste()).toHaveLength(1)
 })
+it('rejects malformed source markers inside an otherwise valid clip payload',()=>{
+  const clip={id:'c',type:'unknown',name:'',start:0,duration:S,sourceIn:0,properties:[],data:{},markers:[null]}
+  const payload={cascade:'clips',version:1,clips:[{clip,kind:'visual',trackOffset:0,sourceTrack:'t'}],media:[]}
+  expect(parseClipboard(JSON.stringify(payload))).toBeNull()
+})

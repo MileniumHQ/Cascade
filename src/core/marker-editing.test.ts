@@ -37,3 +37,14 @@ it('ripples markers once for linked deletion and preserves them when disabled', 
   a.edit.addMarker(12*S); a.edit.deleteClips(['c'],true); expect(a.timeline().markers[0].t).toBe(4*S)
   a.doc.undo(); a.settings.set('timeline.rippleMarkers',false); a.edit.deleteClips(['c'],true); expect(a.timeline().markers[0].t).toBe(12*S)
 })
+it('clears markers with Deselect and routes Delete to selected markers before clips',async()=>{
+  const {PluginHost}=await import('./plugin-host'), {commandsPlugin}=await import('../plugins/builtin/commands')
+  const a=setup();await new PluginHost(a).activate(commandsPlugin,true)
+  const id=a.edit.addMarker(S);a.selection.setMarkers([id]);a.run('timeline.deselect');expect(a.selection.markers.get()).toEqual([])
+  a.selection.setMarkers([id]);a.run('timeline.delete');expect(a.timeline().markers).toEqual([]);expect(a.timeline().tracks[0].clips).toHaveLength(1)
+})
+it('keeps marker times and durations finite integers',()=>{
+  const a=setup(),id=a.edit.addMarker(1.2,'',{duration:Infinity})
+  expect(a.timeline().markers[0]).toMatchObject({t:1,duration:0})
+  a.edit.updateMarker(id,{t:NaN,duration:Infinity});expect(a.timeline().markers[0]).toMatchObject({t:1,duration:0})
+})

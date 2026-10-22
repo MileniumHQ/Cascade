@@ -32,3 +32,24 @@ it('creates applicable missing properties and skips incompatible types, inapplic
   pasteKeyframes(absent,data,3*S,()=>def,()=>false);expect(absent.properties).toEqual([])
   pasteKeyframes(absent,data,3*S,()=>({...def,params:[{...def.params[0],type:'text'}]}),()=>true);expect(absent.properties).toEqual([])
 })
+it('skips runtime value shapes that do not match the destination parameter',()=>{
+  const data=setup(),c=clip('target');c.properties=[]
+  data.channels[0].keys[0].value='wrong type';data.channels[0].keys[1].value=NaN
+  expect(pasteKeyframes(c,data,3*S,()=>def,()=>true)).toEqual([]);expect(c.properties).toEqual([])
+})
+it('matches the first instance on a different clip and preserves offsets across source clips',()=>{
+  const p=createProject(''),tl=p.timelines[p.activeTimeline]
+  tl.tracks[0].clips=[clip('c',2*S),clip('other',8*S)]
+  const data=captureKeyframes(tl,[{clipId:'other',propertyId:'p',paramId:'x',keyframeId:'k1'},{clipId:'c',propertyId:'p',paramId:'x',keyframeId:'k2'}],()=>def)!
+  expect(data.channels.map(ch=>ch.keys[0].t)).toEqual([5*S,0])
+  const target=clip('target');target.properties.unshift(property('first'))
+  const selected=pasteKeyframes(target,setup(),3*S,()=>def,()=>true)
+  expect(selected.every(k=>k.propertyId==='first')).toBe(true)
+})
+it('replaces colliding copied keys deterministically and selects only keys that survive',()=>{
+  const data=setup(),c=clip('target')
+  const other=structuredClone(data.channels[0]);other.keys[0].value=99;data.channels.push(other)
+  const selected=pasteKeyframes(c,data,3*S,()=>def,()=>true)
+  expect(c.properties[0].params.x.keyframes!.map(k=>k.value)).toEqual([99,2])
+  expect(selected).toHaveLength(2)
+})

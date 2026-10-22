@@ -17,7 +17,7 @@ import type { ClipboardFormatContribution } from './clipboard'
 export type { ClipboardFormatContribution } from './clipboard'
 import type { Disposable } from './disposable'
 import type { Contribution } from './registry'
-import type { Clip, EasingRef, Id, MediaItem, MediaMeta, Project, PropertyInstance, Timeline, Track, TransitionInstance } from '@shared/project'
+import type { Clip, EasingRef, Id, Marker, MediaItem, MediaMeta, Project, PropertyInstance, Timeline, Track, TransitionInstance } from '@shared/project'
 import type { FFmpegExportPlan } from '@shared/ipc'
 import type { Flicks, FrameRate } from '@shared/time'
 import type { CascadeAPI } from './app'
@@ -644,7 +644,7 @@ export interface ExportPresetContribution extends Contribution {
 
 // ───────────────────────────── helpers re-exported for plugin authors ─────────────────────────────
 
-export type { Clip, EasingRef, Id, MediaItem, MediaMeta, Project, PropertyInstance, TransitionInstance, Timeline, Track, Flicks, FrameRate }
+export type { Clip, EasingRef, Id, Marker, MediaItem, MediaMeta, Project, PropertyInstance, TransitionInstance, Timeline, Track, Flicks, FrameRate }
 
 export { shaderColor } from '@shared/shader-color'
 /** Framework-neutral timeline pointer tool. Handlers return cleanup for cancellation/unmount. */

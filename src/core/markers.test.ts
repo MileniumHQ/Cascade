@@ -52,3 +52,10 @@ describe('marker ripple', () => {
     insertTime(tl,[tr.id],0,S,false); expect(tl.markers[0].t).toBe(6*S)
   })
 })
+it('partitions markers when overwrite creates two surviving clip halves',async()=>{
+  const {clearRange}=await import('./timeline-ops')
+  const p=createProject(''),tr=p.timelines[p.activeTimeline].tracks[0],c=clip()
+  c.markers=[20,21,22,23].map(n=>({id:`m${n}`,t:n*S,name:''}));tr.clips=[c]
+  clearRange(tr,11*S,13*S)
+  expect(tr.clips.map(c=>c.markers!.map(m=>m.t/S))).toEqual([[20],[23]])
+})
