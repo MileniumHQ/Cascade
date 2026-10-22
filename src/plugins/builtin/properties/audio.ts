@@ -1,5 +1,6 @@
 import { definePlugin, type AudioPropertyNode, type PropertyContribution } from '@core/plugin-api'
 import type { Clip } from '@shared/project'
+import { gateProperty } from './gate'
 
 const n = (v: unknown) => Number(v) || 0
 const dbToGain = (db: number) => (db <= -60 ? 0 : Math.pow(10, db / 20))
@@ -246,5 +247,6 @@ export const audioPropertiesPlugin = definePlugin({
         }
       }
     })
+    register(gateProperty)
   }
 })
