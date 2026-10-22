@@ -3,6 +3,7 @@ import { CascadeApp } from './app'
 import { PluginHost } from './plugin-host'
 import { clipEnd, findClip, type Clip, type PropertyInstance } from '@shared/project'
 import { FLICKS as S } from '@shared/time'
+import { clipboardPlugin } from '../plugins/builtin/clipboard'
 import { timePropertiesPlugin } from '../plugins/builtin/properties/time'
 import { constantMap, curveMap, reverseMap } from './time-remap'
 import { audioPlan } from '../plugins/builtin/export-request'
@@ -14,6 +15,7 @@ async function editor() {
   app.registries.mediaTypes.register({ id: 'picture', name: 'Picture', icon: 'film', color: '#888', track: 'visual', timeBased: true, stage: { mount: () => ({ update() {}, dispose() {} }) } }, 'test', true)
   app.registries.mediaTypes.register({ id: 'sound', name: 'Sound', icon: 'volume-2', color: '#888', track: 'audio', timeBased: true, stage: { mount: () => ({ update() {}, dispose() {} }) } }, 'test', true)
   await new PluginHost(app).activate(timePropertiesPlugin, true)
+  await new PluginHost(app).activate(clipboardPlugin, true)
   app.doc.transact('setup', (d) => {
     d.media.m = { id: 'm', name: 'media', type: 'picture', path: '/media', meta: { duration: 30 * S, hasAudio: true } }
     const tl = d.timelines[d.activeTimeline]
@@ -112,7 +114,7 @@ describe('property paste', () => {
     app.edit.addKeyframe('v1', prop, 'speed', S, 3, { id: 'linear' })
     await app.clipboard.copyProperty('v1', prop)
     const payload = await app.clipboard.read()
-    expect(payload?.cascade).toBe('property')
+    expect(payload?.format).toBe('property')
     const before = JSON.stringify(app.project())
     await app.clipboard.pasteProperty(['v2'])
     const pasted = get(app, 'v2').properties[0]
