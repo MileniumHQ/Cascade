@@ -33,6 +33,7 @@ export class StageMixer {
   private master: GainNode
   private masterTap?: Tap
   private offline: boolean
+  private soloActive = false
 
   constructor(private audio: StageAudio) {
     const ctx = audio.context
@@ -81,6 +82,11 @@ export class StageMixer {
     input.connect(pan).connect(this.master)
     const bus: Bus = { input, pan, gain: NaN, panValue: NaN }
     this.buses.set(track.id, bus)
+    // Visual media can carry audio too: initialize its lazily created bus on the first frame.
+    this.set(bus.input.gain, busGain(track, this.soloActive), true, 0)
+    this.set(bus.pan.pan, trackPan(track), true, 0)
+    bus.gain = busGain(track, this.soloActive)
+    bus.panValue = trackPan(track)
     return bus
   }
 
@@ -97,6 +103,7 @@ export class StageMixer {
   /** Apply fader / pan / solo / mute of the timeline's tracks and drop buses of removed tracks. `at` = context time of the change. */
   sync(tracks: readonly Track[], at = this.audio.context.currentTime) {
     const solo = anySolo(tracks)
+    this.soloActive = solo
     const live = new Set<Id>()
     for (const track of tracks) {
       live.add(track.id)

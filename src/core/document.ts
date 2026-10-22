@@ -2,6 +2,7 @@ import { applyPatches, enablePatches, produceWithPatches, setAutoFreeze, type Dr
 import type { Project } from '@shared/project'
 import { Emitter } from './events'
 import { normalizeProjectTransitions } from './transitions'
+import { validateCompositionChanges } from './compositions'
 
 enablePatches()
 setAutoFreeze(true)
@@ -68,6 +69,7 @@ export class DocumentStore {
       normalizeProjectTransitions(d)
     })
     if (patches.length === 0) return false
+    validateCompositionChanges(this._state, next)
     this._state = next
     if (!opts.silent) {
       const last = this.undoStack[this.undoStack.length - 1]

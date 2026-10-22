@@ -57,7 +57,7 @@ const outputStyle = (out: PropertyOutput, svgId: string): Record<string, string>
 })
 
 /** Compose generic outputs on frame-sized parents, leaving each clip's own properties intact. */
-export function renderTransitionLayers(regs: Registries, track: Track, t: Flicks, layers: Map<Id, HTMLElement>, context: Omit<TransitionApplyContext, 'id' | 'from' | 'to' | 'duration' | 'elements'>): void {
+export function renderTransitionLayers(regs: Registries, track: Track, t: Flicks, layers: Map<Id, HTMLElement>, context: Omit<TransitionApplyContext, 'id' | 'from' | 'to' | 'duration' | 'elements'> & { scope?: string }): void {
   const styles = new Map<Id, Record<string, string>>()
   const owners = new Set<string>()
   const svgs = new Map<Id, string[]>()
@@ -72,7 +72,7 @@ export function renderTransitionLayers(regs: Registries, track: Track, t: Flicks
       })
       for (const [id, result, side] of [[tx.from, out?.from, 'from'], [tx.to, out?.to, 'to']] as const) {
         if (!id || !result || !layers.has(id)) continue
-        const svgId = `txf_${tx.id}_${side}`
+        const svgId = `txf_${context.scope ? `${context.scope}_` : ''}${tx.id}_${side}`
         if (result.svgFilter) {
           const list = svgs.get(id) ?? []
           list.push(`<filter id="${svgId}" color-interpolation-filters="sRGB" x="-50%" y="-50%" width="200%" height="200%">${result.svgFilter}</filter>`)

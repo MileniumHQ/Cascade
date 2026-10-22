@@ -4,7 +4,8 @@ import { anySolo, trackAudible } from '@shared/audio-mix'
 import { FLICKS, type Flicks, type FrameRate } from '@shared/time'
 import { pitchOf } from './properties/audio'
 import { transitionClipRange } from '@core/transitions'
-import { sourceLocalRange } from '@core/time-remap'
+import { clipTimeMap, sourceLocalRange } from '@core/time-remap'
+import { compositionAudioRanges, timelineHasAudio } from '@core/media-audio'
 
 export interface ExportJobSpec {
   exporter: string
@@ -19,12 +20,7 @@ export interface ExportJobSpec {
 
 /** True if any audible audio clip overlaps the range (decides whether formats get an audio stream). */
 export function rangeHasAudio(app: CascadeAPI, range: { start: Flicks; end: Flicks }): boolean {
-  const tl = app.project().timelines[app.project().activeTimeline]
-  const solo = anySolo(tl?.tracks ?? [])
-  return !!tl?.tracks.some((t) => t.kind === 'audio' && trackAudible(t, solo) && t.clips.some(c => {
-    const active = transitionClipRange(t, c, tx => !!app.registries.transitions.get(tx.type)?.kinds.includes(t.kind))
-    return active.start < range.end && active.end > range.start
-  }))
+  return timelineHasAudio(app.project(), app.registries, app.project().activeTimeline, range)
 }
 
 /** Max rubberband commands per clip for a varying speed (a 10 Hz control rate, capped). */
@@ -37,50 +33,51 @@ const MAX_COMMANDS = 400
  */
 export function audioPlan(app: CascadeAPI, range: { start: Flicks; end: Flicks }): Record<string, ClipAudioPlan> {
   const project = app.project()
-  const tl = project.timelines[project.activeTimeline]
   const plan: Record<string, ClipAudioPlan> = {}
-  const solo = anySolo(tl?.tracks ?? [])
-  for (const track of tl?.tracks ?? []) {
-    // Sound comes from audible audio tracks only (a video's picture clip is muted; solo silences the rest).
-    if (!trackAudible(track, solo) || track.kind !== 'audio') continue
-    for (const clip of track.clips) {
-      const media = clip.mediaId ? project.media[clip.mediaId] : undefined
-      if (!media?.path || media.meta.hasAudio === false) continue
-      const active = transitionClipRange(track, clip, tx => !!app.registries.transitions.get(tx.type)?.kinds.includes(track.kind))
-      const map = app.edit.timeMap(clip)
-      if (map.max === 0) continue
-      const available = sourceLocalRange(clip, map, media.meta.duration)
-      const from = Math.max(range.start - clip.start, active.start - clip.start, available.start)
-      const to = Math.min(range.end - clip.start, active.end - clip.start, available.end)
-      if (to <= from) continue
-      const { semitones, matchSpeed } = pitchOf(clip)
-      const o0 = map.offset(from)
-      // A reversed clip covers the same source range, read from its end down.
-      const a = (clip.sourceIn + o0) / FLICKS, b = (clip.sourceIn + map.offset(to)) / FLICKS
-      const sourceStart = Math.max(0, Math.min(a, b))
-      const sourceEnd = Math.max(sourceStart, a, b)
-      if (sourceEnd <= sourceStart) continue
-      const base = { mediaId: media.id, sourceStart, sourceEnd }
-      // Rubberband cannot represent zero tempo; curves containing holds use the worker's
-      // time-map resampler, which gates zero-speed plateaus to silence.
-      if (map.min === 0 || !map.reversed && semitones === 0 && (matchSpeed || map.constant === 1)) {
-        plan[clip.id] = { mode: 'source', ...base }
-        continue
-      }
-      const shift = Math.pow(2, semitones / 12)
-      const at = (t: Flicks) => {
-        const tempo = map.speedAt(t)
-        return { tempo, pitch: (matchSpeed ? tempo : 1) * shift }
-      }
-      const commands: NonNullable<ClipAudioPlan['commands']> = []
-      if (map.constant === null) {
-        const n = Math.min(MAX_COMMANDS, Math.max(2, Math.ceil(((to - from) / FLICKS) * 10)))
-        for (let i = 1; i < n; i++) {
-          const t = from + ((to - from) * i) / n
-          commands.push({ t: Math.abs(map.offset(t) - o0) / FLICKS, ...at(t) })
+  for (const { timeline: tl, range: scope } of compositionAudioRanges(project, project.activeTimeline, range)) {
+    const solo = anySolo(tl.tracks)
+    for (const track of tl.tracks) {
+      if (!trackAudible(track, solo)) continue
+      for (const clip of track.clips) {
+        if (track.kind !== 'audio' && !app.registries.mediaTypes.get(clip.type)?.hasAudio) continue
+        const media = clip.mediaId ? project.media[clip.mediaId] : undefined
+        if (!media?.path || media.meta.hasAudio === false) continue
+        const active = transitionClipRange(track, clip, tx => !!app.registries.transitions.get(tx.type)?.kinds.includes(track.kind))
+        const map = clipTimeMap(clip, tl, app.registries)
+        if (map.max === 0) continue
+        const available = sourceLocalRange(clip, map, media.meta.duration)
+        const from = Math.max(scope.start - clip.start, active.start - clip.start, available.start)
+        const to = Math.min(scope.end - clip.start, active.end - clip.start, available.end)
+        if (to <= from) continue
+        const { semitones, matchSpeed } = pitchOf(clip)
+        const o0 = map.offset(from)
+        // A reversed clip covers the same source range, read from its end down.
+        const a = (clip.sourceIn + o0) / FLICKS, b = (clip.sourceIn + map.offset(to)) / FLICKS
+        const sourceStart = Math.max(0, Math.min(a, b))
+        const sourceEnd = Math.max(sourceStart, a, b)
+        if (sourceEnd <= sourceStart) continue
+        const base = { mediaId: media.id, sourceStart, sourceEnd }
+        // Rubberband cannot represent zero tempo; curves containing holds use the worker's
+        // time-map resampler, which gates zero-speed plateaus to silence.
+        if (map.min === 0 || !map.reversed && semitones === 0 && (matchSpeed || map.constant === 1)) {
+          plan[clip.id] = { mode: 'source', ...base }
+          continue
         }
+        const shift = Math.pow(2, semitones / 12)
+        const at = (t: Flicks) => {
+          const tempo = map.speedAt(t)
+          return { tempo, pitch: (matchSpeed ? tempo : 1) * shift }
+        }
+        const commands: NonNullable<ClipAudioPlan['commands']> = []
+        if (map.constant === null) {
+          const n = Math.min(MAX_COMMANDS, Math.max(2, Math.ceil(((to - from) / FLICKS) * 10)))
+          for (let i = 1; i < n; i++) {
+            const t = from + ((to - from) * i) / n
+            commands.push({ t: Math.abs(map.offset(t) - o0) / FLICKS, ...at(t) })
+          }
+        }
+        plan[clip.id] = { mode: 'stretch', ...base, localStart: from / FLICKS, ...at(from), commands, ...(map.reversed ? { reverse: true } : {}) }
       }
-      plan[clip.id] = { mode: 'stretch', ...base, localStart: from / FLICKS, ...at(from), commands, ...(map.reversed ? { reverse: true } : {}) }
     }
   }
   return plan

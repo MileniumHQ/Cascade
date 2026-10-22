@@ -17,6 +17,7 @@ export interface Lanes {
 
 /** One source item as the stage sees it: a throwaway project holding just its clip(s). */
 interface Built {
+  sourceProject: Project
   media: MediaItem
   mt: MediaTypeContribution
   project: Project
@@ -53,7 +54,8 @@ export class SourceMonitor {
       if (e.source === 'load') return this.close()
       const media = app.project().media[id]
       if (!media) return this.close()
-      if (media !== this.built?.media || app.project().settings !== this.built.project.settings) this.rebuild()
+      if (media !== this.built?.media || app.project().settings !== this.built.project.settings ||
+        media.timelineId && (app.project().timelines !== this.built.sourceProject.timelines || app.project().media !== this.built.sourceProject.media)) this.rebuild()
       this.marks.set(marksOf(app.project(), id))
     })
     const types = app.registries.mediaTypes.onChange.on(() => this.mediaId.get() && this.rebuild())
@@ -116,7 +118,7 @@ export class SourceMonitor {
     }
     const project = this.makeProject(clips, media)
     const kinds = new Set(clips.map((c) => c.kind))
-    return { media, mt, project, clip: primary, duration: primary.duration, lanes: { visual: kinds.has('visual'), audio: kinds.has('audio') } }
+    return { sourceProject: app.project(), media, mt, project, clip: primary, duration: primary.duration, lanes: { visual: kinds.has('visual'), audio: kinds.has('audio') } }
   }
 
   /** The editor's project settings with a single timeline holding `clips`, one per kind. */
@@ -134,12 +136,12 @@ export class SourceMonitor {
     const tl: Timeline = { id: TIMELINE_ID, name: 'Source', tracks, markers: [] }
     return {
       ...base,
-      media: media ? { [media.id]: media } : {},
+      media: media ? { ...(media.timelineId ? base.media : {}), [media.id]: media } : {},
       mediaOrder: media ? [media.id] : [],
-      timelines: { [TIMELINE_ID]: tl },
+      timelines: { ...(media?.timelineId ? base.timelines : {}), [TIMELINE_ID]: tl },
       timelineOrder: [TIMELINE_ID],
       activeTimeline: TIMELINE_ID,
-      pluginData: {}
+      pluginData: media?.timelineId ? base.pluginData : {}
     }
   }
 
