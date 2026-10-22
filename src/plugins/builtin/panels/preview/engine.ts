@@ -1,5 +1,7 @@
 import type { CascadeAPI } from '@core/app'
-import type { MediaItem } from '@shared/project'
+import type { Id, MediaItem, Project } from '@shared/project'
+import type { Flicks } from '@shared/time'
+import type { Disposable } from '@core/disposable'
 import type { OverlayContext } from '@core/plugin-api'
 import { Emitter } from '@core/events'
 import { Value } from '@core/value'
@@ -22,6 +24,29 @@ function fontCss(): string {
   // The stage's default family name is plain 'Inter'; alias the variable build to it.
   return out.join('\n') + '\n' + out.filter((r) => r.includes('Inter Variable')).map((r) => r.replace(/'Inter Variable'|"Inter Variable"/, "'Inter'")).join('\n')
 }
+
+/** What an engine shows and how it is driven: the editor timeline by default, or any other project (the source monitor). */
+export interface EngineFeed {
+  project(): Project
+  timelineId(): Id
+  time: Value<Flicks>
+  playing: Value<boolean>
+  rate: Value<number>
+  /** Fires when the project's content changes. */
+  onChange(fn: () => void): Disposable
+  /** The editor's own preview: its audio feeds the app's meters and its frame rate the playback stats. */
+  primary: boolean
+}
+
+const mainFeed = (app: CascadeAPI): EngineFeed => ({
+  project: () => app.project(),
+  timelineId: () => app.project().activeTimeline,
+  time: app.playback.time,
+  playing: app.playback.playing,
+  rate: app.playback.rate,
+  onChange: (fn) => app.doc.onChange.on(fn),
+  primary: true
+})
 
 /**
  * Drives the preview: an iframe holding a Stage, rendered at an adaptive internal resolution
@@ -47,7 +72,7 @@ export class PreviewEngine {
   private frameCount = 0
   private droppedCount = 0
 
-  constructor(private app: CascadeAPI, host: HTMLElement) {
+  constructor(private app: CascadeAPI, host: HTMLElement, private feed: EngineFeed = mainFeed(app)) {
     this.iframe = document.createElement('iframe')
     this.iframe.className = 'pv-iframe'
     this.iframe.setAttribute('aria-label', 'Preview')
@@ -71,7 +96,7 @@ export class PreviewEngine {
           css: fontCss() + '\n#cascade-stage{font-family:"Inter",system-ui,sans-serif}'
         })
         this.stage.onFrame.on(() => this.onFrame.emit())
-        this.disposers.push(app.meters.provide({ read: (channel) => this.stage?.meter(channel) ?? null }))
+        if (feed.primary) this.disposers.push(app.meters.provide({ read: (channel) => this.stage?.meter(channel) ?? null }))
         resolve()
       }
       init()
@@ -79,12 +104,12 @@ export class PreviewEngine {
 
     const req = () => this.request()
     const sub = [
-      app.playback.time.subscribe(() => (app.playback.playing.get() ? this.renderNow() : this.request())),
-      app.doc.onChange.on(req),
+      feed.time.subscribe(() => (feed.playing.get() ? this.renderNow() : this.request())),
+      feed.onChange(req),
       app.registries.properties.onChange.on(req),
       app.registries.mediaTypes.onChange.on(req),
       app.registries.easings.onChange.on(req),
-      app.playback.playing.subscribe((p) => {
+      feed.playing.subscribe((p) => {
         if (p) void this.audio?.resume()
         this.slow = this.smooth = 0
         this.lastTick = 0
@@ -129,8 +154,8 @@ export class PreviewEngine {
   renderNow() {
     if (!this.stage) return
     const app = this.app
-    const playing = app.playback.playing.get()
-    this.stage.render(app.project(), app.project().activeTimeline, app.playback.time.get(), { playing, rate: app.playback.rate.get() })
+    const playing = this.feed.playing.get()
+    this.stage.render(this.feed.project(), this.feed.timelineId(), this.feed.time.get(), { playing, rate: this.feed.rate.get() })
     if (playing) this.measure()
   }
 
@@ -150,7 +175,7 @@ export class PreviewEngine {
       if (late) this.droppedCount++
       if (++this.frameCount % 10 === 0) {
         const fps = 1000 / (this.frameTimes.reduce((a, b) => a + b, 0) / this.frameTimes.length)
-        this.app.playback.stats.set({ fps: Math.round(fps), dropped: this.droppedCount })
+        if (this.feed.primary) this.app.playback.stats.set({ fps: Math.round(fps), dropped: this.droppedCount })
       }
       if (!this.app.settings.get<boolean>('preview.adaptive')) return
       if (late) {

@@ -10,6 +10,13 @@ const dir = `${root}node_modules/@material-symbols/svg-300/rounded`
 
 /** Cascade icon name → Material Symbol (append "-fill" for the filled variant). */
 const MAP = {
+  'edit-append': 'keyboard_tab',
+  'edit-insert': 'move_down',
+  'edit-overwrite': 'vertical_align_bottom',
+  'mark-in': 'border_left',
+  'mark-out': 'border_right',
+  'source-monitor': 'frame_source',
+  target: 'target',
   activity: 'monitoring',
   'align-center': 'format_align_center',
   'align-left': 'format_align_left',

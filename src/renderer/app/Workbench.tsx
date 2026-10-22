@@ -32,6 +32,16 @@ export function Workbench(props: { app: CascadeApp }) {
     })
   const side = region('side')
   const top = region('top')
+  /** Top panels sharing a `group` share one slot (tabs); slots keep the order of their first panel. */
+  const topSlots = createMemo(() => {
+    const slots = new Map<string, PanelContribution[]>()
+    for (const p of top()) {
+      const key = p.group ? `group:${p.group}` : p.id
+      slots.set(key, [...(slots.get(key) ?? []), p])
+    }
+    return slots
+  })
+  const topSlotKeys = createMemo(() => [...topSlots().keys()])
   const bottom = region('bottom')
 
   const [sideW, setSideW] = persisted('cascade.layout.side', 280)
@@ -57,19 +67,13 @@ export function Workbench(props: { app: CascadeApp }) {
       </Show>
       <div class="wb-main" ref={main}>
         <div class="wb-top" ref={topRow} style={{ height: `${(1 - bottomH()) * 100}%` }}>
-          <For each={top()}>
-            {(p, i) => (
+          <For each={topSlotKeys()}>
+            {(key, i) => (
               <>
                 <Show when={i() > 0}>
                   <Splitter dir="x" onDrag={(dx) => setInspW(clamp(inspW() - dx, 260, topRow.clientWidth * 0.6))} />
                 </Show>
-                <section
-                  class="wb-panel wb-top-panel"
-                  data-panel={p.id}
-                  style={i() === 0 ? { flex: '1 1 0' } : { width: `${inspW()}px`, flex: 'none' }}
-                >
-                  <PanelFrame app={app} panel={p} header={i() > 0} />
-                </section>
+                <TopSlot app={app} panels={topSlots().get(key) ?? []} first={i() === 0} width={inspW()} />
               </>
             )}
           </For>
@@ -183,6 +187,58 @@ function BottomPanel(props: { app: CascadeApp; panel: PanelContribution; visible
     <section class="wb-panel wb-bottom-panel" data-panel={props.panel.id} style={{ display: props.visible ? '' : 'none' }}>
       <Show when={mounted()}>
         <PanelFrame app={props.app} panel={props.panel} visible={() => props.visible} listeners={listeners} />
+      </Show>
+    </section>
+  )
+}
+
+/** One slot of the top row: a single panel, or a tab strip over panels that share a group. */
+function TopSlot(props: { app: CascadeApp; panels: PanelContribution[]; first: boolean; width: number }) {
+  const tabs = useValue(props.app.layout.activeTab)
+  const group = () => props.panels[0]?.group
+  const activeId = () => {
+    const want = group() ? tabs()[group()!] : undefined
+    return props.panels.find((p) => p.id === want)?.id ?? props.panels[0]?.id
+  }
+  const active = () => props.panels.find((p) => p.id === activeId())
+  return (
+    <div class="wb-top-slot" style={props.first ? { flex: '1 1 0' } : { width: `${props.width}px`, flex: 'none' }}>
+      <Show when={props.panels.length > 1}>
+        <div class="slot-tabs" role="tablist">
+          <For each={props.panels}>
+            {(p) => (
+              <button role="tab" class={`slot-tab ${activeId() === p.id ? 'on' : ''}`} aria-selected={activeId() === p.id} onClick={() => props.app.layout.reveal(p.id)}>
+                <Icon name={p.icon} size={13} />
+                <span>{p.title}</span>
+              </button>
+            )}
+          </For>
+          <div class="wb-tabs-fill" />
+          <Show when={active()?.actions} keyed>
+            {(actions) => <MountPoint class="wb-tab-actions" mount={(el) => actions(el, panelCtx(props.app, activeId()!, () => true))} />}
+          </Show>
+        </div>
+      </Show>
+      <For each={props.panels}>
+        {(p) => <TopPanel app={props.app} panel={p} visible={activeId() === p.id} header={!props.first && props.panels.length === 1} />}
+      </For>
+    </div>
+  )
+}
+
+/** Mounts on first show and stays mounted, like bottom panels (state survives tab switches). */
+function TopPanel(props: { app: CascadeApp; panel: PanelContribution; visible: boolean; header: boolean }) {
+  const [mounted, setMounted] = createSignal(props.visible)
+  const listeners = new Set<VisFn>()
+  createEffect(() => {
+    const v = props.visible
+    if (v) setMounted(true)
+    for (const fn of listeners) fn(v)
+  })
+  return (
+    <section class="wb-panel wb-top-panel" data-panel={props.panel.id} style={{ display: props.visible ? '' : 'none' }}>
+      <Show when={mounted()}>
+        <PanelFrame app={props.app} panel={props.panel} header={props.header} visible={() => props.visible} listeners={listeners} />
       </Show>
     </section>
   )

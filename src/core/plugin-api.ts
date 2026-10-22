@@ -455,6 +455,11 @@ export interface PanelContribution extends Contribution {
   region: PanelRegion
   /** Order within region / tab bar. */
   order?: number
+  /**
+   * Panels of one region that share a `group` share a single slot and show as tabs (e.g. the
+   * timeline Preview and a Source monitor use the same viewer space). The first one listed is the default tab.
+   */
+  group?: string
   mount: Mount<PanelContext>
   /** Optional header actions rendered by the workbench. */
   actions?: Mount<PanelContext>

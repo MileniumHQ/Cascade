@@ -1,0 +1,147 @@
+.sm {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.sm-title {
+  height: 28px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px;
+  color: var(--text-2);
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+.sm-title .icon {
+  color: var(--muted);
+}
+.sm-title-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sm-title-empty {
+  color: var(--dim);
+}
+.sm-viewport {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #0b0b0c;
+}
+.sm-frame {
+  position: relative;
+  flex: none;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 10px 40px rgba(0, 0, 0, 0.5);
+  background: repeating-conic-gradient(#151517 0 25%, #1b1b1e 0 50%) 0 0 / 16px 16px;
+}
+.sm-frame[draggable='true'] {
+  cursor: grab;
+}
+.sm-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.sm-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  color: var(--dim);
+}
+.sm-scrub {
+  position: relative;
+  height: 44px;
+  flex: none;
+  margin: 8px 12px 0;
+  border-radius: var(--r-sm);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  overflow: hidden;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.sm-scrub.disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.sm-scrub-body {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.85;
+}
+.sm-range {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(130, 203, 255, 0.18);
+  border-top: 2px solid rgba(130, 203, 255, 0.7);
+  pointer-events: none;
+}
+.sm-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #82cbff;
+  pointer-events: none;
+}
+.sm-mark.out {
+  margin-left: -2px;
+}
+.sm-head {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+.sm-bar {
+  height: 40px;
+  flex: none;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+}
+.sm-left,
+.sm-right,
+.sm-transport {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.sm-left {
+  gap: 8px;
+}
+.sm-right {
+  justify-content: flex-end;
+}
+.sm-badge {
+  font-size: 10.5px;
+  color: #82cbff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(130, 203, 255, 0.12);
+}
+.sm-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: var(--line-2);
+}

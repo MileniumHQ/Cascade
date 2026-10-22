@@ -1,6 +1,6 @@
-import { createProject, timelineDuration, type Id, type Project, type Timeline } from '@shared/project'
+import { createProject, timelineDuration, type Id, type Project, type Timeline, type TrackKind } from '@shared/project'
 import type { HostBridge } from '@shared/ipc'
-import { FLICKS, frameToFlicks, flicksToFrame, snapToFrame, type Flicks } from '@shared/time'
+import { FLICKS, frameToFlicks, flicksToFrame, snapToFrame, type Flicks, type FrameRate } from '@shared/time'
 import { DocumentStore } from './document'
 import { EventBus, Emitter } from './events'
 import { Registry } from './registry'
@@ -78,7 +78,7 @@ export class PlaybackService {
   /** External clock (e.g. AudioContext time) in seconds; preferred when set. */
   clock: (() => number) | null = null
 
-  constructor(private app: CascadeApp) {}
+  constructor(private app: { duration(): Flicks; fps(): FrameRate }) {}
 
   private now() {
     return this.clock ? this.clock() : performance.now() / 1000
@@ -163,6 +163,8 @@ export class SelectionService {
   readonly media = new Value<Id[]>([], shallowArrayEqual)
   /** The track that receives pasted/inserted clips. */
   readonly track = new Value<Id | null>(null)
+  /** Target track per kind for source edits (insert/overwrite/append); absent = the first unlocked track of that kind. */
+  readonly targets = new Value<Partial<Record<TrackKind, Id>>>({})
   /** Property instance focused in the inspector (keyframe panel highlights it). */
   readonly property = new Value<Id | null>(null)
 
@@ -214,11 +216,16 @@ export class LayoutService {
   })
   readonly activeBottom = new Value('timeline')
   readonly activeSide = new Value('sources')
+  /** The shown panel of each tab group (see PanelContribution.group); absent = the group's first panel. */
+  readonly activeTab = new Value<Record<string, string>>({})
+  constructor(private panels: () => PanelContribution[] = () => []) {}
   /** Panels request focus/visibility via this. */
   reveal(panelId: string) {
     const cfg = this.config.get()
     if (cfg.bottom.includes(panelId)) this.activeBottom.set(panelId)
     if (cfg.side.includes(panelId)) this.activeSide.set(panelId)
+    const group = this.panels().find((p) => p.id === panelId)?.group
+    if (group) this.activeTab.set({ ...this.activeTab.get(), [group]: panelId })
   }
 }
 
@@ -277,7 +284,7 @@ export class CascadeApp implements CascadeAPI {
   readonly playback: PlaybackService
   readonly selection = new SelectionService()
   readonly view = new TimelineViewService()
-  readonly layout = new LayoutService()
+  readonly layout = new LayoutService(() => this.registries.panels.all())
   readonly settings: SettingsService
   readonly events = new EventBus()
   readonly edit: Editing

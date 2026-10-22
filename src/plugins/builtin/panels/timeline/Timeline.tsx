@@ -5,6 +5,7 @@ import { Emitter } from '@core/events'
 import { shallowArrayEqual, Value } from '@core/value'
 import { clipKeyframeTimes } from '@core/evaluate'
 import { clipsInRange, expandLinked, snapPoints, type MoveRequest } from '@core/timeline-ops'
+import { resolveTarget, SOURCE_RANGE_MIME } from '@core/three-point'
 import { clipEnd, findClip, type Clip, type Id, type Track } from '@shared/project'
 import { FLICKS, formatTimecode, snapToFrame, type Flicks } from '@shared/time'
 import { Icon } from '@ui/icon'
@@ -441,7 +442,10 @@ export function Timeline(props: { ctx: PanelContext }) {
     const opts = { start: d.t, trackId, audioTrackId: d.row?.track.kind === 'audio' ? trackId : undefined }
     const mediaId = e.dataTransfer.getData('application/x-cascade-media')
     const genId = e.dataTransfer.getData('application/x-cascade-generator')
-    if (mediaId) app.edit.addMediaToTimeline(mediaId, opts)
+    // A marked range dragged from the source monitor lands as a three-point overwrite at the drop point.
+    const range = mediaId ? parseRange(e.dataTransfer.getData(SOURCE_RANGE_MIME)) : null
+    if (mediaId && range) app.edit.placeSource('overwrite', mediaId, { ...range, at: d.t, targets: trackId && d.row ? { [d.row.track.kind]: trackId } : undefined })
+    else if (mediaId) app.edit.addMediaToTimeline(mediaId, opts)
     else if (genId) {
       const id = app.edit.addGenerated(genId)
       if (id) app.edit.addMediaToTimeline(id, opts)
@@ -659,10 +663,24 @@ function TimecodeReadout(props: { app: CascadeAPI }) {
   )
 }
 
+/** The marked source range in a drag, if any. */
+function parseRange(json: string): { sourceIn?: Flicks; sourceOut?: Flicks; lanes?: { visual?: boolean; audio?: boolean } } | null {
+  if (!json) return null
+  try {
+    return JSON.parse(json)
+  } catch {
+    return null
+  }
+}
+
 function TrackHeader(props: { app: CascadeAPI; row: Row; onMenu: (e: MouseEvent) => void; onResize: (e: PointerEvent) => void }) {
   const app = props.app
   const [editing, setEditing] = createSignal(false)
   const t = () => props.row.track
+  const project = useProject(app)
+  const targets = useValue(app.selection.targets)
+  // The track source edits land on for this kind: the picked one, else the first unlocked.
+  const isTarget = () => resolveTarget(project().timelines[project().activeTimeline], t().kind, targets()[t().kind])?.id === t().id
   return (
     <div class="tl-head" onContextMenu={props.onMenu} onPointerDown={(e) => e.stopPropagation()}>
       <span class={`tl-badge kind-${t().kind}`}>{t().name}</span>
@@ -691,6 +709,9 @@ function TrackHeader(props: { app: CascadeAPI; row: Row; onMenu: (e: MouseEvent)
         />
       </Show>
       <div class="tl-head-btns">
+        <button class={`tl-target${isTarget() ? ' on' : ''}`} data-tip={isTarget() ? 'Target track for insert / overwrite' : 'Target this track for insert / overwrite'} onClick={() => app.selection.targets.set({ ...targets(), [t().kind]: t().id })}>
+          <Icon name="target" size={13} />
+        </button>
         <Show
           when={t().kind === 'visual'}
           fallback={

@@ -26,11 +26,35 @@ import type { GeneratedProperty, ImportCandidate, MediaTypeContribution, ParamDe
 import { applyPropertyStyle, generatedKeyframes, withKeyframes, type PropertyStyle } from './property-style'
 import * as ops from './timeline-ops'
 import { clipTimeMap, constantMap, type TimeMap } from './time-remap'
+import { endOfTracks, insertClips, overwriteClips, resolveRange, resolveTarget, type PlaceMode } from './three-point'
 
 type DProject = Draft<Project>
 
 export interface GestureOpts {
   gesture?: 'start' | 'update' | 'end'
+}
+
+export interface PlaceSourceOpts {
+  /** Source range to use (offsets into the media); unset = the whole media. */
+  sourceIn?: Flicks
+  sourceOut?: Flicks
+  /** Which kinds of track receive clips; unset = all. A video+audio item brings its linked audio only when `audio` is on. */
+  lanes?: Partial<Record<TrackKind, boolean>>
+  /** Target track per kind, overriding `selection.targets`; null/unset = the first unlocked track. */
+  targets?: Partial<Record<TrackKind, Id | null>>
+  /** Place exactly here, ignoring the timeline's in/out points (drag and drop). Unset = in/out, else the playhead. */
+  at?: Flicks
+}
+
+export interface PlaceSourceResult {
+  /** Created clips, the primary (visual) one last. */
+  clips: Id[]
+  start: Flicks
+  end: Flicks
+  /** The timeline in/out decided the duration while the source also had marks. */
+  fit: boolean
+  /** The media ended before the requested range did. */
+  shortened: boolean
 }
 
 export class Editing {
@@ -862,5 +886,69 @@ export class Editing {
   /** Seconds → flicks convenience for plugin/MCP code. */
   seconds(s: number) {
     return Math.round(s * FLICKS)
+  }
+
+  /**
+   * Three-point edit of a media item as one undo step: `insert` opens a gap (rippling the target
+   * tracks and the link partners of what moves), `overwrite` replaces what the clip covers, `append`
+   * overwrites from the end of the target tracks. Source in/out default to the whole media, the
+   * start to the timeline in (else the playhead). With timeline in+out and source marks all set the
+   * timeline duration wins; new clips always play at speed 1. Null when nothing could be placed.
+   */
+  placeSource(mode: PlaceMode, mediaId: Id, opts: PlaceSourceOpts = {}): PlaceSourceResult | null {
+    const media = this.app.project().media[mediaId]
+    const mt = media && this.app.registries.mediaTypes.get(media.type)
+    if (!media || !mt) return null
+    const tl = this.app.timeline()
+    const lanes = { visual: true, audio: true, ...opts.lanes }
+    const targets = { ...this.app.selection.targets.get(), ...opts.targets }
+
+    const pieces: { clip: Clip; kind: TrackKind }[] = []
+    const primary = this.buildClip(media, 0)
+    if (!primary) return null
+    const linked = mt.linkedAudioType && media.meta.hasAudio ? this.buildClip(media, 0, mt.linkedAudioType) : null
+    if (lanes[mt.track]) pieces.push({ clip: primary, kind: mt.track })
+    if (linked && lanes.audio) pieces.push({ clip: linked, kind: 'audio' })
+    if (!pieces.length) return null
+
+    const placements = pieces.flatMap((p) => {
+      const track = resolveTarget(tl, p.kind, targets[p.kind])
+      return track ? [{ trackId: track.id, clip: p.clip }] : []
+    })
+    if (!placements.length) {
+      this.app.notify('warning', `Can't ${mode} ${media.name}`, 'The target tracks are locked.')
+      return null
+    }
+
+    const marks = opts.at === undefined && mode !== 'append'
+    const range = resolveRange({
+      sourceLength: mt.timeBased && media.meta.duration ? media.meta.duration : null,
+      defaultSpan: primary.duration,
+      sourceIn: opts.sourceIn,
+      sourceOut: opts.sourceOut,
+      timelineIn: marks ? tl.inPoint : undefined,
+      timelineOut: marks ? tl.outPoint : undefined,
+      playhead: mode === 'append' ? endOfTracks(tl, placements.map((p) => p.trackId)) : opts.at ?? this.app.playback.time.get(),
+      snap: (t) => snapToFrame(t, this.app.fps())
+    })
+    if (!range) return null
+
+    const link = placements.length > 1 ? uid('ln_') : undefined
+    for (const { clip } of placements) {
+      clip.start = range.start
+      clip.duration = range.duration
+      clip.sourceIn = range.sourceIn
+      clip.linkId = link
+    }
+    const verb = mode === 'insert' ? 'Insert' : mode === 'overwrite' ? 'Overwrite' : 'Append'
+    let placed: Id[] = []
+    this.doc.transact(`${verb} ${media.name}`, (d) => {
+      const dl = this.tl(d) as Timeline
+      placed = (mode === 'insert' ? insertClips(dl, placements, range.start, range.duration) : overwriteClips(dl, placements)).placed
+    })
+    if (!placed.length) return null
+    const ids = placements.map((p) => p.clip.id).filter((id) => placed.includes(id))
+    this.app.selection.setClips(ids)
+    return { clips: ids, start: range.start, end: range.start + range.duration, fit: range.fit, shortened: range.shortened }
   }
 }
