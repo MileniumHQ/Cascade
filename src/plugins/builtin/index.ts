@@ -23,6 +23,7 @@ import { statusBarPlugin } from './statusbar'
 import { keyframesPlugin } from './panels/keyframes'
 import { exportPanelPlugin } from './panels/export'
 import { captionsPlugin } from './captions'
+import { safetyPlugin } from './safety'
 
 /**
  * Everything Cascade can do comes from these plugins. They load first (built-in priority)
@@ -52,7 +53,8 @@ export const builtinPlugins: PluginDefinition[] = [
   mcpPlugin,
   keyframesPlugin,
   exportPanelPlugin,
-  captionsPlugin
+  captionsPlugin,
+  safetyPlugin
 ]
 
 /** Plugins that are safe to load in headless export workers (no UI). */

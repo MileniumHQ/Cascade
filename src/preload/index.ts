@@ -33,12 +33,20 @@ const bridge: HostBridge = {
     writeText: (path, text) => ipcRenderer.invoke('fs:writeText', path, text),
     exists: (path) => ipcRenderer.invoke('fs:exists', path),
     stat: (path) => ipcRenderer.invoke('fs:stat', path),
+    existsMany: (paths) => ipcRenderer.invoke('fs:existsMany', paths),
+    findByName: (dir, names) => ipcRenderer.invoke('fs:findByName', dir, names),
     pathForFile: (file) => webUtils.getPathForFile(file)
   },
   projects: {
     recent: () => ipcRenderer.invoke('projects:recent'),
     addRecent: (p) => ipcRenderer.invoke('projects:addRecent', p),
     removeRecent: (path) => ipcRenderer.invoke('projects:removeRecent', path)
+  },
+  recovery: {
+    list: () => ipcRenderer.invoke('recovery:list'),
+    write: (meta, text) => ipcRenderer.invoke('recovery:write', meta, text),
+    read: (id) => ipcRenderer.invoke('recovery:read', id),
+    discard: (id) => ipcRenderer.invoke('recovery:discard', id)
   },
   media: {
     probe: (path) => ipcRenderer.invoke('media:probe', path),

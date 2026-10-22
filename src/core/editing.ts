@@ -122,6 +122,44 @@ export class Editing {
     })
   }
 
+  /** Point a media item at a different file (undoable). Resolves true when it was relinked. */
+  async relinkMedia(mediaId: Id, newPath: string): Promise<boolean> {
+    return (await this.relinkMediaMany([{ mediaId, path: newPath }])).length === 1
+  }
+
+  /** Relink several items as one undo step. Re-probes each file and warns when its duration differs. Returns the relinked ids. */
+  async relinkMediaMany(pairs: { mediaId: Id; path: string }[]): Promise<Id[]> {
+    const host = this.app.host
+    const done: { id: Id; path: string; meta: MediaItem['meta'] }[] = []
+    for (const { mediaId, path } of pairs) {
+      const item = this.app.project().media[mediaId]
+      if (!item) continue
+      const probed = host ? await host.media.probe(path) : {}
+      const { error, ...meta } = probed as Record<string, unknown>
+      if (error) {
+        this.app.notify('error', `Couldn't relink ${item.name}`, String(error))
+        continue
+      }
+      const was = item.meta.duration
+      const now = (meta as MediaItem['meta']).duration
+      if (was !== undefined && now !== undefined && Math.abs(was - now) > FLICKS / 10) {
+        this.app.notify('warning', `${item.name} has a different length`, `${(was / FLICKS).toFixed(1)}s before, ${(now / FLICKS).toFixed(1)}s now. Clips may need adjusting.`)
+      }
+      done.push({ id: mediaId, path, meta: meta as MediaItem['meta'] })
+    }
+    if (!done.length) return []
+    this.doc.transact(done.length > 1 ? `Relink ${done.length} media` : 'Relink media', (d) => {
+      for (const r of done) {
+        const m = d.media[r.id]
+        if (!m) continue
+        m.path = r.path
+        m.meta = r.meta
+        delete m.proxyPath // it belonged to the old file
+      }
+    })
+    return done.map((r) => r.id)
+  }
+
   renameMedia(id: Id, name: string) {
     this.doc.transact('Rename media', (d) => {
       if (d.media[id]) d.media[id].name = name

@@ -1,7 +1,7 @@
 import { definePlugin, type ClipBodyContext, type MediaTypeContribution } from '@core/plugin-api'
 import type { ThumbnailStrip } from '@shared/ipc'
 import { FLICKS } from '@shared/time'
-import { applyBox, fitBox, frameSeconds, MediaSync, type Fit } from './common'
+import { applyBox, fitBox, frameSeconds, MediaSync, mountOfflineSlate, type Fit } from './common'
 import { FrameDecoder } from './decoder'
 
 export const VIDEO_EXT = ['mp4', 'm4v', 'mov', 'webm', 'mkv', 'avi', 'ogv', 'mpg', 'mpeg', 'ts', 'mts', 'm2ts', 'flv', 'wmv', '3gp']
@@ -73,6 +73,7 @@ export const videoPlugin = definePlugin({
               new Promise<void>((resolve) => {
                 if (Math.abs(el.currentTime - s.sourceTime) < 0.001 && el.readyState >= 2) return resolve()
                 el.addEventListener('seeked', () => resolve(), { once: true })
+                el.addEventListener('error', () => resolve(), { once: true }) // a missing file must not stall rendering
                 el.currentTime = s.sourceTime
               }),
             dispose() {
@@ -86,7 +87,7 @@ export const videoPlugin = definePlugin({
       clipBody: (el, c) => mountThumbnails(el, c),
       thumbnail: (el, { media, app }) => {
         el.classList.add('media-thumb')
-        if (!media.path) return
+        if (!media.path || app.media.isOffline(media.id)) return
         void app.host?.media.poster(media.path, Math.min(1, (media.meta.duration ?? 0) / FLICKS / 3)).then((url) => {
           if (url) el.style.backgroundImage = `url("${url}")`
         })
@@ -100,6 +101,8 @@ export const videoPlugin = definePlugin({
 function mountThumbnails(el: HTMLElement, c: ClipBodyContext) {
   const media = c.media()
   if (!media?.path || !c.app.host) return
+  const slate = mountOfflineSlate(el, c.app, media.id)
+  if (slate) return slate
   let strip: ThumbnailStrip | null = null
   let disposed = false
   const layer = document.createElement('div')

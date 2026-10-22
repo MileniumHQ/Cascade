@@ -4,6 +4,8 @@ import { dirname, join } from 'node:path'
 import type { HostBridge, HostInfo, RecentProject } from '../shared/ipc'
 import { getFFmpegInfo } from './ffmpeg'
 import { mcpInfo } from './mcp'
+import { existsMany, findByName } from './fs-tools'
+import { createRecoveryStore } from './recovery'
 
 async function readJson<T>(path: string, fallback: T): Promise<T> {
   try { return JSON.parse(await readFile(path, 'utf8')) as T } catch { return fallback }
@@ -94,6 +96,13 @@ export function registerStoreIpc(): void {
   ipcMain.handle('fs:stat', async (_event, path: string) => {
     try { const value = await stat(path); return { size: value.size, mtime: value.mtimeMs } } catch { return null }
   })
+  ipcMain.handle('fs:existsMany', (_event, list: string[]) => existsMany(Array.isArray(list) ? list : []))
+  ipcMain.handle('fs:findByName', (_event, dir: string, names: string[]) => findByName(dir, Array.isArray(names) ? names : []))
+  const recovery = createRecoveryStore(join(paths.userData, 'recovery'))
+  ipcMain.handle('recovery:list', () => recovery.list())
+  ipcMain.handle('recovery:write', (_event, meta: Parameters<HostBridge['recovery']['write']>[0], text: string) => recovery.write(meta, text))
+  ipcMain.handle('recovery:read', (_event, id: string) => recovery.read(id))
+  ipcMain.handle('recovery:discard', (_event, id: string) => recovery.discard(id))
   ipcMain.handle('dialog:openFiles', async (event, opts: Parameters<HostBridge['dialog']['openFiles']>[0] = {}) => {
     const options: Electron.OpenDialogOptions = {
       title: opts.title, filters: opts.filters,

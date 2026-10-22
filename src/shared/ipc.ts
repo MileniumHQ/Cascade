@@ -3,6 +3,7 @@
  * Everything that needs Node / the OS lives behind this interface.
  */
 import type { MediaMeta, Project } from './project'
+import type { RecoveryMeta } from './recovery'
 import type { Flicks, FrameRate } from './time'
 import type { AnalysisBridge } from './analysis'
 import type { AgentsBridge } from './agents'
@@ -230,6 +231,10 @@ export interface HostBridge {
     writeText(path: string, text: string): Promise<void>
     exists(path: string): Promise<boolean>
     stat(path: string): Promise<{ size: number; mtime: number } | null>
+    /** Existence of many paths in one call (one flag per path). */
+    existsMany(paths: string[]): Promise<boolean[]>
+    /** Search `dir` (bounded, closest first) for files by name; maps each found name to its path. */
+    findByName(dir: string, names: string[]): Promise<Record<string, string>>
     /** Filesystem path of a File from a drop / file input (Electron removed `File.path`). */
     pathForFile(file: File): string
   }
@@ -238,6 +243,14 @@ export interface HostBridge {
     recent(): Promise<RecentProject[]>
     addRecent(p: RecentProject): Promise<void>
     removeRecent(path: string): Promise<void>
+  }
+
+  /** Crash-recovery snapshots of open projects (`<userData>/recovery`). Writes are atomic. */
+  recovery: {
+    list(): Promise<RecoveryMeta[]>
+    write(meta: RecoveryMeta, text: string): Promise<void>
+    read(id: string): Promise<string | null>
+    discard(id: string): Promise<void>
   }
 
   media: {

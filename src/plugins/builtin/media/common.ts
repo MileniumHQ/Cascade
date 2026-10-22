@@ -1,3 +1,4 @@
+import type { CascadeAPI } from '@core/app'
 import type { ClipFrameState, StageUnits } from '@core/plugin-api'
 import type { MediaItem, Project } from '@shared/project'
 
@@ -83,3 +84,17 @@ export class MediaSync {
 export const frameSeconds = (p: Project) => p.settings.fps.den / p.settings.fps.num
 
 export type { StageUnits }
+
+/**
+ * Timeline clip body for media whose file is missing: a "Media offline" slate that follows the
+ * runtime status. Returns null when the file is present (the caller mounts its normal body).
+ */
+export function mountOfflineSlate(el: HTMLElement, app: CascadeAPI, mediaId: string): (() => void) | null {
+  if (!app.media.isOffline(mediaId)) return null
+  const slate = document.createElement('div')
+  slate.className = 'clip-offline'
+  slate.textContent = 'Media offline'
+  slate.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;padding:0 8px;font-size:10px;letter-spacing:.04em;color:rgba(255,255,255,.75);background:repeating-linear-gradient(135deg,rgba(0,0,0,.28) 0 6px,rgba(0,0,0,.4) 6px 12px);pointer-events:none'
+  el.appendChild(slate)
+  return () => slate.remove()
+}

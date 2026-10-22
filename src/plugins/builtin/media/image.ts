@@ -1,5 +1,5 @@
 import { definePlugin } from '@core/plugin-api'
-import { applyBox, fitBox, type Fit } from './common'
+import { applyBox, fitBox, mountOfflineSlate, type Fit } from './common'
 
 export const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'svg', 'bmp', 'ico', 'apng']
 
@@ -39,6 +39,8 @@ export const imagePlugin = definePlugin({
       clipBody(el, c) {
         const m = c.media()
         if (!m?.path) return
+        const slate = mountOfflineSlate(el, c.app, m.id)
+        if (slate) return slate
         const d = document.createElement('div')
         d.className = 'clip-thumbs clip-thumbs-image'
         d.style.backgroundImage = `url("${c.app.host?.mediaUrl(m.path)}")`

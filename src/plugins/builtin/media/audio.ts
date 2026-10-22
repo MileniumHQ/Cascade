@@ -1,7 +1,7 @@
 import { definePlugin, type ClipBodyContext, type ClipFrameState, type ClipMountContext } from '@core/plugin-api'
 import { FLICKS } from '@shared/time'
 import { pitchOf } from '../properties/audio'
-import { frameSeconds, MediaSync } from './common'
+import { frameSeconds, MediaSync, mountOfflineSlate } from './common'
 
 export const AUDIO_EXT = ['mp3', 'wav', 'flac', 'ogg', 'oga', 'opus', 'm4a', 'aac', 'aiff', 'aif', 'wma', 'weba']
 
@@ -219,6 +219,8 @@ function loadPeaks(c: ClipBodyContext, path: string) {
 function mountWaveform(el: HTMLElement, c: ClipBodyContext) {
   const media = c.media()
   if (!media?.path) return
+  const slate = mountOfflineSlate(el, c.app, media.id)
+  if (slate) return slate
   const canvas = document.createElement('canvas')
   canvas.className = 'clip-wave'
   canvas.style.cssText = 'position:absolute;top:0'

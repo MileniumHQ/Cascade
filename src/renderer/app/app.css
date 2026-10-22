@@ -296,6 +296,13 @@
   color: var(--text);
 }
 
+.recovered-row {
+  cursor: default;
+}
+.recovered-row .recent-icon {
+  color: var(--accent);
+}
+
 /* format picker (new project / project settings) */
 .preset-grid {
   display: grid;

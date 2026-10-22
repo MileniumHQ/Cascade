@@ -19,6 +19,7 @@ const ago = (t: number) => {
 export function Home(props: { app: CascadeApp; session: Session }) {
   const { app, session } = props
   const [recent, { refetch }] = createResource(() => app.host!.projects.recent())
+  const [recoverable, { refetch: refetchRecoverable }] = createResource(() => session.listRecoverable())
   const [creating, setCreating] = createSignal(false)
 
   return (
@@ -41,6 +42,42 @@ export function Home(props: { app: CascadeApp; session: Session }) {
             <span>Browse for a .cascade file</span>
           </button>
         </section>
+
+        <Show when={recoverable()?.length}>
+          <section class="home-recent home-recovered">
+            <header>
+              <h2>Recovered</h2>
+            </header>
+            <div class="recent-list">
+              <For each={recoverable()}>
+                {(r) => (
+                  <div class="recent-row recovered-row">
+                    <div class="recent-icon">
+                      <Icon name="history" size={15} />
+                    </div>
+                    <div class="recent-meta">
+                      <b>{r.meta.name}</b>
+                      <span>Unsaved changes from {ago(r.meta.savedAt)}{r.meta.path ? ` · ${r.meta.path}` : ''}</span>
+                    </div>
+                    <Button size="sm" variant="primary" onClick={() => void session.recover(r.meta)}>
+                      Recover
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={async () => {
+                        await session.discardRecovery(r.meta.id)
+                        void refetchRecoverable()
+                      }}
+                    >
+                      Discard
+                    </Button>
+                  </div>
+                )}
+              </For>
+            </div>
+          </section>
+        </Show>
 
         <section class="home-recent">
           <header>

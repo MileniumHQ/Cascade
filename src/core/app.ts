@@ -22,6 +22,7 @@ import type {
   StatusItemContribution
 } from './plugin-api'
 import { Editing } from './editing'
+import { MediaStatusService } from './media-status'
 
 export interface Registries {
   mediaTypes: Registry<MediaTypeContribution>
@@ -248,6 +249,8 @@ export interface CascadeAPI {
   readonly settings: SettingsService
   readonly events: EventBus
   readonly edit: Editing
+  /** Runtime state of file-backed media (offline files). */
+  readonly media: MediaStatusService
   readonly host: HostBridge | null
   /** Arbitrary named services contributed by plugins (e.g. "preview", "media"). */
   readonly services: Map<string, unknown>
@@ -269,6 +272,7 @@ export class CascadeApp implements CascadeAPI {
   readonly settings: SettingsService
   readonly events = new EventBus()
   readonly edit: Editing
+  readonly media: MediaStatusService
   readonly services = new Map<string, unknown>()
   readonly onNotify = new Emitter<Notification>()
   private notifyId = 0
@@ -282,6 +286,15 @@ export class CascadeApp implements CascadeAPI {
     this.playback = new PlaybackService(this)
     this.settings = new SettingsService(this)
     this.edit = new Editing(this)
+    this.media = new MediaStatusService(host, () => this.doc.state)
+    // Re-check files when a project loads or its media list changes (import, relink, undo).
+    let lastMedia = this.doc.state.media
+    this.doc.onChange.on((e) => {
+      if (e.source !== 'load' && this.doc.state.media === lastMedia) return
+      lastMedia = this.doc.state.media
+      if (e.source === 'load') this.media.offline.set(new Set())
+      void this.media.check()
+    })
     // keep selection valid after edits/undo
     this.doc.onChange.on(() => {
       const tl = this.timeline()
