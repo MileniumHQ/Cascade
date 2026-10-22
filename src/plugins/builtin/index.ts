@@ -1,3 +1,5 @@
+import { markersPlugin } from './markers'
+import { clipboardPlugin } from './clipboard'
 import type { PluginDefinition } from '@core/plugin-api'
 import { exportersPlugin } from './exporters'
 import { exportPresetsPlugin } from './export-presets'
@@ -47,6 +49,8 @@ export const builtinPlugins: PluginDefinition[] = [
   easingsPlugin,
   settingsPlugin,
   commandsPlugin,
+  clipboardPlugin,
+  markersPlugin,
   editingPlugin,
   videoPlugin,
   imagePlugin,

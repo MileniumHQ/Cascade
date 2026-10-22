@@ -1,6 +1,7 @@
 import { applyPatches, enablePatches, produceWithPatches, setAutoFreeze, type Draft, type Patch } from 'immer'
 import type { Project } from '@shared/project'
 import { Emitter } from './events'
+import { normalizeProjectMarkers } from './markers'
 import { normalizeProjectTransitions } from './transitions'
 import { validateCompositionChanges } from './compositions'
 
@@ -46,7 +47,8 @@ export class DocumentStore {
   readonly onHistory = new Emitter<void>()
 
   constructor(initial: Project) {
-    this._state = initial
+    this._state = structuredClone(initial)
+    normalizeProjectMarkers(this._state)
   }
 
   get state(): Project {
@@ -55,7 +57,8 @@ export class DocumentStore {
 
   /** Replace the whole project (open/new). Clears history. */
   load(project: Project) {
-    this._state = project
+    this._state = structuredClone(project)
+    normalizeProjectMarkers(this._state)
     this.undoStack = []
     this.redoStack = []
     this.savedMarker = null

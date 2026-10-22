@@ -13,6 +13,8 @@ import { openContextMenu, type MenuItem } from '@ui/kit'
 import { useProject, useRegistry, useValue } from '@ui/reactive'
 import { drawRuler } from './ruler'
 import { TimelineTabs } from './TimelineTabs'
+import { MarkerLayer } from '../../markers/ui'
+import { withTimeMaps } from '@core/timeline-ops'
 import { Transitions, transitionMenu } from './Transitions'
 import { linkedSelection } from './state'
 export { linkedSelection } from './state'
@@ -111,7 +113,7 @@ export function Timeline(props: { ctx: PanelContext }) {
   const redrawRuler = () => {
     const t = tl()
     if (!t || !ruler) return
-    drawRuler(ruler, app, { inPoint: t.inPoint, outPoint: t.outPoint, markers: t.markers })
+    drawRuler(ruler, app, { inPoint: t.inPoint, outPoint: t.outPoint })
   }
   const placePlayhead = () => {
     const px = app.view.timeToPx(app.playback.time.get()) - app.view.scrollX.get()
@@ -168,7 +170,7 @@ export function Timeline(props: { ctx: PanelContext }) {
   const snapThreshold = () => app.view.pxToTime(SNAP_PX)
   const snapTo = (t: Flicks, exclude: Set<Id>, alt: boolean): { t: Flicks; at: Flicks | null } => {
     if (!snapping() || alt) return { t: snapToFrame(t, app.fps()), at: null }
-    const pts = snapPoints(tl(), exclude, [app.playback.time.get()])
+    const pts = withTimeMaps(c => app.edit.timeMap(c), () => snapPoints(tl(), exclude, [app.playback.time.get()]))
     let best: Flicks | null = null
     let bd = snapThreshold()
     for (const p of pts) {
@@ -260,7 +262,7 @@ export function Timeline(props: { ctx: PanelContext }) {
       // snap: try every dragged clip's start/end
       let snapAt: Flicks | null = null
       if (snapping() && !ev.altKey) {
-        const pts = snapPoints(t, ids, [app.playback.time.get()])
+        const pts = withTimeMaps(c => app.edit.timeMap(c), () => snapPoints(t, ids, [app.playback.time.get()]))
         let bd = snapThreshold()
         let bestDt = dt
         for (const c of clips) {
@@ -412,7 +414,7 @@ export function Timeline(props: { ctx: PanelContext }) {
         const s = snapTo(t, new Set(), false)
         t = s.t
       }
-      app.playback.seek(snapToFrame(Math.max(0, t), app.fps()))
+      app.playback.seek(Math.max(0, snapping() && !ev.altKey && !ev.shiftKey ? t : snapToFrame(t, app.fps())))
     }
     seek(e)
     const up = () => {
@@ -581,6 +583,7 @@ export function Timeline(props: { ctx: PanelContext }) {
         </div>
         <div class="tl-ruler-wrap" onPointerDown={onRulerDown}>
           <canvas class="tl-ruler" ref={ruler} />
+          <MarkerLayer app={app} x={x} width={width()} snap={(t,ids,alt)=>snapTo(t,ids,alt).t}/>
           <div class="tl-playhead-head" ref={playheadHead}>
             <svg width="13" height="16" viewBox="0 0 13 16">
               <path d="M1 1h11v9l-5.5 5L1 10z" />
@@ -873,6 +876,7 @@ function ClipView(props: {
           <For each={kfs()}>{(t) => <i style={{ left: `${geo().offset + (t / FLICKS) * props.pps}px` }} />}</For>
         </div>
       </Show>
+      <MarkerLayer app={app} clip={props.clip} x={t=>props.x(t)-geo().left} width={geo().width}/>
       <div class="tl-edge start" data-edge="start" />
       <div class="tl-edge end" data-edge="end" />
     </div>

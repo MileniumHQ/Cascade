@@ -87,6 +87,8 @@ export interface Clip {
   sourceIn: Flicks
   /** Playback speed multiplier for time-based media. */
   speed?: number
+  /** Markers use absolute source flicks, in the same coordinates as sourceIn. */
+  markers?: Marker[]
   properties: PropertyInstance[]
   /** Media-type specific data (e.g. text content for elements). */
   data: Record<string, unknown>
@@ -133,6 +135,10 @@ export interface Track {
 }
 
 export interface Marker {
+  duration?: Flicks
+  note?: string
+  kind?: string
+  data?: unknown
   id: Id
   t: Flicks
   name: string

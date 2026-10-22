@@ -8,6 +8,7 @@
  */
 import { clipEnd, uid, type Clip, type Id, type Timeline, type Track, type TrackKind } from '@shared/project'
 import type { Flicks } from '@shared/time'
+import { shiftMarkers } from './markers'
 import { placeClip, splitClip } from './timeline-ops'
 
 /** DataTransfer type carrying a marked source range (`{ sourceIn?, sourceOut?, lanes? }`) next to `application/x-cascade-media`. */
@@ -141,7 +142,7 @@ export function overwriteClips(tl: Timeline, placements: Placement[]): PlaceResu
  * anything that moves move with it (on any unlocked track), so audio and video stay in sync even
  * when only one of them is targeted. Locked tracks never change.
  */
-export function insertClips(tl: Timeline, placements: Placement[], start: Flicks, duration: Flicks): PlaceResult {
+export function insertClips(tl: Timeline, placements: Placement[], start: Flicks, duration: Flicks, rippleMarkers = true): PlaceResult {
   const { ok, blocked } = usable(tl, placements)
   const targets = new Set(ok.map((o) => o.track.id))
   const affected = (c: Clip) => clipEnd(c) > start
@@ -185,6 +186,7 @@ export function insertClips(tl: Timeline, placements: Placement[], start: Flicks
   for (const track of tl.tracks)
     for (const c of track.clips) if (moving.has(c.id)) c.start += duration
   for (const { track, clip } of ok) placeClip(track, clip)
+  if (ok.length && rippleMarkers) tl.markers = shiftMarkers(tl.markers, start, duration)
   return { placed: ok.map((o) => o.clip.id), blocked, split }
 }
 

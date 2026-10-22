@@ -28,9 +28,12 @@ import type {
 import { Editing } from './editing'
 import { MediaStatusService } from './media-status'
 import { MeterService } from './meters'
-import { ClipboardService } from './clipboard'
+import { ClipboardService, type ClipboardFormatContribution } from './clipboard'
+import type { MarkerKindContribution } from './plugin-api'
 
 export interface Registries {
+  markerKinds: Registry<MarkerKindContribution>
+  clipboardFormats: Registry<ClipboardFormatContribution>
   mediaTypes: Registry<MediaTypeContribution>
   transitions: Registry<TransitionContribution>
   properties: Registry<PropertyContribution>
@@ -51,6 +54,8 @@ export interface Registries {
 }
 
 export const createRegistries = (): Registries => ({
+  markerKinds: new Registry('markerKinds'),
+  clipboardFormats: new Registry('clipboardFormats'),
   mediaTypes: new Registry('mediaTypes'),
   transitions: new Registry('transitions'),
   properties: new Registry('properties'),
@@ -165,6 +170,7 @@ export interface KeyframeSelection {
 }
 
 export class SelectionService {
+  readonly markers = new Value<Id[]>([], shallowArrayEqual)
   readonly transitions = new Value<Id[]>([], shallowArrayEqual)
   readonly clips = new Value<Id[]>([], shallowArrayEqual)
   readonly keyframes = new Value<KeyframeSelection[]>([], shallowArrayEqual)
@@ -178,19 +184,23 @@ export class SelectionService {
 
   constructor() {
     // Direct Value writes by existing panels/plugins obey the same selection exclusivity.
-    this.clips.subscribe(ids => { if (ids.length) this.transitions.set([]) })
-    this.media.subscribe(ids => { if (ids.length) this.transitions.set([]) })
+    this.clips.subscribe(ids => { if (ids.length) { this.transitions.set([]); this.markers.set([]) } })
+    this.markers.subscribe(ids => { if (ids.length) { this.clips.set([]); this.transitions.set([]); this.media.set([]); this.keyframes.set([]) } })
+    this.media.subscribe(ids => { if (ids.length) { this.transitions.set([]); this.markers.set([]) } })
   }
 
   get primaryClip(): Id | null {
     const c = this.clips.get()
     return c.length ? c[c.length - 1] : null
   }
+  setMarkers(ids: Id[]) { this.markers.set(ids) }
   setTransitions(ids: Id[]) {
+    if (ids.length) this.markers.set([])
     this.transitions.set(ids)
     if (ids.length) { this.clips.set([]); this.media.set([]); this.keyframes.set([]) }
   }
   setClips(ids: Id[]) {
+    this.markers.set([])
     this.transitions.set([])
     this.clips.set(ids)
     if (ids.length) this.media.set([])
@@ -341,6 +351,9 @@ export class CascadeApp implements CascadeAPI {
       if (!tl) return
       const alive = new Set<Id>()
       for (const tr of tl.tracks) for (const c of tr.clips) alive.add(c.id)
+      const markers = new Set([...tl.markers, ...tl.tracks.flatMap(tr => tr.clips.flatMap(c => c.markers ?? []))].map(m => m.id))
+      const selectedMarkers = this.selection.markers.get()
+      if (selectedMarkers.some(id => !markers.has(id))) this.selection.markers.set(selectedMarkers.filter(id => markers.has(id)))
       const transitions = new Set(tl.tracks.flatMap(tr => (tr.transitions ?? []).map(tx => tx.id)))
       const selected = this.selection.transitions.get()
       if (selected.some(id => !transitions.has(id))) this.selection.transitions.set(selected.filter(id => transitions.has(id)))

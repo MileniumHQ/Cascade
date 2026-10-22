@@ -6,6 +6,7 @@
 import { clipEnd, uid, type Clip, type Id, type Timeline, type Track } from '@shared/project'
 import type { Flicks } from '@shared/time'
 import { constantMap, type TimeMap } from './time-remap'
+import { clipMarkerTimelineTime } from './markers'
 import { transferTransitionEnd } from './transitions'
 
 export const MIN_CLIP: Flicks = 705_600_000 / 240
@@ -53,6 +54,7 @@ export function trimEndTo(clip: Clip, newEnd: Flicks) {
 export function cloneClip(clip: Clip): Clip {
   const c = JSON.parse(JSON.stringify(clip)) as Clip
   c.id = uid('cl_')
+  for (const m of c.markers ?? []) m.id = uid('mk_')
   for (const p of c.properties) {
     p.id = uid('pi_')
     for (const pv of Object.values(p.params)) for (const k of pv.keyframes ?? []) k.id = uid('kf_')
@@ -81,7 +83,13 @@ export function clearRange(track: Track, start: Flicks, end: Flicks, except: Set
       continue
     }
     if (cs < start && ce > end) {
+      const map = resolveTimeMap(c)
+      const positions = (c.markers ?? []).map(m => clipMarkerTimelineTime(c, map, m))
       const right = cloneClip(c)
+      if (c.markers) {
+        right.markers = right.markers!.filter((_, i) => positions[i] !== null && positions[i]! >= end)
+        c.markers = c.markers.filter((_, i) => positions[i] !== null && positions[i]! < start)
+      }
       transferTransitionEnd(track, c.id, right.id)
       trimEndTo(c, start)
       trimStartTo(right, end)
@@ -114,7 +122,13 @@ export function splitClip(track: Track, clipId: Id, t: Flicks): Clip | null {
   if (i < 0) return null
   const c = track.clips[i]
   if (t <= c.start + MIN_CLIP / 2 || t >= clipEnd(c) - MIN_CLIP / 2) return null
+  const map = resolveTimeMap(c)
+  const positions = (c.markers ?? []).map(m => clipMarkerTimelineTime(c, map, m))
   const right = cloneClip(c)
+  if (c.markers) {
+    right.markers = right.markers!.filter((_, i) => positions[i] !== null && positions[i]! >= t)
+    c.markers = c.markers.filter((_, i) => positions[i] !== null && positions[i]! < t)
+  }
   transferTransitionEnd(track, c.id, right.id)
   trimEndTo(c, t)
   trimStartTo(right, t)
@@ -249,7 +263,18 @@ export function clipsInRange(track: Track, a: Flicks, b: Flicks): Clip[] {
 export function snapPoints(tl: Timeline, exclude: Set<Id>, extra: Flicks[] = []): Flicks[] {
   const pts = new Set<Flicks>([0, ...extra])
   for (const tr of tl.tracks) for (const c of tr.clips) if (!exclude.has(c.id)) pts.add(c.start).add(clipEnd(c))
-  for (const m of tl.markers) pts.add(m.t)
+  for (const m of tl.markers) if (!exclude.has(m.id)) { pts.add(m.t); if (m.duration) pts.add(m.t + m.duration) }
+  for (const tr of tl.tracks) for (const c of tr.clips) if (!exclude.has(c.id)) for (const m of c.markers ?? []) {
+    if (exclude.has(m.id)) continue
+    const t = clipMarkerTimelineTime(c, resolveTimeMap(c), m)
+    if (t !== null) {
+      pts.add(t)
+      if (m.duration) {
+        const end = clipMarkerTimelineTime(c, resolveTimeMap(c), { ...m, t: m.t + m.duration })
+        if (end !== null) pts.add(end)
+      }
+    }
+  }
   return [...pts].sort((a, b) => a - b)
 }
 

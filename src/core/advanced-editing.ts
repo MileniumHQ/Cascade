@@ -2,6 +2,7 @@ import type { CascadeAPI } from './app'
 import { clipEnd, findClip, type Clip, type Id, type Timeline } from '@shared/project'
 import type { Flicks } from '@shared/time'
 import { clipTimeMap } from './time-remap'
+import { shiftMarkers } from './markers'
 import * as ops from './timeline-ops'
 import { sourceMeta } from './compositions'
 
@@ -62,14 +63,23 @@ export function linkedToolEdit(app: CascadeAPI, tl: Timeline, tool: TrimTool, id
 }
 
 /** Ripple removed intervals onto linked tail tracks without deleting unrelated content. */
-export function deleteWithRipple(tl: Timeline, ids: Set<Id>): boolean {
+export function deleteWithRipple(tl: Timeline, ids: Set<Id>, rippleMarkers = true): boolean {
   if (tl.tracks.some((tr) => tr.locked && tr.clips.some((c) => ids.has(c.id)))) return false
+  const removed = tl.tracks.flatMap(tr => tr.clips.filter(c => ids.has(c.id)).map(c => ({ start: c.start, end: clipEnd(c) }))).sort((a, b) => a.start - b.start)
+  const union: { start: number; end: number }[] = []
+  for (const range of removed) {
+    const last = union.at(-1)
+    if (last && range.start <= last.end) last.end = Math.max(last.end, range.end)
+    else union.push({ ...range })
+  }
+  const ripple = () => { if (rippleMarkers) for (const range of [...union].reverse()) tl.markers = shiftMarkers(tl.markers, range.start, range.start - range.end) }
   const local = JSON.parse(JSON.stringify(tl)) as Timeline
   ops.deleteClips(local, ids, true)
   // Usually every linked track has its own selected member. Prefer each track's own
   // removed durations, so offset linked clips do not remove the same time twice.
   if (linksStayTogether(tl, local)) {
     for (let i = 0; i < tl.tracks.length; i++) if (JSON.stringify(tl.tracks[i]) !== JSON.stringify(local.tracks[i])) tl.tracks[i] = local.tracks[i]
+    ripple()
     return true
   }
   const trial = JSON.parse(JSON.stringify(tl)) as Timeline
@@ -107,5 +117,6 @@ export function deleteWithRipple(tl: Timeline, ids: Set<Id>): boolean {
   }
   if (!linksStayTogether(tl, trial)) return false
   tl.tracks = trial.tracks
+  ripple()
   return true
 }
