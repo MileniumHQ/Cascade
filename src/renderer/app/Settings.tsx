@@ -6,6 +6,7 @@ import { Button, Empty, Modal, NumberField, Select, TextField, Toggle } from '..
 import { Icon } from '../ui/icon'
 import { useEmitter, useRegistry, useValue } from '../ui/reactive'
 import { McpSetupBlock } from './McpSetup'
+import { KeyboardSettings } from './KeyboardSettings'
 
 /**
  * Global settings. Built-in plugin settings live here as ordinary sections; only
@@ -42,14 +43,21 @@ export function SettingsModal(props: { app: CascadeApp; onClose: () => void }) {
             )}
           </For>
           <div class="settings-nav-sep" />
+          <button class={section() === 'Keyboard' ? 'on' : ''} onClick={() => setSection('Keyboard')}>
+            <Icon name="keyboard" size={13} /> Keyboard
+          </button>
           <button class={section() === 'Plugins' ? 'on' : ''} onClick={() => setSection('Plugins')}>
             <Icon name="puzzle" size={13} /> Plugins
           </button>
         </nav>
         <div class="settings-body">
+          <Show when={section() === 'Keyboard'}>
+            <KeyboardSettings app={app} />
+          </Show>
           <Show
-            when={section() !== 'Plugins'}
+            when={section() !== 'Keyboard' && section() !== 'Plugins'}
             fallback={
+              <Show when={section() === 'Plugins'}>
               <div class="settings-plugins">
                 <div class="settings-plugins-head">
                   <p class="hint">
@@ -74,6 +82,7 @@ export function SettingsModal(props: { app: CascadeApp; onClose: () => void }) {
                   </For>
                 </Show>
               </div>
+              </Show>
             }
           >
             <For each={sections().find(([n]) => n === section())?.[1] ?? []}>

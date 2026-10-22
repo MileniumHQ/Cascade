@@ -273,3 +273,12 @@
   max-height: 80px;
   overflow: auto;
 }
+
+/* presets */
+.ex-presets .ex-inline {
+  flex: 1;
+  min-width: 0;
+}
+.ex-preset-name {
+  width: 200px;
+}

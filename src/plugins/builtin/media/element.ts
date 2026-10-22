@@ -1,5 +1,22 @@
 import { definePlugin } from '@core/plugin-api'
 
+/** Text content; with `rest`, lines after the first get their own size, weight and opacity. */
+function renderText(el: HTMLElement, text: string, rest?: { size: number; weight: number; opacity: number }) {
+  const nl = text.indexOf('\n')
+  if (!rest || nl < 0) {
+    el.textContent = text
+    return
+  }
+  const first = el.ownerDocument.createElement('span')
+  first.textContent = text.slice(0, nl)
+  const later = el.ownerDocument.createElement('span')
+  later.textContent = text.slice(nl)
+  later.style.cssText = `font-size:${rest.size}em;opacity:${rest.opacity};${rest.weight ? `font-weight:${rest.weight};` : ''}`
+  const box = el.ownerDocument.createElement('div')
+  box.append(first, later)
+  el.replaceChildren(box)
+}
+
 /**
  * Elements are DOM boxes with no file behind them: text, solid colors, shapes.
  * Their look comes entirely from properties (Text, Fill, Size, Corners, Border, Shadow…),
@@ -23,13 +40,17 @@ export const elementPlugin = definePlugin({
           el.className = 'cs-element'
           el.style.cssText = 'display:flex;align-items:center;justify-content:center;box-sizing:border-box;white-space:pre-wrap;'
           let text: string | undefined
+          let rest: string | undefined
           return {
             el,
             update(s) {
               const t = s.extra.text as string | undefined
-              if (t !== text) {
+              const r = s.extra.textRest as { size: number; weight: number; opacity: number } | undefined
+              const restKey = r ? `${r.size}/${r.weight}/${r.opacity}` : undefined
+              if (t !== text || restKey !== rest) {
                 text = t
-                el.textContent = t ?? ''
+                rest = restKey
+                renderText(el, t ?? '', r)
               }
             },
             dispose() {}

@@ -49,7 +49,7 @@ export function IconButton(props: BtnProps & { active?: boolean; iconSize?: numb
 export function Kbd(props: { keys: string }) {
   return (
     <span class="kbd">
-      <For each={props.keys.split('+')}>{(k) => <kbd>{k.replace('Mod', navigator.platform.includes('Mac') ? '⌘' : 'Ctrl')}</kbd>}</For>
+      <For each={props.keys.split('+')}>{(k) => <kbd>{k === 'Plus' ? '+' : k.replace('Mod', navigator.platform.includes('Mac') ? '⌘' : 'Ctrl')}</kbd>}</For>
     </span>
   )
 }

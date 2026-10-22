@@ -56,6 +56,8 @@ export class PluginHost {
       settings: reg('settings'),
       exporters: reg('exporters'),
       generators: reg('generators'),
+      exportPresets: reg('exportPresets'),
+      presets: reg('presets'),
       track: (d) => store.add(d),
       log: (...args) => console.log(`[${def.id}]`, ...args)
     }

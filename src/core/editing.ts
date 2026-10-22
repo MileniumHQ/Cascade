@@ -10,6 +10,7 @@ import {
   type Clip,
   type EasingRef,
   type Id,
+  type Keyframe,
   type MediaItem,
   type ParamValue,
   type Project,
@@ -21,7 +22,8 @@ import {
 import { FLICKS, secondsToFlicks, snapToFrame, type Flicks } from '@shared/time'
 import type { CascadeApp } from './app'
 import { defaultParams, evaluateParam, keyframeAt, KF_EPSILON } from './evaluate'
-import type { ImportCandidate, MediaTypeContribution, ParamDef, PropertyContribution } from './plugin-api'
+import type { GeneratedProperty, ImportCandidate, MediaTypeContribution, ParamDef, PropertyContribution } from './plugin-api'
+import { applyPropertyStyle, generatedKeyframes, withKeyframes, type PropertyStyle } from './property-style'
 import * as ops from './timeline-ops'
 import { clipTimeMap, constantMap, type TimeMap } from './time-remap'
 
@@ -168,12 +170,33 @@ export class Editing {
 
   // ───────────────────────── clips ─────────────────────────
 
-  private newPropertyInstance(type: string, values?: Record<string, unknown>): PropertyInstance | null {
+  private newPropertyInstance(type: string, values?: Record<string, unknown>, keyframes?: Record<string, Keyframe[]>): PropertyInstance | null {
     const contrib = this.app.registries.properties.get(type)
     if (!contrib) return null
     const params = defaultParams(contrib)
     for (const [k, v] of Object.entries(values ?? {})) params[k] = { value: v }
-    return { id: uid('pi_'), type, enabled: true, params }
+    const inst: PropertyInstance = { id: uid('pi_'), type, enabled: true, params }
+    return keyframes ? withKeyframes(inst, keyframes) : inst
+  }
+
+  /**
+   * Restyle clips from a `PropertyStyle` (parameter values per property type; `null` removes the type)
+   * in one undo step. Returns how many clips changed.
+   */
+  applyStyle(clipIds: Id[], style: PropertyStyle, label = 'Apply style'): number {
+    let count = 0
+    this.doc.transact(label, (d) => {
+      for (const id of clipIds) {
+        const clip = this.findDraftClip(d, id)?.clip
+        if (!clip) continue
+        const changed = applyPropertyStyle(clip.properties, style, (type, values) => {
+          const contrib = this.app.registries.properties.get(type)
+          return contrib && this.propertyApplies(contrib, clip as Clip) ? this.newPropertyInstance(type, values) : null
+        })
+        if (changed) count++
+      }
+    })
+    return count
   }
 
   /** Build (but don't insert) a clip for a media item. */
@@ -182,10 +205,11 @@ export class Editing {
     if (!mt) return null
     const dur =
       mt.timeBased && media.meta.duration ? media.meta.duration : secondsToFlicks(mt.defaultDuration ?? 5)
-    const presets = (media.data?.properties as { type: string; values?: Record<string, unknown> }[] | undefined) ?? []
+    const presets = (media.data?.properties as GeneratedProperty[] | undefined) ?? []
+    const snapped = snapToFrame(dur, this.app.fps()) || dur
     const props = [
       ...(mt.defaultProperties ?? []).filter((t) => !presets.some((p) => p.type === t)).map((t) => this.newPropertyInstance(t)),
-      ...presets.map((p) => this.newPropertyInstance(p.type, p.values))
+      ...presets.map((p) => this.newPropertyInstance(p.type, p.values, p.keyframes && generatedKeyframes(p.keyframes, snapped, this.defaultEasing())))
     ].filter(Boolean) as PropertyInstance[]
     const genData = (media.data?.clipData as Record<string, unknown>) ?? {}
     return {

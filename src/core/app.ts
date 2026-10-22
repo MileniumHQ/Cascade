@@ -9,12 +9,14 @@ import type {
   CommandContribution,
   EasingContribution,
   ExporterContribution,
+  ExportPresetContribution,
   GeneratorContribution,
   KeybindingContribution,
   MediaTypeContribution,
   MenuItemContribution,
   OverlayContribution,
   PanelContribution,
+  PresetContribution,
   ParamTypeContribution,
   PluginEnv,
   PropertyContribution,
@@ -39,6 +41,8 @@ export interface Registries {
   settings: Registry<SettingContribution>
   exporters: Registry<ExporterContribution>
   generators: Registry<GeneratorContribution>
+  exportPresets: Registry<ExportPresetContribution>
+  presets: Registry<PresetContribution>
 }
 
 export const createRegistries = (): Registries => ({
@@ -54,7 +58,9 @@ export const createRegistries = (): Registries => ({
   statusItems: new Registry('statusItems'),
   settings: new Registry('settings'),
   exporters: new Registry('exporters'),
-  generators: new Registry('generators')
+  generators: new Registry('generators'),
+  exportPresets: new Registry('exportPresets'),
+  presets: new Registry('presets')
 })
 
 // ───────────────────────────── services ─────────────────────────────

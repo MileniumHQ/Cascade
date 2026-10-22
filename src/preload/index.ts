@@ -96,6 +96,8 @@ const bridge: HostBridge = {
     start: (req) => ipcRenderer.invoke('export:start', req),
     cancel: (jobId) => ipcRenderer.invoke('export:cancel', jobId),
     frame: (req) => ipcRenderer.invoke('export:frame', req),
+    saveFrame: (req) => ipcRenderer.invoke('export:saveFrame', req),
+    copyFrame: (req) => ipcRenderer.invoke('export:copyFrame', req),
     onProgress: (fn) => on('export:progress', fn)
   },
   plugins: {

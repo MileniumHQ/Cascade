@@ -822,3 +822,11 @@ button.sc-section-head:hover {
 .sc-folder:not(.renaming) > * {
   pointer-events: none;
 }
+.sc-gens-title {
+  margin: 6px 2px 1px;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}

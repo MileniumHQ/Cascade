@@ -41,7 +41,11 @@ export const textPropertiesPlugin = definePlugin({
         { id: 'tracking', label: 'Letter spacing', type: 'number', unit: 'percent', default: 0, softMin: -0.2, softMax: 0.5, step: 0.5 },
         { id: 'leading', label: 'Line height', type: 'number', default: 1.15, min: 0.5, max: 4, step: 0.05 },
         { id: 'stroke', label: 'Outline', type: 'number', unit: 'frameLen', default: 0, min: 0, step: 0.5 },
-        { id: 'strokeColor', label: 'Outline color', type: 'color', default: '#000000' }
+        { id: 'strokeColor', label: 'Outline color', type: 'color', default: '#000000' },
+        // Lines after the first can look different (name + subtitle in one box).
+        { id: 'restSize', label: 'Later lines size', type: 'number', unit: 'percent', default: 1, min: 0.2, max: 4, step: 1 },
+        { id: 'restWeight', label: 'Later lines weight', type: 'number', default: 0, min: 0, max: 1000, step: 10 },
+        { id: 'restOpacity', label: 'Later lines opacity', type: 'number', unit: 'percent', default: 1, min: 0, max: 1, step: 1 }
       ],
       apply(v, { u }) {
         const style: Record<string, string> = {
@@ -59,7 +63,9 @@ export const textPropertiesPlugin = definePlugin({
           style['-webkit-text-stroke'] = `${u.len(n(v.stroke))} ${v.strokeColor}`
           style['paint-order'] = 'stroke fill'
         }
-        return { contentStyle: style, extra: { text: String(v.text ?? '') } }
+        const rest = { size: r(n(v.restSize) || 1, 3), weight: Math.round(n(v.restWeight)), opacity: r(Number(v.restOpacity ?? 1), 3) }
+        const plain = rest.size === 1 && rest.weight === 0 && rest.opacity === 1
+        return { contentStyle: style, extra: { text: String(v.text ?? ''), ...(plain ? {} : { textRest: rest }) } }
       },
       summary: (v) => String(v.text ?? '').split('\n')[0].slice(0, 28)
     })
