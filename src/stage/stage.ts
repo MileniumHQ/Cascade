@@ -16,7 +16,7 @@ import { clipEnd, uid, type Clip, type Id, type MediaItem, type Project, type Tr
 import { FLICKS, type Flicks } from '@shared/time'
 import type { Registries } from '@core/app'
 import { evaluateProperty } from '@core/evaluate'
-import { clipTimeMap } from '@core/time-remap'
+import { extendMap, clipTimeMap } from '@core/time-remap'
 import { Emitter } from '@core/events'
 import { StageGPU, type ShaderPass } from './gpu'
 import { clipRenderRange, transitionGain, renderTransitionLayers } from './transitions'
@@ -357,7 +357,7 @@ export class Stage {
     const range = clipRenderRange(this.opts.registries, track, clip)
     const visible = t >= range.start && t < range.end && !(track.kind === 'visual' && track.hidden)
     const local = Math.max(range.start - clip.start, Math.min(t - clip.start, range.end - clip.start))
-    const remap = clipTimeMap(clip, project.timelines[this.timelineId ?? project.activeTimeline], this.opts.registries)
+    const remap = extendMap(clipTimeMap(clip, project.timelines[this.timelineId ?? project.activeTimeline], this.opts.registries), clip.duration)
     const source = clip.sourceIn + remap.offset(local)
     const sourceEnd = media?.meta.duration ?? Infinity
     const state: ClipFrameState = {
@@ -537,7 +537,7 @@ export class Stage {
         mounted.audio!.gain.gain.setValueAtTime(0, (to - start) / FLICKS)
         for (const n of mounted.audio!.nodes) if (n.node.ready) prepare.push(n.node.ready)
         const local = from - clip.start
-        const remap = clipTimeMap(clip, timeline, this.opts.registries)
+        const remap = extendMap(clipTimeMap(clip, timeline, this.opts.registries), clip.duration)
         const original = clip.mediaId ? project.media[clip.mediaId] : undefined
         const media = original && { ...original, meta: sourceMeta(original, project, this.opts.registries) }
         const state: ClipFrameState = {

@@ -4,7 +4,7 @@ import { anySolo, trackAudible } from '@shared/audio-mix'
 import { FLICKS, type Flicks, type FrameRate } from '@shared/time'
 import { pitchOf } from './properties/audio'
 import { transitionClipRange } from '@core/transitions'
-import { clipTimeMap, sourceLocalRange } from '@core/time-remap'
+import { extendMap, clipTimeMap, sourceLocalRange } from '@core/time-remap'
 import { compositionAudioRanges, timelineHasAudio } from '@core/media-audio'
 
 export interface ExportJobSpec {
@@ -43,7 +43,7 @@ export function audioPlan(app: CascadeAPI, range: { start: Flicks; end: Flicks }
         const media = clip.mediaId ? project.media[clip.mediaId] : undefined
         if (!media?.path || media.meta.hasAudio === false) continue
         const active = transitionClipRange(track, clip, tx => !!app.registries.transitions.get(tx.type)?.kinds.includes(track.kind))
-        const map = clipTimeMap(clip, tl, app.registries)
+        const map = extendMap(clipTimeMap(clip, tl, app.registries), clip.duration)
         if (map.max === 0) continue
         const available = sourceLocalRange(clip, map, media.meta.duration)
         const from = Math.max(scope.start - clip.start, active.start - clip.start, available.start)

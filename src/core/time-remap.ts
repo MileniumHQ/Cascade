@@ -179,7 +179,7 @@ export function clipTimeMap(clip: Clip, timeline: Timeline | undefined, regs: Re
   const pv = found?.pv
   const kfs = pv?.keyframes?.length ? (shift ? pv.keyframes.map((k) => ({ ...k, t: k.t + shift })) : pv.keyframes) : null
   const forward = !pv ? constantMap(base) : kfs ? curveMap(base, kfs, regs) : constantMap(base * Number(pv.value ?? 1))
-  const map = extendMap(found?.reversed ? reverseMap(forward) : forward, clip.duration)
+  const map = found?.reversed ? reverseMap(forward) : forward
   if (cacheable) cache.set(clip, { partner, map })
   return map
 }

@@ -2,7 +2,7 @@ import type { Registries } from './app'
 import { timelineDuration, type Id, type Project, type Timeline } from '@shared/project'
 import type { Flicks } from '@shared/time'
 import { anySolo, trackAudible } from '@shared/audio-mix'
-import { clipTimeMap, sourceLocalRange } from './time-remap'
+import { extendMap, clipTimeMap, sourceLocalRange } from './time-remap'
 import { transitionClipRange } from './transitions'
 import { sourceMeta, timelineDependencies } from './compositions'
 
@@ -15,7 +15,7 @@ export function timelineHasAudio(project: Project, registries: Registries, timel
   return tl.tracks.some(track => trackAudible(track, solo) && !(track.kind === 'visual' && track.hidden) && track.clips.some(clip => {
     const mt = registries.mediaTypes.get(clip.type)
     const active = transitionClipRange(track, clip, tx => !!registries.transitions.get(tx.type)?.kinds.includes(track.kind))
-    const remap = clipTimeMap(clip, tl, registries)
+    const remap = extendMap(clipTimeMap(clip, tl, registries), clip.duration)
     if (remap.max === 0) return false
     const original = clip.mediaId ? project.media[clip.mediaId] : undefined
     const media = original && { ...original, meta: sourceMeta(original, project, registries) }

@@ -157,3 +157,30 @@ test('source availability covers forward and reversed handles', async () => {
   expect(sourceLocalRange(clip, constantMap(2), S(120))).toEqual({ start: -S(50), end: S(10) })
   expect(sourceLocalRange(clip, reverseMap(constantMap(2)), S(120))).toEqual({ start: -S(10), end: S(50) })
 })
+
+test('extending a trimmed ramp uses the retained curve for source limits', async () => {
+  const app = await editor()
+  app.doc.transact('short source and retained ramp', d => {
+    d.media.m1.meta.duration = S(3)
+    for (const tr of d.timelines[d.activeTimeline].tracks) for (const c of tr.clips) {
+      c.sourceIn = 0
+      c.duration = S(1)
+      c.properties = c.id === 'cv' ? [{ id: 'rate', type: 'speed', enabled: true, params: {
+        speed: { value: 1, keyframes: [{ id: 'k0', t: 0, value: 1, easing: { id: 'linear' } }, { id: 'k1', t: S(2), value: 3, easing: { id: 'linear' } }] }
+      } }] : []
+    }
+  })
+  app.edit.trimClip('cv', 'end', S(12))
+  const c = app.timeline().tracks[0].clips[0]
+  expect(app.edit.timeMap(c).offset(c.duration)).toBeLessThanOrEqual(S(3) + 2)
+  near(c.duration, S(Math.sqrt(7) - 1))
+})
+
+test('frozen time-map caches are active immediately after constructor and load', async () => {
+  const original = await editor()
+  for (const load of [false, true]) {
+    const app = new CascadeApp('editor', null, original.project())
+    if (load) app.doc.load(original.project())
+    expect(app.edit.timeMap('cv')).toBe(app.edit.timeMap('cv'))
+  }
+})
