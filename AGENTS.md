@@ -22,6 +22,7 @@ DOM-powered video editor. Electron 44 + TypeScript (TS 7 / tsgo) + SolidJS + pla
 
 ## Agent editing
 - Transcripts: whisper.cpp supplies the words, `cascade-align` (Qwen3-ForcedAligner on CrispASR's ggml port, `native/cascade-align/`, chunking in `src/main/align.ts`) the word start/end times; see `docs/captions.md`.
+- UI extension points (timeline decorations, inspector/source sections, drops, snap targets, viewer service, overlay input claims) are in `docs/ui-contributions.md`; keep feature UI in its plugin, never in the panels.
 - MCP tools are documented in `docs/mcp.md`. Content-aware editing (`media_analyze` → `transcript_get`, then ordinary ops with word anchors like `w12.end+80ms`, or source anchors like `m1:w12` in `add_clip` sourceIn/sourceOut) lives in `src/plugins/builtin/mcp/transcript.ts`, built on the `SourceAnalysis` contract in `src/shared/analysis.ts`. `audio_analyze` renders the mix through the WAV exporter and measures/transcribes it (`mcp/audio.ts`, `mcp/loudness.ts`); `timeline_lint` rules live in `mcp/lint.ts`, contact sheets in `mcp/sheets.ts`, beat detection in `mcp/beats.ts`. MCP times print as `HH:MM:SS.mmm` (`mcp/clock.ts`) and parse back the same way. Keep agent tools as information + primitives; don't add hard-coded editing macros.
 - Resource limits: run one GPU-heavy job at a time (whisper Vulkan, export, Electron test instance); the machine has crashed under load.
 
