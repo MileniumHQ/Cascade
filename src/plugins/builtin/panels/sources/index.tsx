@@ -1,7 +1,8 @@
 import { definePlugin, type PanelContext } from '@core/plugin-api'
-import { Button, Segmented } from '@ui/kit'
+import { Button, IconButton, Segmented } from '@ui/kit'
 import { solidMount } from '../../solid'
 import { Sources } from './Sources'
+import { newFolder } from './bin'
 import { importState, setViewMode, trackImport, viewMode } from './state'
 import './sources.css'
 
@@ -13,6 +14,7 @@ function Actions(props: { ctx: PanelContext }) {
       <Button size="sm" icon={importState().jobs > 0 ? 'loader-circle' : 'plus'} class={importState().jobs > 0 ? 'sc-import-btn busy' : 'sc-import-btn'} tip="Import media" kbd="Ctrl+I" onClick={() => void trackImport(app, () => app.run('media.import'))}>
         Import
       </Button>
+      <IconButton icon="folder" tip="New folder" onClick={() => app.run('sources.newFolder')} />
       <Segmented
         value={viewMode()}
         onChange={setViewMode}
@@ -29,6 +31,7 @@ export const sourcesPlugin = definePlugin({
   id: 'cascade.panels.sources',
   name: 'Sources panel',
   activate(ctx) {
+    ctx.commands.register({ id: 'sources.newFolder', title: 'New bin folder', icon: 'folder', category: 'Media', run: (a) => newFolder(a) })
     ctx.panels.register({
       id: 'sources',
       title: 'Sources',

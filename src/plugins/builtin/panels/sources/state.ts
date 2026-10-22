@@ -74,3 +74,12 @@ export async function trackImport(app: CascadeAPI, job: () => unknown, files = 0
   const added = app.project().mediaOrder.filter((id) => !before.has(id))
   if (added.length) selectMedia(app, added)
 }
+
+// ───────────────────────────── bin folders ─────────────────────────────
+
+/** Folder currently shown (null = the root). Runtime view state; the structure itself lives in the document. */
+export const [currentFolder, setCurrentFolder] = createSignal<Id | null>(null)
+/** A folder selected in the panel (for F2 / Delete / Enter). Mutually exclusive with a media selection. */
+export const [selectedFolder, setSelectedFolder] = createSignal<Id | null>(null)
+/** Folder whose name is being edited inline. */
+export const [renamingFolder, setRenamingFolder] = createSignal<Id | null>(null)

@@ -686,3 +686,139 @@ button.sc-section-head:hover {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ───────── bin folders ───────── */
+.sc-crumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1px;
+  margin: 0 0 6px;
+  min-width: 0;
+}
+.sc-crumb {
+  max-width: 120px;
+  height: 22px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sc-crumb:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+.sc-crumb.current {
+  color: var(--text);
+  font-weight: 600;
+}
+.sc-crumb-sep {
+  flex: none;
+  color: var(--dim);
+}
+.sc-folders {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 5px 7px;
+  margin-bottom: 8px;
+}
+.sc-folders.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sc-folder {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: var(--r);
+  background: var(--panel-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  cursor: default;
+}
+.sc-folder:hover {
+  box-shadow: inset 0 0 0 1px var(--line-3);
+}
+.sc-folder.selected {
+  background: var(--sky-soft);
+  box-shadow: inset 0 0 0 1px var(--sky-line);
+}
+.sc-folder.drop,
+.sc-crumb.drop {
+  background: var(--sky-soft);
+  box-shadow: inset 0 0 0 1px var(--sky);
+}
+.sc-folder-icon {
+  flex: none;
+  color: var(--muted);
+}
+.sc-folder-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sc-folder-count {
+  flex: none;
+  color: var(--dim);
+  font-size: 10.5px;
+}
+.sc-folder .sc-rename {
+  flex: 1;
+  min-width: 0;
+}
+.sc-folder-empty {
+  padding: 18px 8px;
+  text-align: center;
+  color: var(--dim);
+  font-size: 11.5px;
+}
+
+/* ───────── offline media ───────── */
+.sc-item.offline .sc-thumb {
+  opacity: 0.4;
+  filter: grayscale(1);
+}
+.sc-offline {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  max-width: calc(100% - 8px);
+  height: 17px;
+  padding: 0 6px 0 4px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--warn, #f0b34a);
+  background: rgba(10, 10, 12, 0.78);
+  backdrop-filter: blur(6px);
+  font-size: 10px;
+  font-weight: 600;
+}
+.sc-offline:hover {
+  background: rgba(30, 24, 10, 0.9);
+}
+.list .sc-offline {
+  left: 2px;
+  bottom: 2px;
+  padding: 0 3px;
+}
+.list .sc-offline span {
+  display: none;
+}
+/* keep dragenter/leave from flickering between a folder's children */
+.sc-folder:not(.renaming) > * {
+  pointer-events: none;
+}

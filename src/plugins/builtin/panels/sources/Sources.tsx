@@ -5,9 +5,18 @@ import { Icon } from '@ui/icon'
 import { Button, IconButton, openContextMenu, openMenu, Segmented, type MenuItem } from '@ui/kit'
 import { useProject, useRegistry, useValue } from '@ui/reactive'
 import { MediaCard, setDragImage, type PanelApi } from './Item'
+import { Breadcrumb, dropTarget, FolderRow, type FolderApi } from './Folder'
+import { deleteBinFolder, moveBinFolder, moveMediaToFolder, newFolder, renameBinFolder } from './bin'
+import { BIN_KEY, childFolders, folderById, folderOf, mediaIn, pathTo, readBin } from './folders'
 import { compareNames } from './format'
 import {
   createOpen,
+  currentFolder,
+  renamingFolder,
+  selectedFolder,
+  setCurrentFolder,
+  setRenamingFolder,
+  setSelectedFolder,
   importState,
   selectMedia,
   setCreateOpen,
@@ -75,12 +84,21 @@ export function Sources(props: { ctx: PanelContext }) {
   const empty = () => project().mediaOrder.length === 0
   const importing = () => importState().jobs > 0
 
+  const bin = createMemo(() => readBin(project().pluginData[BIN_KEY]))
+  /** Folder being shown; a stale id (deleted, undone, other project) falls back to the root. */
+  const folder = createMemo(() => (folderById(bin(), currentFolder()) ? currentFolder() : null))
+  const searching = () => query().trim() !== ''
+  const folders = createMemo(() => (searching() ? [] : childFolders(bin(), folder())))
+  const crumbs = createMemo(() => pathTo(bin(), folder()))
+
   const ids = createMemo<Id[]>(
     () => {
       const p = project()
       const q = query().trim().toLowerCase()
       const f = typeFilter()
-      let list = p.mediaOrder.map((id, i) => ({ m: p.media[id], i })).filter((x) => x.m)
+      // Search looks through every folder; browsing shows the current one.
+      const visible = q ? p.mediaOrder : mediaIn(bin(), folder(), p.mediaOrder)
+      let list = visible.map((id) => ({ m: p.media[id], i: p.mediaOrder.indexOf(id) })).filter((x) => x.m)
       if (f !== 'all') list = list.filter((x) => x.m.type === f)
       if (q) list = list.filter((x) => x.m.name.toLowerCase().includes(q))
       const dir = sortDesc() ? -1 : 1
@@ -125,13 +143,29 @@ export function Sources(props: { ctx: PanelContext }) {
     }
   }
 
+  // A different project has different folders.
+  createEffect(
+    on(
+      () => project().id,
+      () => {
+        setCurrentFolder(null)
+        setSelectedFolder(null)
+        setRenamingFolder(null)
+      },
+      { defer: true }
+    )
+  )
+
   const find = (id: Id) => scroller.querySelector<HTMLElement>(`[data-id="${CSS.escape(id)}"]`)
 
   // Keep the newest selection in view (imports, keyboard navigation, timeline → bin).
   createEffect(
     on(selection, (sel) => {
       const last = sel[sel.length - 1]
-      if (last) requestAnimationFrame(() => find(last)?.scrollIntoView({ block: 'nearest' }))
+      if (!last) return
+      // Selecting from elsewhere (timeline, imports) must not leave the item hidden in another folder.
+      if (!searching() && folderOf(bin(), last) !== folder()) setCurrentFolder(folderOf(bin(), last))
+      requestAnimationFrame(() => find(last)?.scrollIntoView({ block: 'nearest' }))
     })
   )
 
@@ -153,9 +187,52 @@ export function Sources(props: { ctx: PanelContext }) {
       next = [id]
       anchor = id
     }
+    setSelectedFolder(null)
     selectMedia(app, next)
     root.focus({ preventScroll: true })
   }
+
+  // ─── folders ───
+
+  const selectFolder = (id: Id) => {
+    selectMedia(app, [])
+    setSelectedFolder(id)
+    root.focus({ preventScroll: true })
+  }
+  const openFolder = (id: Id | null) => {
+    setCurrentFolder(id)
+    setSelectedFolder(null)
+    selectMedia(app, [])
+  }
+  const commitFolderRename = (id: Id, name: string | null) => {
+    setRenamingFolder(null)
+    root.focus({ preventScroll: true })
+    const trimmed = name?.trim()
+    if (trimmed && trimmed !== folderById(bin(), id)?.name) renameBinFolder(app, id, trimmed)
+  }
+  const folderMenu = (e: MouseEvent, id: Id) => {
+    selectFolder(id)
+    openContextMenu(e, [
+      { label: 'Open', icon: 'folder-open', shortcut: 'Enter', run: () => openFolder(id) },
+      { label: 'New folder inside', icon: 'folder', run: () => newFolder(app, [], id) },
+      { label: 'Rename', icon: 'pencil', shortcut: 'F2', run: () => setRenamingFolder(id) },
+      { separator: true },
+      { label: 'Delete folder', icon: 'trash-2', shortcut: 'Del', danger: true, run: () => deleteBinFolder(app, id) }
+    ])
+  }
+  const folderApi: FolderApi = {
+    selected: selectedFolder,
+    renaming: renamingFolder,
+    count: (id) => mediaIn(bin(), id, project().mediaOrder, true).length,
+    open: openFolder,
+    select: selectFolder,
+    contextMenu: folderMenu,
+    commitRename: commitFolderRename,
+    dropMedia: (list, to) => moveMediaToFolder(app, list.filter((m) => project().media[m]), to),
+    dropFolder: (id, to) => moveBinFolder(app, id, to)
+  }
+  // Dropping on the empty part of the list moves things into the folder being shown.
+  const listDrop = dropTarget(folderApi, folder)
 
   const addToTimeline = (list: Id[]) => {
     // Several items go end-to-end from the playhead instead of overwriting each other.
@@ -217,6 +294,9 @@ export function Sources(props: { ctx: PanelContext }) {
       { label: multi ? `Add ${sel.length} to timeline` : 'Add to timeline', icon: 'plus', shortcut: 'Enter', run: () => addToTimeline(sel) },
       { label: 'Rename', icon: 'pencil', shortcut: 'F2', disabled: multi, run: () => startRename(id) },
       { label: 'Reveal in file manager', icon: 'folder-search', disabled: !m?.path, run: () => reveal(id) },
+      { separator: true },
+      { label: 'New folder with selection', icon: 'folder', run: () => newFolder(app, sel) },
+      ...(folder() !== null ? [{ label: 'Move out of folder', icon: 'arrow-up', run: () => moveMediaToFolder(app, sel, folderById(bin(), folder())?.parent ?? null) }] : []),
       ...(extra.length ? [{ separator: true }, ...extra] : []),
       { separator: true },
       { label: multi ? `Remove ${sel.length} from project` : 'Remove from project', icon: 'trash-2', shortcut: 'Del', danger: true, run: () => void removeMedia(sel) }
@@ -224,9 +304,10 @@ export function Sources(props: { ctx: PanelContext }) {
   }
 
   const blankMenu = (e: MouseEvent) => {
-    if ((e.target as HTMLElement).closest('.sc-item, .sc-gen')) return
+    if ((e.target as HTMLElement).closest('.sc-item, .sc-gen, .sc-folder')) return
     openContextMenu(e, [
       { label: 'Import media…', icon: 'import', shortcut: 'Ctrl+I', run: () => void importDialog() },
+      { label: 'New folder', icon: 'folder', run: () => newFolder(app) },
       { label: 'Select all', icon: 'check-check', shortcut: 'Ctrl+A', disabled: !ids().length, run: () => selectMedia(app, ids()) }
     ])
   }
@@ -272,8 +353,16 @@ export function Sources(props: { ctx: PanelContext }) {
       if ((e.target as HTMLElement).closest('input, textarea')) return
       const mod = e.ctrlKey || e.metaKey
       const sel = app.selection.media.get()
+      const folderSel = selectedFolder()
       let handled = true
-      if (e.key === 'Delete' || e.key === 'Backspace') void removeMedia(sel)
+      if (folderSel && !mod && ['F2', 'Delete', 'Backspace', 'Enter', 'Escape'].includes(e.key)) {
+        if (e.key === 'F2') setRenamingFolder(folderSel)
+        else if (e.key === 'Enter') openFolder(folderSel)
+        else if (e.key === 'Escape') setSelectedFolder(null)
+        else deleteBinFolder(app, folderSel)
+      } else if (e.altKey && e.key === 'ArrowUp') openFolder(folderById(bin(), folder())?.parent ?? null)
+      else if (e.key === 'Backspace' && !sel.length && folder() !== null) openFolder(folderById(bin(), folder())?.parent ?? null)
+      else if (e.key === 'Delete' || e.key === 'Backspace') void removeMedia(sel)
       else if (e.key === 'F2') sel.length && startRename(sel[sel.length - 1])
       else if (e.key === 'Enter') sel.length && addToTimeline(sel)
       else if (mod && e.key.toLowerCase() === 'a') selectMedia(app, ids())
@@ -391,9 +480,13 @@ export function Sources(props: { ctx: PanelContext }) {
         ref={scroller}
         class="sc-scroll"
         onClick={(e) => {
-          if (!(e.target as HTMLElement).closest('.sc-item, .sc-gen, button, input')) selectMedia(app, [])
+          if (!(e.target as HTMLElement).closest('.sc-item, .sc-gen, .sc-folder, button, input')) {
+            selectMedia(app, [])
+            setSelectedFolder(null)
+          }
         }}
         onContextMenu={blankMenu}
+        {...listDrop}
       >
         <section class="sc-section">
           <button class="sc-section-head" onClick={() => setCreateOpen(!createOpen())}>
@@ -443,6 +536,14 @@ export function Sources(props: { ctx: PanelContext }) {
               {ids().length === project().mediaOrder.length ? ids().length : `${ids().length} / ${project().mediaOrder.length}`}
             </span>
           </div>
+          <Show when={crumbs().length > 0 && !searching()}>
+            <Breadcrumb path={crumbs()} api={folderApi} />
+          </Show>
+          <Show when={folders().length > 0}>
+            <div class="sc-folders" classList={{ list: viewMode() === 'list' }}>
+              <For each={folders()}>{(f) => <FolderRow folder={f} api={folderApi} />}</For>
+            </div>
+          </Show>
           <Show
             when={!empty()}
             fallback={
@@ -459,8 +560,12 @@ export function Sources(props: { ctx: PanelContext }) {
             }
           >
             <Show
-              when={ids().length}
+              when={ids().length || folders().length}
               fallback={
+                <Show
+                  when={searching() || typeFilter() !== 'all' || folder() === null}
+                  fallback={<div class="sc-folder-empty">This folder is empty. Drag media here.</div>}
+                >
                 <div class="sc-nomatch">
                   <Icon name="search-x" size={18} />
                   <span>No sources match</span>
@@ -474,6 +579,7 @@ export function Sources(props: { ctx: PanelContext }) {
                     Clear filters
                   </Button>
                 </div>
+                </Show>
               }
             >
               <div ref={itemsEl} class="sc-items" classList={{ grid: viewMode() === 'grid', list: viewMode() === 'list' }}>

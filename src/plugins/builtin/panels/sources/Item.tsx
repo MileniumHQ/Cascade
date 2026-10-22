@@ -3,8 +3,10 @@ import type { CascadeAPI } from '@core/app'
 import type { MediaTypeContribution } from '@core/plugin-api'
 import type { Id, MediaItem, Project } from '@shared/project'
 import { Icon, iconMarkup } from '@ui/icon'
+import { useValue } from '@ui/reactive'
 import { formatDuration, mediaDetail, waveformGlyph } from './format'
 import { GeneratorTile } from './tiles'
+import { MEDIA_IDS_TYPE } from './Folder'
 import type { ViewMode } from './state'
 
 /** Everything an item needs from the panel, so items stay small and keyed by id. */
@@ -103,6 +105,8 @@ export function MediaCard(props: { id: Id; api: PanelApi }) {
   const detail = createMemo(() => (media() ? mediaDetail(media()!, generatorName() ?? mt()?.name ?? media()!.type) : ''))
   const color = () => mt()?.color ?? 'var(--muted)'
   const renaming = () => api.renaming() === props.id
+  const offline = useValue(api.app.media.offline)
+  const isOffline = () => offline().has(props.id)
   let input: HTMLInputElement | undefined
 
   const usedTip = () => `Used ${uses()}× in the timeline`
@@ -119,7 +123,7 @@ export function MediaCard(props: { id: Id; api: PanelApi }) {
     <Show when={media()}>
       <div
         class="sc-item"
-        classList={{ selected: selected(), renaming: renaming(), unused: uses() === 0 }}
+        classList={{ selected: selected(), renaming: renaming(), unused: uses() === 0, offline: isOffline() }}
         data-id={props.id}
         style={{ '--tc': color() }}
         draggable={!renaming()}
@@ -132,8 +136,9 @@ export function MediaCard(props: { id: Id; api: PanelApi }) {
         onDragStart={(e) => {
           if (!e.dataTransfer) return
           e.dataTransfer.setData('application/x-cascade-media', props.id)
+          e.dataTransfer.setData(MEDIA_IDS_TYPE, JSON.stringify(api.dragIds(props.id)))
           e.dataTransfer.setData('text/plain', media()!.name)
-          e.dataTransfer.effectAllowed = 'copy'
+          e.dataTransfer.effectAllowed = 'copyMove'
           setDragImage(e, mt()?.icon ?? 'file', media()!.name, color())
         }}
       >
@@ -142,6 +147,19 @@ export function MediaCard(props: { id: Id; api: PanelApi }) {
           <span class="sc-typechip">
             <Icon name={mt()?.icon ?? 'file-question'} size={10} stroke={2.2} />
           </span>
+          <Show when={isOffline()}>
+            <button
+              class="sc-offline"
+              data-tip="File not found. Click to relink."
+              onClick={(e) => {
+                e.stopPropagation()
+                void api.app.run('media.relink', props.id)
+              }}
+            >
+              <Icon name="unlink" size={10} stroke={2.2} />
+              <span>Offline</span>
+            </button>
+          </Show>
           <Show when={duration()}>
             <span class="sc-dur sc-dur-overlay tnum">{duration()}</span>
           </Show>
