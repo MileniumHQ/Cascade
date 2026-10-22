@@ -2,6 +2,12 @@
 
 `captions.generate` captions the selected video/audio clip, or the selected file in Sources. Both context menus offer **Generate captions**. Speech is processed on this computer; the first use asks to download models. The status bar shows progress and Cancel. Captions are editable element/text clips on a new **Captions** visual track, above all existing visual tracks. One undo removes the entire result.
 
+## Caption styles
+
+**Caption style…** (Timeline menu and the clip/source context menus next to *Generate captions*) picks the look new captions get; the choice is the app setting `captions.style`. **Restyle selected captions…** (Timeline menu, caption clip context menu, command `captions.restyle`) applies a style to the selected caption clips (or any selected text clips) in one undo step; text, timing and position edits the style doesn't set are reset to the base look first, so any style can follow any other. Built-ins: Clean white (the base look), Bold yellow, Boxed, Outline, Minimal. There is no per-word highlight (karaoke) style yet: captions are phrase clips, and word timing exists only in the transcript.
+
+A style is a preset of kind `captions.style` whose value is a `PropertyStyle` (`src/core/property-style.ts`): parameter values per property type (`{ text: { color: '#ffe14d' }, fill: { color: '#000000c0' } }`), where `null` drops a property type. Other plugins add looks with `ctx.presets.register({ id: 'captions.style:mine', kind: 'captions.style', name, value })` (see `examples/plugins/presets.ts`). `GenerateCaptionsOptions.style` and `captionClip()` take the same shape and override the chosen style.
+
 ## Setup
 
 Run `bun run setup:whisper`. This builds `cascade-align` (word timing, below) and [whisper.cpp v1.9.5](https://github.com/ggml-org/whisper.cpp/releases/tag/v1.9.5), pinned to `d1be6fde11ac6e0407606b4e42fe72d34add8037`, with `-DGGML_VULKAN=1` and static ggml/whisper libraries. Requirements: Git, CMake, a C/C++ toolchain, Vulkan loader/development headers (including Vulkan-Hpp), SPIRV-Headers CMake package, and `glslc`. Missing Vulkan prerequisites or a failed GPU build trigger a CPU build. `node scripts/setup-whisper.mjs --cpu` explicitly builds for CPU.
