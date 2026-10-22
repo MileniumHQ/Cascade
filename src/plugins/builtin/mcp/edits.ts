@@ -9,7 +9,7 @@ import type { ParamDef } from '@core/plugin-api'
 import { FLICKS, frameToFlicks, secondsToFlicks, type Flicks, type FrameRate } from '@shared/time'
 import { buildIndex, buildSourceIndex, findSpoken, type Analyses } from './transcript'
 import { clock } from './clock'
-import { duckKeyframes, speechSegments } from '../audio-tools/duck'
+import { duckKeyframes, speechSegments } from '@shared/ducking'
 import { applyPrimitiveEdit, isPrimitiveEdit } from './primitive-edits'
 export { clock }
 

@@ -175,11 +175,13 @@ describe('undoable editing and plugin lifecycle', () => {
     reopened.selection.setTransitions(['tx']); reopened.selection.media.set(['m'])
     expect(reopened.selection.transitions.get()).toEqual([])
   })
-  test('duplicating clips never copies transitions', async () => {
+  test('duplicating clips carries their transitions as fresh pairs', async () => {
     const app = await editor()
     app.edit.addTransition({ type: 'fade', to: 'a' })
     app.edit.duplicateClips(['a'])
-    expect(app.timeline().tracks.flatMap(t => t.transitions ?? [])).toHaveLength(2)
+    const all = app.timeline().tracks.flatMap(t => t.transitions ?? [])
+    expect(all).toHaveLength(4)
+    expect(new Set(all.map(t => t.id)).size).toBe(4)
   })
   test('default commands resolve a cut and prefer registered defaults', async () => {
     const app = await editor()

@@ -35,6 +35,7 @@ import { deleteWithRipple, linkedToolEdit, sourceLimits, type TrimTool } from '.
 
 import { TimelineEditing, type CreateTimelineOptions, type NestClipsOptions } from './timeline-editing'
 import { canReferenceTimeline, sourceMeta } from './compositions'
+import { copiedTransitions, remapTransitions } from './transition-copy'
 
 type DProject = Draft<Project>
 
@@ -471,7 +472,7 @@ export class Editing {
     const newIds: Id[] = []
     this.doc.transact('Duplicate', (d) => {
       const tl = this.tl(d)
-      const links = new Map<string, string>()
+      const links = new Map<string, string>(), clipIds = new Map<Id, Id>()
       let maxEnd = 0
       for (const id of all) {
         const f = findClip(tl0, id)
@@ -484,6 +485,7 @@ export class Editing {
         if (!f) continue
         const c = JSON.parse(JSON.stringify(f.clip)) as Clip
         c.id = uid('cl_')
+        clipIds.set(id, c.id)
         for (const m of c.markers ?? []) m.id = uid('mk_')
         for (const p of c.properties) p.id = uid('pi_')
         if (c.linkId) {
@@ -494,6 +496,10 @@ export class Editing {
         const track = tl.tracks.find((t) => t.id === f.track.id)!
         ops.placeClip(track as Track, c)
         newIds.push(c.id)
+      }
+      for (const source of tl0.tracks) {
+        const transitions = copiedTransitions(source, new Set(all))
+        if (transitions.length) (tl.tracks.find(t => t.id === source.id)!.transitions ??= []).push(...remapTransitions(transitions, clipIds, links))
       }
     })
     this.app.selection.setClips(newIds)
@@ -663,14 +669,15 @@ export class Editing {
         if (!f || f.track.locked) continue
         for (const source of properties) {
           const contrib = this.app.registries.properties.get(source.type)
-          if (!contrib || !this.propertyApplies(contrib, f.clip as Clip)) continue
+          // An unavailable plugin is not an incompatibility: keep its payload opaque.
+          if (contrib && !this.propertyApplies(contrib, f.clip as Clip)) continue
           const p = JSON.parse(JSON.stringify(source)) as PropertyInstance
           p.id = uid('pi_')
           for (const pv of Object.values(p.params)) {
             if (opts.includeKeyframes === false) delete pv.keyframes
             else for (const k of pv.keyframes ?? []) k.id = uid('kf_')
           }
-          if (!contrib.stackable) f.clip.properties = f.clip.properties.filter((old) => old.type !== p.type)
+          if (!contrib?.stackable) f.clip.properties = f.clip.properties.filter((old) => old.type !== p.type)
           f.clip.properties.push(p)
         }
       }

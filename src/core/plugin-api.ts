@@ -14,7 +14,7 @@
  *    property `apply`/`audio`, easings, param interpolation). UI registrations are no-ops.
  */
 import type { ClipboardFormatContribution } from './clipboard'
-export type { ClipboardFormatContribution } from './clipboard'
+export type { ClipboardFormatContribution, ClipboardContext } from './clipboard'
 import type { Disposable } from './disposable'
 import type { Contribution } from './registry'
 import type { Clip, EasingRef, Id, Marker, MediaItem, MediaMeta, Project, PropertyInstance, Timeline, Track, TransitionInstance } from '@shared/project'

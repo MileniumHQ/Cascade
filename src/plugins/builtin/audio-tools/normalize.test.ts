@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Clip, Timeline, Track } from '@shared/project'
 import { audioTargets, normalizedVolume } from './normalize'
-import { duckKeyframes, speechSegments } from './duck'
+import { duckKeyframes, speechSegments } from '@shared/ducking'
 
 const clip = (id: string, extra: Partial<Clip> = {}): Clip => ({ id, type: 'audio', name: id, start: 0, duration: 100, sourceIn: 0, properties: [], data: {}, ...extra })
 const track = (id: string, kind: Track['kind'], clips: Clip[]): Track => ({ id, kind, name: id, hidden: false, muted: false, locked: false, clips })

@@ -1,14 +1,16 @@
 import type { CascadeAPI } from '@core/app'
 import { definePlugin } from '@core/plugin-api'
-import { findClip, type Clip, type Id } from '@shared/project'
+import { findClip, type Clip, type Id, type Track } from '@shared/project'
 import { FLICKS } from '@shared/time'
 import { LoudnessMeter, formatDb } from '@shared/loudness'
-import { buildIndex, type Analyses } from '../mcp/transcript'
-import { duckKeyframes, speechSegments } from './duck'
+import { buildIndex, type Analyses } from '@core/transcript-index'
+import { duckKeyframes, speechSegments } from '@shared/ducking'
 import { askDuck, askNormalizeTarget } from './dialogs'
 import { inOneStep } from './batch'
-import { clipSource } from './measure'
+import { clipSource } from '@core/audio-source'
 import { audioTargets, normalizedVolume } from './normalize'
+import { revalidate, snapshotTargets, type TargetSnapshot } from './stale'
+import { sourceSpan } from '@core/time-remap'
 
 /** Clip ids a clip-level command acts on: the selection when the clicked clip is part of it, else the clip itself. */
 function targetIds(app: CascadeAPI, arg: unknown): Id[] {
@@ -18,12 +20,25 @@ function targetIds(app: CascadeAPI, arg: unknown): Id[] {
 }
 
 const targetsOf = (app: CascadeAPI, ids: readonly Id[]) => audioTargets(app.timeline(), ids, (t) => t.kind === 'audio')
+/** Source range a clip plays now (speed, trim and the linked partner's remap included). */
+const spanOf = (app: CascadeAPI) => (clip: Clip) => sourceSpan(clip, app.edit.timeMap(clip))
+/** Targets that are still valid after dialogs, decoding and analysis; the rest are reported and dropped. */
+function stillValid(app: CascadeAPI, snapshots: TargetSnapshot[], notes: string[]) {
+  const span = spanOf(app), fresh = new Map<Id, { clip: Clip; track: Track }>()
+  for (const snapshot of snapshots) {
+    const live = revalidate(app.project(), snapshot, span)
+    if (typeof live === 'string') notes.push(`${snapshot.clip.name}: ${live}, skipped`)
+    else fresh.set(snapshot.clip.id, live)
+  }
+  return fresh
+}
 const hasAudioTarget = (app: CascadeAPI, arg: unknown) => targetsOf(app, targetIds(app, arg)).length > 0
 
 async function normalizeClips(app: CascadeAPI, arg?: unknown) {
   const targets = targetsOf(app, targetIds(app, arg))
   if (!targets.length) return void app.notify('info', 'Select audio clips to normalize')
   if (!app.host) return void app.notify('error', 'Normalizing needs the desktop app')
+  const snapshots = snapshotTargets(app.project(), targets, spanOf(app))
   const target = await askNormalizeTarget(app.settings.get<number>('audio.normalizeTarget'), targets.length)
   if (target === null) return
   app.settings.set('audio.normalizeTarget', target)
@@ -51,16 +66,19 @@ async function normalizeClips(app: CascadeAPI, arg?: unknown) {
     if (after !== before) changes.push({ clipId: clip.id, before, after })
     notes.push(`${clip.name}: ${formatDb(level)} LUFS, volume ${before} → ${after} dB`)
   }
-  if (!changes.length) return void app.notify('info', 'Nothing to normalize', notes.join('\n'))
+  // Measuring is slow; skip clips that were removed, locked or edited meanwhile.
+  const fresh = stillValid(app, snapshots.filter((s) => changes.some((c) => c.clipId === s.clip.id)), notes)
+  const current = changes.filter((c) => fresh.has(c.clipId))
+  if (!current.length) return void app.notify('info', 'Nothing to normalize', notes.join('\n'))
   await inOneStep(app, `Normalize to ${target} LUFS`, (scratch) => {
-    for (const c of changes) {
+    for (const c of current) {
       const found = findClip(scratch.timeline(), c.clipId)
       if (!found) continue
       const propId = found.clip.properties.find((p) => p.type === 'volume')?.id ?? scratch.edit.addProperty(c.clipId, 'volume')
       if (propId) scratch.edit.setParam(c.clipId, propId, 'gain', c.after, { at: 0 })
     }
   })
-  app.notify('success', `Normalized ${changes.length} clip${changes.length === 1 ? '' : 's'} to ${target} LUFS`, notes.join('\n'))
+  app.notify('success', `Normalized ${current.length} clip${current.length === 1 ? '' : 's'} to ${target} LUFS`, notes.join('\n'))
 }
 
 /** Cached source analyses for every file-backed source (nothing is computed). */
@@ -78,6 +96,7 @@ async function autoDuck(app: CascadeAPI, arg?: unknown) {
   if (!targets.length) return void app.notify('info', 'Select the music or ambience clips to duck')
   const bridge = app.host?.analysis
   if (!bridge) return void app.notify('error', 'Auto-duck needs the desktop app')
+  const snapshots = snapshotTargets(app.project(), targets, spanOf(app))
   const choice = await askDuck(targets.length)
   if (!choice) return
   const own = new Set(targets.flatMap(({ clip }) => [clip.id, ...app.timeline().tracks.flatMap((t) => t.clips.filter((c) => clip.linkId && c.linkId === clip.linkId).map((c) => c.id))]))
@@ -102,14 +121,13 @@ async function autoDuck(app: CascadeAPI, arg?: unknown) {
   const ms = (v: number) => Math.round((v * FLICKS) / 1000)
   const segments = speechSegments(words, ms(choice.mergeGapMs))
   const skipped: string[] = []
-  let keys = 0
-  await inOneStep(app, `Duck under speech (${choice.amount} dB)`, (scratch) => {
-    for (const { clip: original, track } of targets) {
-      if (track.locked) {
-        skipped.push(`${original.name}: track locked`)
-        continue
-      }
-      const clip: Clip = findClip(scratch.timeline(), original.id)!.clip
+  // Dialogs and speech analysis take a while: duck only the targets that are still what was chosen.
+  const fresh = stillValid(app, snapshots, skipped)
+  let keys = 0, ducked = 0
+  if (fresh.size) await inOneStep(app, `Duck under speech (${choice.amount} dB)`, (scratch) => {
+    for (const { clip: original } of fresh.values()) {
+      const clip: Clip | undefined = findClip(scratch.timeline(), original.id)?.clip
+      if (!clip) continue
       let volume = clip.properties.find((p) => p.type === 'volume')
       if (volume?.params.gain?.keyframes?.length) {
         skipped.push(`${clip.name}: already has volume keyframes`)
@@ -123,10 +141,11 @@ async function autoDuck(app: CascadeAPI, arg?: unknown) {
       const points = duckKeyframes(segments, clip, Number(volume.params.gain?.value ?? 0), { amount: choice.amount, attack: ms(choice.attackMs), release: ms(choice.releaseMs) })
       for (const p of points) scratch.edit.addKeyframe(clip.id, volume.id, 'gain', p.t, p.v, { id: 'ease-in-out' })
       keys += points.length
+      ducked++
     }
   })
   if (!keys) app.notify('warning', 'Nothing ducked', skipped.join('\n') || 'No speech overlaps the selected clips')
-  else app.notify('success', `Ducked ${targets.length - skipped.length} clip${targets.length - skipped.length === 1 ? '' : 's'} under ${segments.length} speech segments`, skipped.join('\n') || undefined)
+  else app.notify('success', `Ducked ${ducked} clip${ducked === 1 ? '' : 's'} under ${segments.length} speech segments`, skipped.join('\n') || undefined)
 }
 
 /** Editor-side loudness tools: normalize to a target, duck music under speech. */

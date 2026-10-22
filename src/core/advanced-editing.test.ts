@@ -3,9 +3,9 @@ import { CascadeApp } from './app'
 import { PluginHost } from './plugin-host'
 import { clipEnd, findClip, type Clip, type PropertyInstance } from '@shared/project'
 import { FLICKS as S } from '@shared/time'
+import { clipboardPlugin } from '../plugins/builtin/clipboard'
 import { timePropertiesPlugin } from '../plugins/builtin/properties/time'
 import { constantMap, curveMap, reverseMap } from './time-remap'
-import { clipboardPlugin } from '../plugins/builtin/clipboard'
 import { audioPlan } from '../plugins/builtin/export-request'
 import type { PropertyContribution } from './plugin-api'
 
@@ -15,6 +15,7 @@ async function editor() {
   app.registries.mediaTypes.register({ id: 'picture', name: 'Picture', icon: 'film', color: '#888', track: 'visual', timeBased: true, stage: { mount: () => ({ update() {}, dispose() {} }) } }, 'test', true)
   app.registries.mediaTypes.register({ id: 'sound', name: 'Sound', icon: 'volume-2', color: '#888', track: 'audio', timeBased: true, stage: { mount: () => ({ update() {}, dispose() {} }) } }, 'test', true)
   await new PluginHost(app).activate(timePropertiesPlugin, true)
+  await new PluginHost(app).activate(clipboardPlugin, true)
   app.doc.transact('setup', (d) => {
     d.media.m = { id: 'm', name: 'media', type: 'picture', path: '/media', meta: { duration: 30 * S, hasAudio: true } }
     const tl = d.timelines[d.activeTimeline]
@@ -107,6 +108,17 @@ describe('property paste', () => {
     app.doc.undo()
     expect(JSON.stringify(app.project())).toBe(before)
   })
+  it('keeps opaque properties whose plugin is unavailable, unless the destination declares incompatibility', async () => {
+    const app = await editor()
+    app.registries.properties.register({ id: 'declined', name: 'Declined', icon: '', description: '', category: '', params: [], appliesTo: ['sound'] } satisfies PropertyContribution, 'test', true)
+    const opaque: PropertyInstance = { id: 'o', type: 'gone.plugin', enabled: true, params: { mystery: { value: { a: [1] }, keyframes: [{ id: 'kf', t: S, value: 3, easing: { id: 'x' } }] } } }
+    app.edit.pasteProperties(['v1'], [opaque, { id: 'd', type: 'declined', enabled: true, params: {} }])
+    const props = get(app, 'v1').properties
+    expect(props.map(p => p.type)).toEqual(['gone.plugin'])
+    expect(props[0].id).not.toBe('o')
+    expect(props[0].params.mystery.value).toEqual({ a: [1] })
+    expect(props[0].params.mystery.keyframes![0].id).not.toBe('kf')
+  })
   it('copies a single property through the clipboard and skips locked paste targets', async () => {
     const app = await editor()
     const prop = app.edit.addProperty('v1', 'speed')!
@@ -114,7 +126,7 @@ describe('property paste', () => {
     app.edit.addKeyframe('v1', prop, 'speed', S, 3, { id: 'linear' })
     await app.clipboard.copyProperty('v1', prop)
     const payload = await app.clipboard.read()
-    expect(payload?.cascade).toBe('property')
+    expect(payload?.format).toBe('property')
     const before = JSON.stringify(app.project())
     await app.clipboard.pasteProperty(['v2'])
     const pasted = get(app, 'v2').properties[0]
@@ -222,7 +234,7 @@ describe('freeze and zero-speed maps', () => {
   })
 })
 
-it('exports a zero-containing audio ramp via resampling and skips a wholly silent plateau range', async () => {
+it('exports a zero-containing audio ramp as stretched moving intervals and skips a wholly silent plateau range', async () => {
   const app = await editor()
   app.edit.updateClip('v1', { speed: 0 })
   const prop = get(app, 'v1').properties[0]
@@ -230,5 +242,9 @@ it('exports a zero-containing audio ramp via resampling and skips a wholly silen
   app.edit.addKeyframe('v1', prop.id, 'speed', S, 0, { id: 'linear' })
   app.edit.addKeyframe('v1', prop.id, 'speed', 2 * S, 2, { id: 'linear' })
   expect(audioPlan(app, { start: 0, end: S }).a1).toBeUndefined()
-  expect(audioPlan(app, { start: 0, end: 4 * S }).a1.mode).toBe('source')
+  const plan = audioPlan(app, { start: 0, end: 4 * S }).a1
+  expect(plan.mode).toBe('stretch')
+  expect(plan.segments).toHaveLength(1)
+  expect(plan.segments![0].localStart).toBeCloseTo(1, 2)
+  expect(plan.segments![0].localEnd).toBeCloseTo(4, 2)
 })

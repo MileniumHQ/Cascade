@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { CascadeApp } from './app'
 import { parseClipboard, type ClipboardFormatContribution } from './clipboard'
+import { parseClipboard as parseLegacyClipboard } from '../plugins/builtin/clipboard/clips'
 import { clipboardPlugin } from '../plugins/builtin/clipboard'
 import { PluginHost } from './plugin-host'
 import { createProject, type Clip } from '@shared/project'
@@ -41,5 +42,21 @@ it('reads old clip payloads through the built-in clips format and writes envelop
 it('rejects malformed source markers inside an otherwise valid clip payload',()=>{
   const clip={id:'c',type:'unknown',name:'',start:0,duration:S,sourceIn:0,properties:[],data:{},markers:[null]}
   const payload={cascade:'clips',version:1,clips:[{clip,kind:'visual',trackOffset:0,sourceTrack:'t'}],media:[]}
-  expect(parseClipboard(JSON.stringify(payload))).toBeNull()
+  expect(parseLegacyClipboard(JSON.stringify(payload))).toBeNull()
+})
+it('dispatches explicit clip and property contexts to contributions without a built-in fallback', async () => {
+  const a = new CascadeApp('editor', null), contexts: unknown[] = []
+  a.registries.clipboardFormats.register({ id: 'third-party', priority: 10,
+    canCopy: (_a, context) => !!context,
+    copy: (_a, context) => { contexts.push(context); return context },
+    canPaste: () => true, paste: (_a, _data, opts) => { contexts.push(opts.context) }, remove: () => {}
+  }, 'test', true)
+  await a.clipboard.copy(['explicit'])
+  expect(await a.clipboard.read()).toMatchObject({ cascade: 1, format: 'third-party', data: { ids: ['explicit'] } })
+  await a.clipboard.cut(['cut'])
+  await a.clipboard.copyProperty('clip', 'property')
+  await a.clipboard.pasteProperty(['target'])
+  expect(contexts).toEqual([{ ids: ['explicit'] }, { ids: ['cut'] }, { property: { clipId: 'clip', propertyId: 'property' } }, { ids: ['target'], property: {} }])
+  const empty = new CascadeApp('editor', null)
+  expect(await empty.clipboard.paste()).toEqual([])
 })

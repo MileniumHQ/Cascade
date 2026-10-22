@@ -53,3 +53,13 @@ it('replaces colliding copied keys deterministically and selects only keys that 
   expect(c.properties[0].params.x.keyframes!.map(k=>k.value)).toEqual([99,2])
   expect(selected).toHaveLength(2)
 })
+it('keeps keyframes of properties whose plugin is unavailable and pastes them onto the same type id',()=>{
+  const p=createProject(''),tl=p.timelines[p.activeTimeline];tl.tracks[0].clips=[clip()]
+  const data=captureKeyframes(tl,['k1','k2'].map(keyframeId=>({clipId:'c',propertyId:'p',paramId:'x',keyframeId})),()=>undefined)!
+  expect(data.channels[0].keys.map(k=>k.t)).toEqual([0,S])
+  const c=clip('target');c.properties=[property('q')];c.properties[0].params.x.keyframes=[]
+  const selected=pasteKeyframes(c,data,3*S,()=>undefined,()=>true)
+  expect(selected).toHaveLength(2);expect(c.properties[0].params.x.keyframes!.map(k=>[k.t,k.value])).toEqual([[S,1],[2*S,2]])
+  const bare=clip('bare');bare.properties=[]
+  expect(pasteKeyframes(bare,data,3*S,()=>undefined,()=>true)).toEqual([])
+})

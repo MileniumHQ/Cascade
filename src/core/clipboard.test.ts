@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createProject, findClip, type Clip, type Project } from '@shared/project'
 import { FLICKS as S } from '@shared/time'
-import { captureClips, parseClipboard, pasteClips } from './clipboard'
+import { captureClips, parseClipboard, pasteClips } from '../plugins/builtin/clipboard/clips'
+import { PluginHost } from './plugin-host'
+import { clipboardPlugin } from '../plugins/builtin/clipboard'
 import { CascadeApp } from './app'
 const clip = (id: string, start: number, linkId?: string): Clip => ({ id, type: 'unknown-video', name: id, start, duration: 2 * S, sourceIn: S, mediaId: 'media', linkId, properties: [{ id: 'prop', type: 'unknown-property', enabled: true, params: { x: { value: 2, keyframes: [{ id: 'kf', t: S, value: 3, easing: { id: 'unknown-ease' } }] } } }], data: { nested: { a: [1, 2] } } })
 function source(): Project {
@@ -82,9 +84,11 @@ describe('clipboard payload', () => {
     let text = ''
     vi.stubGlobal('navigator', { clipboard: { writeText: async (s: string) => { text = s }, readText: async () => text } })
     const from = new CascadeApp('editor', null, source()), to = new CascadeApp('editor', null)
+    await new PluginHost(from).activate(clipboardPlugin, true)
+    await new PluginHost(to).activate(clipboardPlugin, true)
     from.selection.setClips(['v3'])
     await from.clipboard.copy()
-    expect(JSON.parse(text).cascade).toBe('clips')
+    expect(JSON.parse(text).format).toBe('clips')
     const ids = await to.clipboard.paste()
     expect(ids).toHaveLength(2)
     expect(Object.values(to.project().media)[0].path).toBe('/footage.mov')
@@ -95,6 +99,7 @@ describe('clipboard payload', () => {
   })
   it('service selects paste results, advances playhead and undoes the entire paste once', async () => {
     const app = new CascadeApp('editor', null, source())
+    await new PluginHost(app).activate(clipboardPlugin, true)
     app.selection.setClips(['v3'])
     await app.clipboard.copy()
     app.playback.seek(10 * S)

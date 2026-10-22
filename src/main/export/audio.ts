@@ -4,6 +4,7 @@ import type { ClipAudioPlan, ExportRequest, RenderWorkerJob } from '../../shared
 import { anySolo, trackAudible } from '../../shared/audio-mix'
 import { FLICKS } from '../../shared/time'
 import { ExportScope } from './process'
+import { assembleSegments } from './segments'
 
 /** Quote a path for an ffmpeg filtergraph option value. */
 const filterPath = (p: string) => `'${p.replace(/\\/g, '\\\\').replace(/'/g, `'\\''`)}'`
@@ -62,15 +63,32 @@ export async function renderAudio(scope: ExportScope, ffmpeg: string, req: Expor
     progress(`Time-stretching audio: ${media.name}`)
     const n = Object.keys(sources).length
     const path = join(directory, `clip-${n}.f32`)
-    const filters = [`atrim=start=${plan.sourceStart}:end=${plan.sourceEnd}`, 'asetpts=PTS-STARTPTS', ...(plan.reverse ? ['areverse'] : [])]
-    if (plan.commands?.length) {
-      const cmds = join(directory, `clip-${n}.cmd`)
-      await writeFile(cmds, plan.commands.map((c) => `${c.t.toFixed(6)} rubberband tempo ${c.tempo.toFixed(6)}, rubberband pitch ${c.pitch.toFixed(6)};`).join('\n'))
-      filters.push(`asendcmd=f=${filterPath(cmds)}`)
+    const stretchPiece = async (piece: Pick<ClipAudioPlan, 'sourceStart' | 'sourceEnd' | 'tempo' | 'pitch' | 'commands' | 'reverse'>, target: string, tag: string) => {
+      const filters = [`atrim=start=${piece.sourceStart}:end=${piece.sourceEnd}`, 'asetpts=PTS-STARTPTS', ...(piece.reverse ? ['areverse'] : [])]
+      if (piece.commands?.length) {
+        const cmds = join(directory, `clip-${tag}.cmd`)
+        await writeFile(cmds, piece.commands.map((c) => `${c.t.toFixed(6)} rubberband tempo ${c.tempo.toFixed(6)}, rubberband pitch ${c.pitch.toFixed(6)};`).join('\n'))
+        filters.push(`asendcmd=f=${filterPath(cmds)}`)
+      }
+      filters.push(`rubberband=tempo=${(piece.tempo ?? 1).toFixed(6)}:pitch=${(piece.pitch ?? 1).toFixed(6)}`)
+      await scope.run(ffmpeg, ['-threads', '2', '-i', media.path!, '-vn', '-af', filters.join(','), '-ac', '2', '-ar', String(sampleRate), '-f', 'f32le', target])
     }
-    filters.push(`rubberband=tempo=${(plan.tempo ?? 1).toFixed(6)}:pitch=${(plan.pitch ?? 1).toFixed(6)}`)
-    await scope.run(ffmpeg, ['-threads', '2', '-i', media.path, '-vn', '-af', filters.join(','), '-ac', '2', '-ar', String(sampleRate), '-f', 'f32le', path])
-    sources[`clip:${clipId}`] = { path, start: plan.localStart ?? 0, sampleRate, frames: (await stat(path)).size / 8 }
+    let frames: number
+    if (plan.segments?.length) {
+      // Speed curve with holds: stretch each moving interval alone and leave silence between them.
+      const pieces: { path: string; startFrame: number }[] = []
+      for (const [i, segment] of plan.segments.entries()) {
+        scope.check()
+        const piece = join(directory, `clip-${n}-${i}.f32`)
+        await stretchPiece({ ...segment, reverse: plan.reverse }, piece, `${n}-${i}`)
+        pieces.push({ path: piece, startFrame: Math.round((segment.localStart - (plan.localStart ?? 0)) * sampleRate) })
+      }
+      frames = await assembleSegments(path, pieces)
+    } else {
+      await stretchPiece(plan, path, String(n))
+      frames = (await stat(path)).size / 8
+    }
+    sources[`clip:${clipId}`] = { path, start: plan.localStart ?? 0, sampleRate, frames }
   }
   const worker = scope.worker({ project: req.project, timelineId: req.timelineId, width: 8, height: 8, fps: req.fps, mode: 'audio', stampHeight: 0, pcmSources: sources })
   const path = join(directory, 'mix.f32')
