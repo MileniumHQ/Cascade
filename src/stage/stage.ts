@@ -17,6 +17,7 @@ import { evaluateProperty } from '@core/evaluate'
 import { clipTimeMap } from '@core/time-remap'
 import { Emitter } from '@core/events'
 import { StageGPU, type ShaderPass } from './gpu'
+import { applyMasks } from './masks'
 import type {
   AudioPropertyNode,
   ClipFrameState,
@@ -335,8 +336,9 @@ export class Stage {
     const out: Required<Pick<PropertyOutput, 'transform' | 'filter' | 'backdropFilter'>> & {
       style: Record<string, string>
       contentStyle: Record<string, string>
+      masks: NonNullable<PropertyOutput['mask']>
       svg: string[]
-    } = { transform: [], filter: [], backdropFilter: [], style: {}, contentStyle: {}, svg: [] }
+    } = { transform: [], filter: [], backdropFilter: [], style: {}, contentStyle: {}, svg: [], masks: [] }
     const shaderPasses: ShaderPass[] = []
     const audioValues = new Map<Id, Record<string, unknown>>()
     const applied = new Set<string>()
@@ -378,6 +380,7 @@ export class Stage {
       if (r.style) Object.assign(out.style, r.style)
       if (r.contentStyle) Object.assign(out.contentStyle, r.contentStyle)
       if (r.svgFilter) out.svg.push(r.svgFilter)
+      if (r.mask) out.masks.push(...r.mask)
       if (r.extra) Object.assign(state.extra, r.extra)
     }
 
@@ -425,6 +428,7 @@ export class Stage {
       }
     }
     this.gpu.update(clip.id, m.inst, m.wrapper, state, shaderPasses, visible)
+    if (track.kind === 'visual') applyMasks(m.wrapper, out.masks, this.frameSize)
     if (this.opts.audio) this.syncAudio(m, clip, track, this.opts.audio.context.currentTime, audioValues)
     m.visible = visible
     m.lastState = state

@@ -106,7 +106,7 @@ export type ParamUnit = '' | 'frameX' | 'frameY' | 'frameLen' | 'frameXY' | 'per
 export interface ParamDef {
   id: string
   label: string
-  /** Param type id: "number", "vec2", "color", "angle", "select", "toggle", "text", "font", … */
+  /** Param type id: "number", "vec2", "color", "angle", "select", "toggle", "text", "font", "path", "curve", … */
   type: string
   default: unknown
   unit?: ParamUnit
@@ -124,6 +124,16 @@ export interface ParamDef {
   hidden?: boolean
 }
 
+/** Measured untransformed content box and current stage frame, in the same pixel units.
+ * Ratios are resolution independent. A callback is evaluated after media/layout updates. */
+export interface MaskBox { width: number; height: number; frame: { width: number; height: number } }
+export interface MaskLayer {
+  /** Trusted SVG fragment painting alpha in a normalized 0..1 content viewBox. IDs and fragment references are scoped
+   * per layer. A callback supports frame-relative filter lengths. */
+  svg: string | ((box: MaskBox) => string)
+  mode: 'add' | 'subtract' | 'intersect' | 'difference'
+}
+
 /** CSS fragments a property contributes to a clip for the current frame. */
 export interface PropertyOutput {
   /** Transform functions, applied after the clip's centering transform, in property-list order. */
@@ -137,6 +147,10 @@ export interface PropertyOutput {
   contentStyle?: Record<string, string>
   /** SVG filter primitives; Cascade wraps them in a <filter> and appends `url(#id)` to `filter`. */
   svgFilter?: string
+  /** Alpha layers, composed in property order into one clip-wrapper mask, after shaders.
+   * First subtract starts from opaque; other first modes start from their layer alpha.
+   * Unknown properties are skipped; omitted/empty layers remove the previous mask. */
+  mask?: MaskLayer[]
   /** Free-form data for the media type (e.g. text props) — merged into ClipFrameState.extra. */
   extra?: Record<string, unknown>
 }
@@ -585,3 +599,6 @@ export interface ExportPresetContribution extends Contribution {
 export type { Clip, EasingRef, Id, MediaItem, MediaMeta, Project, PropertyInstance, Timeline, Track, Flicks, FrameRate }
 
 export { shaderColor } from '@shared/shader-color'
+
+export type { PathValue, PathPoint } from '@shared/path'
+export type { CurveValue, CurvePoint, CurveChannel } from '@shared/curve'

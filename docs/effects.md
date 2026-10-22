@@ -117,3 +117,6 @@ Eyedropper preview sampling is deferred: it needs a generic stage-sampling/inter
 API across iframe overlays and composited DOM content. Current color controls use the
 existing color editor. Browser/WebGL integration is intentionally verified in the
 real app, outside Vitest.
+
+Path and curve parameter editors, the Curves color property and the generic SVG mask
+output contract are documented in [Paths, masks and curves](masks.md).

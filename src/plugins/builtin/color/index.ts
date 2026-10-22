@@ -1,12 +1,14 @@
 import { definePlugin, shaderColor, type ParamDef, type PropertyContribution } from '@core/plugin-api'
 import { cubeTexture } from './cube'
 import * as shaders from './shaders'
+import { curvesProperty } from './curves'
 
 const number = (id: string, label: string, value: number, min: number, max: number, step = 0.01): ParamDef => ({ id, label, type: 'number', default: value, min, max, step })
 const color = (id: string, label: string, value: string): ParamDef => ({ id, label, type: 'color', default: value })
 const rgb = (v: unknown) => shaderColor(String(v)).slice(0, 3)
 
 export const colorProperties: PropertyContribution[] = [
+  curvesProperty,
   {
     id: 'chroma-key', name: 'Chroma key', description: 'Remove a key color with edge and spill controls', icon: 'droplet-off', category: 'Keying', cost: 'expensive', stackable: true,
     keywords: ['green screen', 'blue screen', 'matte', 'despill'],

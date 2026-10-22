@@ -4,6 +4,8 @@ import { lerpColor } from '@shared/color'
 import { Button, ColorField, NumberField, Select, Segmented, TextField, Toggle } from '@ui/kit'
 import { solidMount, useSub } from '../solid'
 import { FontPicker } from './FontPicker'
+import { pathParam } from './path'
+import { curveParam } from './curve'
 
 const lerp = (a: number, b: number, p: number) => a + (b - a) * p
 const clampDef = (v: number, d: ParamDef) => Math.min(d.max ?? Infinity, Math.max(d.min ?? -Infinity, v))
@@ -112,6 +114,8 @@ export const paramsPlugin = definePlugin({
   activate(ctx) {
     const types: ParamTypeContribution[] = [
       num,
+      pathParam,
+      curveParam,
       { ...num, id: 'angle', format: (v) => `${+Number(v).toFixed(1)}°` },
       {
         id: 'vec2',
