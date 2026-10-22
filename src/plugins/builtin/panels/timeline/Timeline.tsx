@@ -694,9 +694,14 @@ function TrackHeader(props: { app: CascadeAPI; row: Row; onMenu: (e: MouseEvent)
         <Show
           when={t().kind === 'visual'}
           fallback={
-            <button class={t().muted ? 'on warn' : ''} data-tip={t().muted ? 'Unmute' : 'Mute'} onClick={() => app.edit.updateTrack(t().id, { muted: !t().muted })}>
-              <Icon name={t().muted ? 'volume-x' : 'volume-2'} size={13} />
-            </button>
+            <>
+              <button class={t().muted ? 'on warn' : ''} data-tip={t().muted ? 'Unmute' : 'Mute'} onClick={() => app.edit.updateTrack(t().id, { muted: !t().muted })}>
+                <Icon name={t().muted ? 'volume-x' : 'volume-2'} size={13} />
+              </button>
+              <button class={`tl-solo${t().solo ? ' on' : ''}`} data-tip={t().solo ? 'Unsolo' : 'Solo'} onClick={() => app.edit.updateTrack(t().id, { solo: !t().solo })}>
+                S
+              </button>
+            </>
           }
         >
           <button class={t().hidden ? 'on warn' : ''} data-tip={t().hidden ? 'Show track' : 'Hide track'} onClick={() => app.edit.updateTrack(t().id, { hidden: !t().hidden })}>

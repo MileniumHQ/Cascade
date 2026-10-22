@@ -1,0 +1,8 @@
+# Audio mixing
+
+- **Track mix**: `Track.gain` (dB), `Track.pan` (-1..1) and `Track.solo` are plain optional fields edited through `app.edit.updateTrack` (fader/pan drags coalesce per field; pass `{ gesture }` for exact steps). Defaults are never stored. Pure helpers (dB, solo resolution, pan law, meter ballistics) live in `src/shared/audio-mix.ts`.
+- **Stage graph** (`src/stage/mixer.ts`): clip chains → per-track bus (gain + stereo panner) → master → `StageAudio.destination`. The same code builds the offline export graph (`renderAudioChunk`), where solo/mute also decide which clips are decoded (`audioPlan`, `trackAudible`).
+- **Meters**: `app.meters.provide({ read(channel) })` registers a level provider (the preview engine does, backed by lazily created `AnalyserNode` taps); `app.meters.read('master' | 'track:<id>')` returns linear per-channel peak/RMS. The Mixer panel and the status-bar master meter run `panels/mixer/ticker.ts`, which applies the ballistics and reads only while audio plays.
+- **Audio properties** may return `ready` from `audio.create` (e.g. an AudioWorklet module that is still loading); export awaits it before rendering a chunk. The noise gate (`properties/gate.ts`) uses this: one worklet for preview and export.
+- **Loudness tools** (`src/plugins/builtin/audio-tools/`): `audio.normalizeClips` (target from the `audio.normalizeTarget` setting, picked in a dialog) and `audio.autoDuck` (speech from cached source analyses; unanalyzed sources are transcribed first). Measuring is `src/shared/loudness.ts`, shared with the agent's `audio_analyze`/`audio_normalize`/`duck`.
+- Gaps: no true spectral noise reduction; no master fader/limiter or per-track effect inserts; track gain/pan are not keyframeable.

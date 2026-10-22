@@ -177,6 +177,14 @@
 .tl-head-btns button.warn {
   color: var(--warn);
 }
+.tl-head-btns button.tl-solo {
+  font-size: 11px;
+  font-weight: 700;
+}
+.tl-head-btns button.tl-solo.on {
+  color: #111;
+  background: var(--sky);
+}
 .tl-head-resize {
   position: absolute;
   left: 0;

@@ -220,6 +220,22 @@ export function MenuLayer() {
   )
 }
 
+/** Imperative dialog host: commands and plugins show a small modal via `openDialog((close) => <Modal …/>)`. */
+const [dialogs, setDialogs] = createSignal<{ id: number; render: (close: () => void) => JSX.Element }[]>([])
+let dialogId = 0
+export const openDialog = (render: (close: () => void) => JSX.Element) => {
+  const id = ++dialogId
+  setDialogs([...dialogs(), { id, render }])
+  return () => setDialogs(dialogs().filter((d) => d.id !== id))
+}
+export function DialogLayer() {
+  return (
+    <For each={dialogs()}>
+      {(d) => d.render(() => setDialogs(dialogs().filter((x) => x.id !== d.id)))}
+    </For>
+  )
+}
+
 // ───────────────────────────── tooltip ─────────────────────────────
 
 export function TooltipLayer() {

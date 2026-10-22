@@ -24,6 +24,8 @@ import { keyframesPlugin } from './panels/keyframes'
 import { exportPanelPlugin } from './panels/export'
 import { captionsPlugin } from './captions'
 import { safetyPlugin } from './safety'
+import { mixerPlugin } from './panels/mixer'
+import { audioToolsPlugin } from './audio-tools'
 
 /**
  * Everything Cascade can do comes from these plugins. They load first (built-in priority)
@@ -54,7 +56,9 @@ export const builtinPlugins: PluginDefinition[] = [
   keyframesPlugin,
   exportPanelPlugin,
   captionsPlugin,
-  safetyPlugin
+  safetyPlugin,
+  mixerPlugin,
+  audioToolsPlugin
 ]
 
 /** Plugins that are safe to load in headless export workers (no UI). */

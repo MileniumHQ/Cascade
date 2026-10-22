@@ -1,6 +1,6 @@
 import { createEffect, createSignal, Match, onCleanup, onMount, Show, Switch } from 'solid-js'
 import type { CascadeApp } from '@core/app'
-import { Button, MenuLayer, Modal, pushToast, TextField, ToastLayer, TooltipLayer } from '../ui/kit'
+import { Button, DialogLayer, MenuLayer, Modal, pushToast, TextField, ToastLayer, TooltipLayer } from '../ui/kit'
 import type { Session } from './session'
 import { TitleBar } from './TitleBar'
 import { ProjectSettingsModal } from './ProjectSettings'
@@ -122,6 +122,7 @@ export function App(props: { app: CascadeApp; session: Session }) {
       </Show>
       <Show when={true}>
         <MenuLayer />
+        <DialogLayer />
         <TooltipLayer />
         <ToastLayer />
       </Show>

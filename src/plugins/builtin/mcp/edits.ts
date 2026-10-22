@@ -8,6 +8,7 @@ import type { ParamDef } from '@core/plugin-api'
 import { FLICKS, frameToFlicks, secondsToFlicks, type Flicks, type FrameRate } from '@shared/time'
 import { buildIndex, buildSourceIndex, findSpoken, type Analyses } from './transcript'
 import { clock } from './clock'
+import { duckKeyframes, speechSegments } from '../audio-tools/duck'
 export { clock }
 
 /** Stable aliases for this editor lifetime; full document ids also work. */
@@ -393,13 +394,7 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
         const own = new Set(targets.flatMap(c => [c.id, ...partners(c).map(x => x.id)]))
         const words = index.words.filter(w => !own.has(w.clipId)).sort((a, b) => a.start - b.start)
         if (!words.length) throw new Error('No transcribed speech on the timeline to duck under; run media_analyze on the speech sources')
-        // Speech segments: words merged across gaps shorter than mergeGap.
-        const segments: [Flicks, Flicks][] = []
-        for (const w of words) {
-          const last = segments.at(-1)
-          if (last && w.start - last[1] < mergeGap) last[1] = Math.max(last[1], w.end)
-          else segments.push([w.start, w.end])
-        }
+        const segments = speechSegments(words, mergeGap)
         let keys = 0
         for (const clip of targets) {
           if (copy.registries.mediaTypes.get(clip.type)?.track !== 'audio') throw new Error(`${ids.show(clip.id, 'c')} is not an audio clip`)
@@ -411,17 +406,8 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
           }
           const gain = prop.params.gain
           if (gain?.keyframes?.length) throw new Error(`${ids.show(clip.id, 'c')} already has volume keyframes; clear_keyframes first`)
-          const base = Number(gain?.value ?? 0), low = Math.max(-60, base + op.amount)
-          const points: { t: Flicks; v: number }[] = []
-          for (const [s0, e0] of segments) {
-            const s = s0 - clip.start, e = e0 - clip.start
-            if (e + release <= 0 || s - attack >= clip.duration) continue
-            const prev = points.at(-1)
-            // Overlapping fades: stay down instead of bouncing.
-            if (prev && s - attack <= prev.t) { points.splice(-2, 2, { t: Math.min(clip.duration, e), v: low }, { t: Math.min(clip.duration, e + release), v: base }); continue }
-            points.push({ t: Math.max(0, s - attack), v: s - attack < 0 ? low : base }, { t: Math.max(0, s), v: low }, { t: Math.min(clip.duration, e), v: low }, { t: Math.min(clip.duration, e + release), v: base })
-          }
-          const unique = points.filter((p, i) => i === 0 || p.t > points[i - 1].t)
+          const base = Number(gain?.value ?? 0)
+          const unique = duckKeyframes(segments, clip, base, { amount: op.amount, attack, release })
           for (const p of unique) copy.edit.addKeyframe(clip.id, prop.id, 'gain', p.t, p.v, { id: 'ease-in-out' })
           keys += unique.length
         }
