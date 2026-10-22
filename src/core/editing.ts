@@ -492,11 +492,12 @@ export class Editing {
   propertyApplies(contrib: PropertyContribution, clip: Clip): boolean {
     const media = clip.mediaId ? this.app.project().media[clip.mediaId] : undefined
     const mt = this.app.registries.mediaTypes.get(clip.type)
+    if (contrib.shader && !mt?.pixels) return false
     const at = contrib.appliesTo
     if (typeof at === 'function') return at(clip, media)
     if (Array.isArray(at)) return at.includes(clip.type)
     // default: visual properties apply to visual clips, audio ones to audio clips
-    const isAudioProp = !!contrib.audio && !contrib.apply
+    const isAudioProp = !!contrib.audio && !contrib.apply && !contrib.shader
     return isAudioProp ? mt?.track === 'audio' : mt?.track !== 'audio'
   }
 

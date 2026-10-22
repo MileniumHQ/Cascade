@@ -13,6 +13,7 @@ export const imagePlugin = definePlugin({
       icon: 'image',
       color: 'var(--clip-image, #e3aa4a)',
       track: 'visual',
+      pixels: true,
       extensions: IMAGE_EXT,
       accepts: (f) => (IMAGE_EXT.includes(f.ext) ? 0.9 : 0),
       defaultDuration: 5,
@@ -21,6 +22,7 @@ export const imagePlugin = definePlugin({
       stage: {
         mount(m) {
           const el = m.document.createElement('img')
+          el.crossOrigin = 'anonymous' // media:// serves CORS headers for pixel sampling
           el.decoding = 'async'
           el.draggable = false
           el.style.display = 'block'
@@ -28,6 +30,7 @@ export const imagePlugin = definePlugin({
           const ready = el.decode().catch(() => {})
           return {
             el,
+            pixelSource: () => el,
             update(s) {
               applyBox(el, fitBox(s.media, s.project, (s.clip.data.fit as Fit) ?? 'contain'))
             },

@@ -1,7 +1,7 @@
 import { Show } from 'solid-js'
 import { definePlugin, type ParamDef, type ParamEditorContext, type ParamTypeContribution } from '@core/plugin-api'
 import { lerpColor } from '@shared/color'
-import { ColorField, NumberField, Select, Segmented, TextField, Toggle } from '@ui/kit'
+import { Button, ColorField, NumberField, Select, Segmented, TextField, Toggle } from '@ui/kit'
 import { solidMount, useSub } from '../solid'
 import { FontPicker } from './FontPicker'
 
@@ -82,6 +82,20 @@ function FontEditor(props: { ctx: ParamEditorContext<string> }) {
   return <FontPicker app={ctx.app} value={v()} onChange={(x) => ctx.set(x)} />
 }
 
+function FileEditor(props: { ctx: ParamEditorContext<string> }) {
+  const { ctx } = props
+  const value = useSub(ctx.subscribe, () => String(ctx.get() ?? ''))
+  const choose = async () => {
+    const filters = ctx.def.config?.filters as { name: string; extensions: string[] }[] | undefined
+    const paths = await ctx.app.host?.dialog.openFiles({ title: ctx.def.label, filters, multi: false })
+    if (paths?.[0]) ctx.set(paths[0])
+  }
+  return <div style={{ display: 'flex', gap: '4px', 'min-width': '0', 'align-items': 'center' }}>
+    <Button style={{ 'min-width': '0', flex: '1', overflow: 'hidden' }} onClick={() => void choose()} disabled={!ctx.app.host} title={value() || 'Choose file'}><span style={{ overflow: 'hidden', 'text-overflow': 'ellipsis', display: 'block' }}>{value().split(/[\\/]/).pop() || 'Choose…'}</span></Button>
+    <Show when={value()}><Button onClick={() => ctx.set('')} title="Clear file">Clear</Button></Show>
+  </div>
+}
+
 const num: ParamTypeContribution<number> = {
   id: 'number',
   interpolate: lerp,
@@ -111,6 +125,7 @@ export const paramsPlugin = definePlugin({
       { id: 'select', editor: solidMount(SelectEditor), format: (v: string, d) => d.options?.find((o) => o.value === v)?.label ?? String(v) },
       { id: 'toggle', editor: solidMount(ToggleEditor), coerce: (v) => !!v, format: (v: boolean) => (v ? 'On' : 'Off') },
       { id: 'text', editor: solidMount(TextEditor), coerce: (v) => String(v ?? ''), format: (v: string) => (v.length > 24 ? v.slice(0, 23) + '…' : v) },
+      { id: 'file', editor: solidMount(FileEditor), coerce: (v) => String(v ?? ''), format: (v: string) => v.split(/[\\/]/).pop() ?? '' },
       { id: 'font', editor: solidMount(FontEditor), format: (v: string) => v }
     ]
     for (const t of types) ctx.paramTypes.register(t)

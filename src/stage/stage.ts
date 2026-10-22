@@ -14,6 +14,7 @@ import type { Registries } from '@core/app'
 import { evaluateProperty } from '@core/evaluate'
 import { clipTimeMap } from '@core/time-remap'
 import { Emitter } from '@core/events'
+import { StageGPU, type ShaderPass } from './gpu'
 import type {
   AudioPropertyNode,
   ClipFrameState,
@@ -72,9 +73,11 @@ export class Stage {
   private lastPlaying = false
   private lastRate = 1
   private disposed = false
+  private gpu: StageGPU
 
   constructor(private opts: StageOptions) {
     const doc = opts.document
+    this.gpu = new StageGPU(doc, opts.mediaUrl)
     const style = doc.createElement('style')
     style.textContent = `
       html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
@@ -186,6 +189,7 @@ export class Stage {
   }
 
   private unmount(m: Mounted) {
+    this.gpu.remove(m.clip.id)
     try {
       m.inst.dispose()
     } catch (e) {
@@ -327,6 +331,7 @@ export class Stage {
       contentStyle: Record<string, string>
       svg: string[]
     } = { transform: [], filter: [], backdropFilter: [], style: {}, contentStyle: {}, svg: [] }
+    const shaderPasses: ShaderPass[] = []
     const audioValues = new Map<Id, Record<string, unknown>>()
     const applied = new Set<string>()
     for (const p of clip.properties) {
@@ -341,6 +346,7 @@ export class Stage {
         continue
       }
       if (contrib.audio) audioValues.set(p.id, values)
+      if (contrib.shader && track.kind === 'visual') shaderPasses.push({ type: p.type, contribution: contrib, values })
       if (!contrib.apply || track.kind !== 'visual') continue
       let r: PropertyOutput | void
       applied.add(p.type)
@@ -412,6 +418,7 @@ export class Stage {
         console.error(`[stage] update failed for ${clip.type}`, e)
       }
     }
+    this.gpu.update(clip.id, m.inst, m.wrapper, state, shaderPasses, visible)
     if (this.opts.audio) this.syncAudio(m, clip, track, this.opts.audio.context.currentTime, audioValues)
     m.visible = visible
     m.lastState = state
@@ -425,6 +432,7 @@ export class Stage {
       if (m.visible && m.inst.prepare && m.lastState) waits.push(m.inst.prepare(m.lastState).catch((e) => console.error(e)))
     }
     await Promise.all(waits)
+    await this.gpu.renderExact()
     await this.opts.document.fonts?.ready
   }
 
@@ -491,6 +499,7 @@ export class Stage {
     this.disposed = true
     for (const m of this.mounted.values()) this.unmount(m)
     this.mounted.clear()
+    this.gpu.dispose()
     this.resizeObs?.disconnect()
     this.root.remove()
   }

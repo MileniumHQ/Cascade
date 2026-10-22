@@ -17,6 +17,7 @@ export const videoPlugin = definePlugin({
       icon: 'film',
       color: 'var(--clip-video, #e8707f)',
       track: 'visual',
+      pixels: true,
       extensions: VIDEO_EXT,
       accepts: (f) => (f.meta?.hasVideo === false ? 0 : VIDEO_EXT.includes(f.ext) ? 0.8 : f.meta?.hasVideo && (f.meta.duration ?? 0) > 0 ? 0.4 : 0),
       timeBased: true,
@@ -34,6 +35,7 @@ export const videoPlugin = definePlugin({
             let drawn = -1
             return {
               el: canvas,
+              pixelSource: () => canvas,
               update(s) {
                 applyBox(canvas, fitBox(s.media, s.project, (s.clip.data.fit as Fit) ?? 'contain'))
               },
@@ -54,6 +56,7 @@ export const videoPlugin = definePlugin({
             }
           }
           const el = m.document.createElement('video')
+          el.crossOrigin = 'anonymous' // media:// serves CORS headers for pixel sampling
           el.muted = true // sound comes from the linked audio clip
           el.preload = 'auto'
           el.playsInline = true
@@ -65,6 +68,7 @@ export const videoPlugin = definePlugin({
           applyBox(el, fitBox(m.media, m.project, fit()))
           return {
             el,
+            pixelSource: () => el,
             update(s) {
               applyBox(el, fitBox(s.media, s.project, (s.clip.data.fit as Fit) ?? 'contain'))
               sync.update(s, frameSeconds(s.project))
