@@ -34,10 +34,10 @@ const MAX_COMMANDS = 400
 export function audioPlan(app: CascadeAPI, range: { start: Flicks; end: Flicks }): Record<string, ClipAudioPlan> {
   const project = app.project()
   const plan: Record<string, ClipAudioPlan> = {}
-  for (const { timeline: tl, range: scope } of compositionAudioRanges(project, project.activeTimeline, range)) {
+  for (const { timeline: tl, range: scope } of compositionAudioRanges(project, app.registries, project.activeTimeline, range)) {
     const solo = anySolo(tl.tracks)
     for (const track of tl.tracks) {
-      if (!trackAudible(track, solo)) continue
+      if (!trackAudible(track, solo) || track.kind === 'visual' && track.hidden) continue
       for (const clip of track.clips) {
         if (track.kind !== 'audio' && !app.registries.mediaTypes.get(clip.type)?.hasAudio) continue
         const media = clip.mediaId ? project.media[clip.mediaId] : undefined

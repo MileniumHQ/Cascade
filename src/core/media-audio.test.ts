@@ -55,10 +55,34 @@ test('nested PCM plans use source-time scopes and child time maps rather than th
   const plan = audioPlan(app, { start: S(10), end: S(12) })
   expect(plan.sound).toMatchObject({ mode: 'stretch', mediaId: 'file', sourceStart: 0, sourceEnd: 4, tempo: 2, localStart: 0 })
   expect(plan.wrapper).toBeUndefined()
-  const scopes = compositionAudioRanges(app.project(), app.project().activeTimeline, { start: S(10), end: S(12) })
+  const scopes = compositionAudioRanges(app.project(), app.registries, app.project().activeTimeline, { start: S(10), end: S(12) })
   expect(scopes.map(s => [s.timeline.id, s.range])).toEqual([
-    [app.project().activeTimeline, { start: S(10), end: S(12) }], ['child', { start: 0, end: S(5) }]
+    [app.project().activeTimeline, { start: S(10), end: S(12) }], ['child', { start: S(2), end: S(5) }]
   ])
+})
+
+test('PCM scopes only include descendants that contribute through the wrapper range, mute and visibility', async () => {
+  const app = await fixture(), project = () => app.project(), root = project().activeTimeline
+  const ids = (range: { start: number; end: number }) => compositionAudioRanges(project(), app.registries, root, range).map(s => s.timeline.id)
+  expect(ids({ start: S(10), end: S(10.4) })).toEqual([root])
+  expect(audioPlan(app, { start: S(10), end: S(10.4) }).sound).toBeUndefined()
+  expect(compositionAudioRanges(project(), app.registries, root, { start: S(10.5), end: S(11.5) }).map(s => s.range)).toEqual([{ start: S(10.5), end: S(11.5) }, { start: S(3), end: S(5) }])
+  app.doc.transact('hide', d => { d.timelines[root].tracks[0].hidden = true })
+  expect(ids({ start: S(10), end: S(12) })).toEqual([root])
+  app.doc.transact('show+mute', d => { d.timelines[root].tracks[0].hidden = false; d.timelines[root].tracks[0].muted = true })
+  expect(ids({ start: S(10), end: S(12) })).toEqual([root])
+  expect(audioPlan(app, { start: S(10), end: S(12) }).sound).toBeUndefined()
+})
+
+test('a composition used twice merges the ranges each instance needs', async () => {
+  const app = await fixture(), root = app.project().activeTimeline
+  app.doc.transact('second instance', d => {
+    const second = clip('wrapper2', 'sequence', 'nested', 20, 1)
+    d.timelines.child.tracks[3].clips.unshift(clip('early', 'audio', 'file', 0, 1))
+    d.timelines[root].tracks[0].clips.push(second)
+  })
+  const scopes = compositionAudioRanges(app.project(), app.registries, root, { start: 0, end: S(30) })
+  expect(scopes.map(s => [s.timeline.id, s.range])).toEqual([[root, { start: 0, end: S(30) }], ['child', { start: 0, end: S(5) }]])
 })
 
 test('malformed recursion is bounded in audio queries and PCM scopes', async () => {
@@ -67,7 +91,7 @@ test('malformed recursion is bounded in audio queries and PCM scopes', async () 
   p.timelines.child.tracks[0].clips.push(clip('cycle', 'sequence', 'cycle', 0, 10))
   app.doc.load(p)
   expect(rangeHasAudio(app, { start: S(10), end: S(12) })).toBe(true)
-  expect(compositionAudioRanges(p, p.activeTimeline, { start: 0, end: S(12) })).toHaveLength(2)
+  expect(compositionAudioRanges(p, app.registries, p.activeTimeline, { start: 0, end: S(12) })).toHaveLength(2)
 })
 
 test('source monitor retains composition dependencies and rebuilds live lengths', async () => {
