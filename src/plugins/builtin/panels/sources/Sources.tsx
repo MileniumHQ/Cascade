@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from 'solid-js'
-import type { PanelContext } from '@core/plugin-api'
+import type { GeneratorContribution, PanelContext } from '@core/plugin-api'
 import { clipEnd, findClip, type Id, type Project, type Timeline } from '@shared/project'
 import { Icon } from '@ui/icon'
 import { Button, IconButton, openContextMenu, openMenu, Segmented, type MenuItem } from '@ui/kit'
@@ -70,6 +70,12 @@ export function Sources(props: { ctx: PanelContext }) {
   const project = useProject(app)
   const selection = useValue(app.selection.media)
   const generators = useRegistry(app.registries.generators)
+  /** Create-list entries by category; uncategorized ones come first. */
+  const generatorGroups = createMemo(() => {
+    const groups = new Map<string, GeneratorContribution[]>()
+    for (const g of generators()) groups.set(g.category ?? '', [...(groups.get(g.category ?? '') ?? []), g])
+    return [...groups.entries()].sort((a, b) => (a[0] === '' ? -1 : b[0] === '' ? 1 : 0))
+  })
   const [query, setQuery] = createSignal('')
   const [renaming, setRenaming] = createSignal<Id | null>(null)
   const [dragging, setDragging] = createSignal(false)
@@ -495,35 +501,44 @@ export function Sources(props: { ctx: PanelContext }) {
           </button>
           <Show when={createOpen()}>
             <div class="sc-gens">
-              <For each={generators()}>
-                {(g) => {
-                  const color = () => app.registries.mediaTypes.get(g.mediaType)?.color ?? 'var(--clip-element)'
-                  return (
-                    <div
-                      class="sc-gen"
-                      style={{ '--tc': color() }}
-                      draggable={true}
-                      tabindex={-1}
-                      onClick={() => create(g.id)}
-                      onDragStart={(e) => {
-                        if (!e.dataTransfer) return
-                        e.dataTransfer.setData('application/x-cascade-generator', g.id)
-                        e.dataTransfer.setData('text/plain', g.name)
-                        e.dataTransfer.effectAllowed = 'copy'
-                        setDragImage(e, g.icon, g.name, color())
+              <For each={generatorGroups()}>
+                {([category, list]) => (
+                  <>
+                    <Show when={category}>
+                      <div class="sc-gens-title">{category}</div>
+                    </Show>
+                    <For each={list}>
+                      {(g) => {
+                        const color = () => app.registries.mediaTypes.get(g.mediaType)?.color ?? 'var(--clip-element)'
+                        return (
+                          <div
+                            class="sc-gen"
+                            style={{ '--tc': color() }}
+                            draggable={true}
+                            tabindex={-1}
+                            onClick={() => create(g.id)}
+                            onDragStart={(e) => {
+                              if (!e.dataTransfer) return
+                              e.dataTransfer.setData('application/x-cascade-generator', g.id)
+                              e.dataTransfer.setData('text/plain', g.name)
+                              e.dataTransfer.effectAllowed = 'copy'
+                              setDragImage(e, g.icon, g.name, color())
+                            }}
+                          >
+                            <span class="sc-gen-icon">
+                              <Icon name={g.icon} size={16} />
+                            </span>
+                            <span class="sc-gen-text">
+                              <span class="sc-gen-name">{g.name}</span>
+                              <span class="sc-gen-desc">{g.description}</span>
+                            </span>
+                            <Icon name="plus" size={14} class="sc-gen-add" />
+                          </div>
+                        )
                       }}
-                    >
-                      <span class="sc-gen-icon">
-                        <Icon name={g.icon} size={16} />
-                      </span>
-                      <span class="sc-gen-text">
-                        <span class="sc-gen-name">{g.name}</span>
-                        <span class="sc-gen-desc">{g.description}</span>
-                      </span>
-                      <Icon name="plus" size={14} class="sc-gen-add" />
-                    </div>
-                  )
-                }}
+                    </For>
+                  </>
+                )}
               </For>
             </div>
           </Show>

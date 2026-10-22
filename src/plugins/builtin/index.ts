@@ -1,5 +1,6 @@
 import type { PluginDefinition } from '@core/plugin-api'
 import { exportersPlugin } from './exporters'
+import { exportPresetsPlugin } from './export-presets'
 import { paramsPlugin } from './params'
 import { easingsPlugin } from './easings'
 import { settingsPlugin } from './settings'
@@ -23,6 +24,7 @@ import { statusBarPlugin } from './statusbar'
 import { keyframesPlugin } from './panels/keyframes'
 import { exportPanelPlugin } from './panels/export'
 import { captionsPlugin } from './captions'
+import { titlesPlugin } from './titles'
 import { safetyPlugin } from './safety'
 
 /**
@@ -31,6 +33,7 @@ import { safetyPlugin } from './safety'
  */
 export const builtinPlugins: PluginDefinition[] = [
   exportersPlugin,
+  exportPresetsPlugin,
   paramsPlugin,
   easingsPlugin,
   settingsPlugin,
@@ -54,6 +57,7 @@ export const builtinPlugins: PluginDefinition[] = [
   keyframesPlugin,
   exportPanelPlugin,
   captionsPlugin,
+  titlesPlugin,
   safetyPlugin
 ]
 
