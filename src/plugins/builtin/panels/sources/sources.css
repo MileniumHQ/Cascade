@@ -842,3 +842,6 @@ button.sc-section-head:hover {
   border-radius: 2px;
   pointer-events: none;
 }
+
+/* Plugin-contributed sections lay out like the built-in ones. */
+.sc-contrib { display: contents; }
