@@ -1,6 +1,6 @@
 # Cascade MCP
 
-Cascade exposes **33 tools** that inspect and edit the project open in its editor. Edits appear immediately in preview and use the same editing APIs as the UI. A successful `timeline_apply_edits` batch is one undo step labeled `Agent: apply N edits` (or `Agent: split`, etc.). No additional packages are required: this implementation uses the installed `@modelcontextprotocol/sdk` v1 and Zod.
+Cascade exposes **41 tools** that inspect and edit the project open in its editor. Edits appear immediately in preview and use the same editing APIs as the UI. A successful `timeline_apply_edits` batch is one undo step labeled `Agent: apply N edits` (or `Agent: split`, etc.). No additional packages are required: this implementation uses the installed `@modelcontextprotocol/sdk` v1 and Zod.
 
 ## Connect Claude Code
 
@@ -50,16 +50,18 @@ Agents can't watch playback. The sheets, the transcript, `audio_analyze` and `ti
 
 **Times.** Every time field takes integer flicks (705600000 = one second), a clock time exactly as the tools print it (`00:01:23.500`, `1:23.5`; decimal seconds after the dot), or an amount with a unit (`83.5s`, `500ms`, `12f` for frames). Timeline fields also take transcript anchors, source fields source anchors. Tools print `HH:MM:SS.mmm` and, where exactness matters, flicks beside it. Keyframe times are clip-local; placement, split, trim, marker and range times are timeline time. Ranges are half open `[start,end)`. Spatial values are frame fractions; e.g. position `[0.25, 0]` is one quarter frame width right of center. Use `registry_list` to discover units, ranges and property definitions. Never put floating-point seconds or pixel lengths in the document.
 
-Tools are listed in deterministic order and accept `detail: "concise" | "detailed"` (concise by default). `timeline_get` filters with `trackId`, `mediaId`, `start`/`end` (clips overlapping the range), `query` (case-insensitive match on the clip name or its text) and `clipId` (that one clip with every parameter and keyframe); `format: "json"` returns the same as compact objects. Concise text starts with a header (including the **revision**) and a `user:` line (playhead, whether it's playing, selected clip ids), then one line per clip: id, times, `[start, end)` in flicks, source and source range, effective speed (`speed 2×`, `reversed`, `(from linked clip)`), `linked=` partner ids, and only the parameters that differ from their defaults. IDs such as `m1`, `c1`, `t1`, `p1` are stable aliases for the current editor lifetime; full document ids also work. A batch `ref` is a temporary name usable by later operations in that batch.
+Tools are listed in deterministic order and accept `detail: "concise" | "detailed"` (concise by default). `project_get` lists every timeline with its id, name, duration, active flag and referencing media items (the detailed project adds `timelineSummaries`). `timeline_get {timelineId?}` reads any timeline without changing the active timeline, playback, selection or undo history. `timeline_switch {timelineId}` is navigation outside undo; it pauses playback, restores the timeline's playhead and clears selection.
+
+`timeline_get` filters with `trackId`, `mediaId`, `start`/`end` (clips overlapping the range), `query` (case-insensitive match on the clip name or its text) and `clipId` (that one clip with every parameter and keyframe); `format: "json"` returns the same as compact objects. Concise text starts with a header (including the **revision**) and a `user:` line (playhead, whether it's playing, selected clip ids), then one line per clip: id, times, `[start, end)` in flicks, source and source range, effective speed (`speed 2×`, `reversed`, `(from linked clip)`), `linked=` partner ids, and only the parameters that differ from their defaults. Both formats include track transitions (id, type, from/to, duration, alignment, params), timeline/clip markers (id, kind, name, time, duration, color, note), non-default track solo/gain/pan, and referenced timeline ids on composition clips. Trimmed-out clip markers have `time: null`, `trimmedOut: true` and their source coordinates in JSON; text labels them “trimmed out”. IDs such as `m1`, `c1`, `t1`, `p1`, `x1` (transition), `k1` (marker), `l1` (timeline) are stable aliases for the current editor lifetime; full document ids also work. A batch `ref` is a temporary name usable by later operations in that batch.
 
 | Tools | Purpose |
 | --- | --- |
 | `project_get`, `project_new`, `project_open`, `project_save`, `project_settings_set` | Session and undoable project settings |
-| `media_list`, `media_import`, `media_probe` | Sources; paths must be absolute or `~/…` |
-| `timeline_get`, `timeline_apply_edits` | Inspect (filterable, text or JSON) and edit the active timeline, including tracks |
+| `media_list`, `media_import`, `media_probe`, `media_relink` | Sources and undoable source relinking; paths must be absolute or `~/…` |
+| `timeline_get`, `timeline_switch`, `timeline_apply_edits` | Inspect any timeline (filterable, text or JSON), navigate, and edit the active timeline |
 | `playhead_get`, `playhead_set` | Where the user is (playhead, playing, selection, clips under the playhead); move the playhead and play/pause so the user sees a moment |
 | `history_undo`, `history_redo`, `history_list` | Undo/redo `steps` at a time (including UI edits); labels, revision and recent change events |
-| `registry_list`, `font_preview` | Media types, property parameters, easings, generators, exporters, installed fonts; `font_preview` renders families in their own faces |
+| `registry_list`, `font_preview` | Media types, transitions, marker kinds, presets, timeline tools, property parameters (including path/curve shapes), easings, generators, exporters, installed fonts; `font_preview` renders families in their own faces |
 | `frame_get`, `contact_sheet`, `shot_list` | See frames: one frame (with optional guides), labeled paged sheets of the timeline or a source, shots with motion/brightness/color |
 | `audio_analyze`, `audio_normalize`, `silence_trim`, `beat_grid` | Measure the mix or a source; loudness-match clips; find and cut dead air; tempo and beats for `snap_to_beats` |
 | `timeline_lint`, `timeline_stats`, `inspect_range` | Check the edit: issues with suggested fixes, pacing metrics (compare two cuts), one-call range review |
@@ -99,7 +101,7 @@ Result (trimmed):
 One undo step committed.
 ```
 
-Supported operations: `add_clip`, `add_text`, `move`, `trim`, `split`, `delete`, `ripple_delete`, `duplicate_clip`, `replace_clip`, `set_param`, `add_keyframe`, `add_keyframes`, `clear_keyframes`, `wiggle`, `add_property`, `remove_property`, `copy_properties`, `add_marker`, `add_track`, `remove_track`, `update_track`, `move_track`, `merge_tracks`, `duck`, `snap_to_beats`, `sync_text`. Each operation has a strict schema in `tools/list`. A batch holds at most 300 operations.
+Supported operations: `add_clip`, `add_text`, `move`, `trim`, `split`, `delete`, `ripple_delete`, `duplicate_clip`, `replace_clip`, `set_param`, `add_keyframe`, `add_keyframes`, `clear_keyframes`, `wiggle`, `add_property`, `remove_property`, `copy_properties`, `add_marker`, `add_track`, `remove_track`, `update_track`, `move_track`, `merge_tracks`, `duck`, `snap_to_beats`, `sync_text`, `add_transition`, `update_transition`, `remove_transition`, `ripple_trim`, `roll`, `slip`, `slide`, `close_gap`, `freeze_frame`, `update_marker`, `remove_marker`, `nest`, `break_apart`, `create_timeline`, `rename_timeline`, `delete_timeline`, `apply_preset`. Each operation has a strict schema in `tools/list`. A batch holds at most 300 operations.
 
 ### Batches: dry runs, revisions, removed clips
 
@@ -114,7 +116,32 @@ Supported operations: `add_clip`, `add_text`, `move`, `trim`, `split`, `delete`,
 - `clear_keyframes {clipId, propertyId, paramId?, value?}` removes animation, leaving `value` or the value at the clip start.
 - `duplicate_clip {clipId, start?, trackId?, ref?}` copies a clip (and its linked partner) with all properties; default right after it. `replace_clip {clipId, mediaId, sourceIn?}` swaps the source under a clip and keeps its timing, track, properties and link (linked audio goes if the new source is silent).
 - `merge_tracks {trackIds, into}` moves the clips of several tracks onto one (later clips win overlaps) and removes the emptied tracks, e.g. after several caption runs.
-- `add_track {kind, name?, index?, ref?}`, `remove_track {trackId}` (with its clips), `update_track {trackId, name?, locked?, muted?, hidden?}` and `move_track {trackId, index}`. `index` counts tracks of that kind in `timeline_get` order; later visual tracks draw on top, and a new visual track goes last (on top).
+- `add_track {kind, name?, index?, ref?}`, `remove_track {trackId}` (with its clips), `update_track {trackId, name?, locked?, muted?, hidden?, solo?, gain?, pan?}` and `move_track {trackId, index}`. `index` counts tracks of that kind in `timeline_get` order; later visual tracks draw on top, and a new visual track goes last (on top).
+
+### Transitions, trim tools, markers and sequences
+
+All clip/track/transition/marker operations in a batch target the **active timeline**. `create_timeline` does not switch. Use `timeline_switch` between batches to edit another timeline. If `delete_timeline` deletes the active timeline, subsequent operations target the surviving active timeline selected by the editing API. Registry IDs are open strings: third-party transitions, marker kinds, composition media types and property style presets are discovered with `registry_list` and checked against the live registries.
+
+- `add_transition {type, from?, to?, duration?, align?, params?, ref?}` requires at least one clip edge. Two-sided transitions require adjacent clips on one track; the type must support its track kind. Alignment is `center` (default), `start` or `end`. Defaults, frame/handle clamping and parameter merging use the editing API. Linked picture/sound receive the first registered compatible audio transition when eligible; duration/alignment updates and deletion affect the paired transitions. `update_transition {transitionId, type?, duration?, align?, params?}` and `remove_transition {transitionId}` accept aliases or an earlier transition ref. Missing, incompatible or locked targets fail the batch.
+- `ripple_trim {clipId, edge, time}` and `roll {clipId, edge, time}` take the desired absolute timeline edge/cut. `edge` is `start` or `end`; `roll` converts the target to the editing API's delta. `slip {clipId, delta}` and `slide {clipId, delta}` take signed integer flicks or signed unit amounts such as `-2s`, `+12f`, `500ms`. Slip deltas are timeline-local amounts integrated through the clip's time map. Linked partners follow by default. Source/adjacency limits clamp as in the UI; an edit blocked entirely fails with a reason.
+- `close_gap {trackId, time}` closes the gap at that timeline time while preserving linked synchronization; absent or blocked gaps fail. `freeze_frame {clipId, time, duration?, ref?}` inserts a visual hold and a silent interval on linked audio. Time must be inside the clip. Omitted duration uses the editor's hold-duration setting (default two seconds). The ref names the inserted hold clip.
+- `add_marker {time, name, kind?, color?, note?, duration?, clipId?, ref?}` creates a timeline marker or, with `clipId`, a clip marker. `update_marker {markerId, name?, kind?, color?, note?, duration?, time?}` and `remove_marker {markerId}` address either scope, including by ref. **Time always means timeline time**; add/move use the clip's time map to store source coordinates. Clip marker duration is source time; timeline marker duration is timeline time. Output gives clock times and exact flicks, plus clip markers' source positions. Unknown stored kinds remain readable; newly supplied kinds must be registered. Clip marker edits respect track locks.
+- `update_track` also accepts `solo?: boolean`, `gain?: number` in dB (-60..12) and `pan?: number` (-1..1). Resetting gain/pan to zero or solo to false removes the stored override.
+- `nest {clipIds, mediaType?, name?, ref?}` uses the registered `mediaType` (default `sequence`) and returns the composition clip. `break_apart {clipId}` restores its contents. Both report the editing API's refusal reason, including incompatible selection or composition effects/retiming. `create_timeline {name?, ref?}`, `rename_timeline {timelineId, name}` and `delete_timeline {timelineId}` are undoable batch primitives. Delete refuses the last timeline or one referenced by surviving composition clips.
+- `apply_preset {clipIds, presetId}` accepts property style presets only. Currently `captions.style` is the registered property style kind: it uses the same `styleOverBase` → `app.edit.applyStyle` path as the caption UI, preserving each clip's words and resetting the style's base values. Third-party presets of that kind work; other kinds fail clearly.
+
+`registry_list {only?: ["transitions", "markerKinds", "presets", "timelineTools", ...]}` exposes transition ids/names/kinds/params, marker kinds, preset ids/kinds/names/groups and timeline tool ids/names/keys alongside the existing sections. Property parameter definitions include `valueShape` for structured values:
+
+```ts
+// path: fractions of the untransformed content box; in/out are relative tangents.
+{ closed: boolean, points: { x: number, y: number, in?: [number, number], out?: [number, number] }[] }
+// curve: normalized input/output point pairs on each channel.
+{ master: [number, number][], r: [number, number][], g: [number, number][], b: [number, number][] }
+```
+
+Pass these objects as `set_param.value` using the actual property/param ids from the registry. See [masks.md](masks.md) for geometry and interpolation details.
+
+`media_relink {mediaId, path}` re-probes an absolute or `~/…` replacement path through `app.edit.relinkMedia`, clears the old proxy, and commits one undo step. It returns the new metadata (clock duration plus `durationFlicks`) or the probe error. Concurrent user changes while probing cause the relink to fail without replacing those changes.
 
 ### Audio, music and text timing
 
