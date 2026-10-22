@@ -1,7 +1,8 @@
 import { CascadeApp, type CascadeAPI } from '@core/app'
 import { clipEnd, findClip, uid, type Project, type Clip, type Id, type PropertyInstance } from '@shared/project'
 import { MIN_CLIP } from '@core/timeline-ops'
-import { sourceSpan, type TimeMap } from '@core/time-remap'
+import { sourceMeta } from '@core/compositions'
+import { sourceSpan, clipTimeMap, type TimeMap } from '@core/time-remap'
 import { evaluateParam } from '@core/evaluate'
 import { ANCHOR, SOURCE_ANCHOR, TIME_TEXT, editSchema, type Edit } from '../../../main/mcp/catalog'
 import type { ParamDef } from '@core/plugin-api'
@@ -9,6 +10,7 @@ import { FLICKS, frameToFlicks, secondsToFlicks, type Flicks, type FrameRate } f
 import { buildIndex, buildSourceIndex, findSpoken, type Analyses } from './transcript'
 import { clock } from './clock'
 import { duckKeyframes, speechSegments } from '../audio-tools/duck'
+import { applyPrimitiveEdit, isPrimitiveEdit } from './primitive-edits'
 export { clock }
 
 /** Stable aliases for this editor lifetime; full document ids also work. */
@@ -26,7 +28,7 @@ export class Ids {
   resolve(value: string): string { return this.full.get(value) ?? value }
 }
 /** An edit with every anchor resolved to integer flicks. */
-type Resolved = Edit extends infer E ? E extends unknown ? { [K in keyof E]: K extends 'start' | 'end' | 'time' | 'duration' ? Extract<E[K], number | undefined> : E[K] } : never : never
+export type Resolved = Edit extends infer E ? E extends unknown ? { [K in keyof E]: K extends 'start' | 'end' | 'time' | 'duration' | 'delta' ? Extract<E[K], number | undefined> : E[K] } : never : never
 
 /** Signed anchor offset (+80ms, -0.5s, +2f) in flicks. */
 function anchorOffset(sign: string | undefined, amount: string | undefined, unit: string | undefined, fps: FrameRate) {
@@ -133,7 +135,7 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
   const copy = staging(app)
   const fps = copy.project().settings.fps
   // Edits replace clip objects, so untouched clips keep their identity.
-  const untouched = new Set(copy.timeline().tracks.flatMap(t => t.clips))
+  const untouched = new Set(Object.values(copy.project().timelines).flatMap(tl => tl.tracks.flatMap(t => t.clips)))
   const refs = new Map<string, string>()
   const resolve = (v: string) => refs.get(v) ?? ids.resolve(v)
   // Clips an earlier operation removed (a delete takes the linked partner with it), so a later reference says why.
@@ -204,6 +206,10 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
     const op = { ...raw } as Record<string, unknown>
     for (const key of ['start', 'end', 'time'] as const) if (typeof op[key] === 'string') op[key] = anchor(op[key] as string)
     if (typeof op.duration === 'string' && !(op.duration = parseTimeText(op.duration, fps))) throw new Error('duration must be positive')
+    if (typeof op.delta === 'string') {
+      const sign = op.delta.startsWith('-') ? -1 : 1
+      op.delta = sign * parseTimeText(op.delta.replace(/^[+-]/, ''), fps)
+    }
     // An anchor names a moment in a source. If the addressed clip was cut into pieces (earlier in this
     // batch or before), use the piece of the same source on the same track that holds that moment.
     if ((raw.op === 'split' || raw.op === 'add_keyframe' || raw.op === 'set_param') && typeof raw.time === 'string') {
@@ -218,6 +224,10 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
     // Keyframe/parameter times are clip-local; anchors are timeline times.
     if ((raw.op === 'add_keyframe' || raw.op === 'set_param') && typeof raw.time === 'string') op.time = (op.time as number) - editable(op.clipId as string).clip.start
     if (typeof op.time === 'number' && op.time < 0) throw new Error(`${raw.op} time resolves before the clip start`)
+    for (const key of ['start', 'end', 'time', 'duration', 'delta']) {
+      const value = op[key]
+      if (value !== undefined && (!Number.isSafeInteger(value) || (key !== 'delta' && Number(value) < 0) || (key === 'duration' && value === 0))) throw new Error(`${key} must resolve to ${key === 'duration' ? 'positive' : key === 'delta' ? 'signed' : 'nonnegative'} safe integer flicks`)
+    }
     return op as Resolved
   }
   const setRef = (name: string | undefined, id: string) => {
@@ -240,6 +250,18 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
     tl.tracks = tl.tracks.map(t => t.kind === kind ? same[i++] : t)
   })
   const clipIds = () => new Set(copy.timeline().tracks.flatMap(t => t.clips.map(c => c.id)))
+  const validateResult = () => {
+    for (const tl of Object.values(copy.project().timelines)) for (const tr of tl.tracks) for (const clip of tr.clips) {
+      if (clip.duration < MIN_CLIP || !Number.isSafeInteger(clip.start + clip.duration) || clip.sourceIn < 0) throw new Error('Result contains an invalid clip duration/range')
+      const media = clip.mediaId ? copy.project().media[clip.mediaId] : undefined
+      const duration = media && sourceMeta(media, copy.project(), copy.registries).duration
+      if (!untouched.has(clip) && duration && copy.registries.mediaTypes.get(clip.type)?.timeBased) {
+        const { lo, hi } = sourceSpan(clip, clipTimeMap(clip, tl, copy.registries))
+        const slack = frameToFlicks(1, fps)
+        if (lo < -slack || hi > duration + slack) throw new Error(`Clip ${ids.show(clip.id, 'c')} would play past the ${lo < 0 ? 'start' : 'end'} of its source (speed too high for its duration?)`)
+      }
+    }
+  }
   const results: string[] = []
   for (const [index, raw] of ops.entries()) {
     const before = clipIds()
@@ -247,8 +269,12 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
       const op = resolveTimes(raw)
       let created: string | null | undefined
       let note = ''
+      let prefix = 'c'
       if ('ref' in op && op.ref && (refs.has(op.ref) || ids.resolve(op.ref) !== op.ref)) throw new Error(`Duplicate/reserved ref ${op.ref}`)
-      if (op.op === 'add_clip') {
+      if (isPrimitiveEdit(op)) {
+        const result = applyPrimitiveEdit(copy, op, resolve, editable, (def, value) => validateValue(def, value, options.fonts))
+        created = result.created; prefix = result.prefix ?? 'c'; note = result.note ?? ''
+      } else if (op.op === 'add_clip') {
         const media = copy.project().media[resolve(op.mediaId)]
         if (!media) throw new Error(`Unknown media ${op.mediaId}`)
         if (op.duration !== undefined && op.sourceOut !== undefined) throw new Error('Give duration or sourceOut, not both')
@@ -343,8 +369,8 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
         copy.edit.removeTrack(tr.id)
         note = ` (${clips.length} clips)`
       } else if (op.op === 'update_track') {
-        const patch = Object.fromEntries(Object.entries({ name: op.name, locked: op.locked, muted: op.muted, hidden: op.hidden }).filter(([, v]) => v !== undefined))
-        if (!Object.keys(patch).length) throw new Error('Give name, locked, muted or hidden')
+        const patch = Object.fromEntries(Object.entries({ name: op.name, locked: op.locked, muted: op.muted, hidden: op.hidden, solo: op.solo, gain: op.gain, pan: op.pan }).filter(([, v]) => v !== undefined))
+        if (!Object.keys(patch).length) throw new Error('Give name, locked, muted, hidden, solo, gain or pan')
         copy.edit.updateTrack(trackOf(op.trackId).id, patch)
       } else if (op.op === 'move_track') moveTrack(trackOf(op.trackId).id, op.index)
       else if (op.op === 'copy_properties') {
@@ -467,8 +493,7 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
           lines.push(`${ids.show(clip.id, 'c')} ${clock(start)}–${clock(end)}`)
         }
         note = ` ${lines.join(', ')}`
-      } else if (op.op === 'add_marker') copy.edit.addMarker(op.time, op.name)
-      else if (op.op === 'ripple_delete') {
+      } else if (op.op === 'ripple_delete') {
         if (op.end <= op.start) throw new Error('end must be after start')
         ripple(op.start, op.end)
       } else {
@@ -606,21 +631,13 @@ export function applyEdits(app: CascadeAPI, input: unknown, ids: Ids, analyses?:
           }
         }
       }
+      validateResult()
       if ('ref' in op && op.ref && created) refs.set(op.ref, created)
-      results.push(`${index + 1}. ${op.op}: ok${created ? ` ${ids.show(created, op.op === 'add_property' ? 'p' : 'c')}${'ref' in op && op.ref ? ` (${op.ref})` : ''}` : ''}${note}${retargeted ? `, on ${retargeted}` : ''}`)
+      results.push(`${index + 1}. ${op.op}: ok${created ? ` ${ids.show(created, op.op === 'add_property' ? 'p' : prefix)}${'ref' in op && op.ref ? ` (${op.ref})` : ''}` : ''}${note}${retargeted ? `, on ${retargeted}` : ''}`)
     } catch (e) { throw new Error(`Operation ${index + 1} (${raw.op}): ${e instanceof Error ? e.message : e}. No edits applied.`) }
     finally {
       const reason = `operation ${index + 1} (${raw.op}${'clipId' in raw ? ` ${raw.clipId}` : ''})`
       for (const id of before) if (!gone.has(id) && !findClip(copy.timeline(), id)) gone.set(id, reason)
-    }
-  }
-  for (const tr of copy.timeline().tracks) for (const clip of tr.clips) {
-    if (clip.duration < MIN_CLIP || !Number.isSafeInteger(clip.start + clip.duration) || clip.sourceIn < 0) throw new Error('Result contains an invalid clip duration/range. No edits applied.')
-    const media = clip.mediaId ? copy.project().media[clip.mediaId] : undefined
-    if (!untouched.has(clip) && media?.meta.duration && copy.registries.mediaTypes.get(clip.type)?.timeBased) {
-      const { lo, hi } = sourceSpan(clip, copy.edit.timeMap(clip))
-      const slack = frameToFlicks(1, fps)
-      if (lo < -slack || hi > media.meta.duration + slack) throw new Error(`Clip ${ids.show(clip.id, 'c')} would play past the ${lo < 0 ? 'start' : 'end'} of its source (speed too high for its duration?). No edits applied.`)
     }
   }
   if (options.dryRun) return results.join('\n') + '\nDry run: every operation is valid. Nothing was committed.'

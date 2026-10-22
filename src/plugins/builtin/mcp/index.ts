@@ -7,20 +7,22 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import type { ExportProgress, McpCall } from '@shared/ipc'
 import { snapToFrame, frameDuration, FLICKS, type Flicks } from '@shared/time'
 import { clock } from './clock'
-import { clipEnd, findClip, type Clip, type Project } from '@shared/project'
+import { clipEnd, findClip, timelineDuration, type Clip, type Project } from '@shared/project'
 import { defaultParams } from '@core/evaluate'
 import { TIME_TEXT, tools } from '../../../main/mcp/catalog'
 import { Ids, applyEdits, parseTimeText, resolveAnchor, staging, commit, validateValue } from './edits'
 import { LoudnessMeter, formatDb } from './loudness'
 import { BUILTIN_FONTS } from '../params/fonts'
-import { sourceSpan } from '@core/time-remap'
+import { projectTimelines, markerJson, markerText, transitionJson, transitionText, describeParams } from './inspection'
+import { sourceSpan, clipTimeMap } from '@core/time-remap'
 import { fontSpecimen, frame, imageResult } from './images'
 import { renderSheets, loadImage, stats, change, type Cell, type SheetAudio } from './sheets'
 import { lintTimeline, elementBox, LINT_RULES, TITLE_SAFE, type LintMeasurements } from './lint'
 import { detectBeats, toMono } from './beats'
 import { MAX_AUDIO_SECONDS, RATE, clipSource, decode, envelopeImage, renderMix, round1, show, summary } from './audio'
 import { pluginDocs } from './plugin-docs'
-import { captionClip, type CaptionsService } from '../captions'
+import { captionClip } from '../captions/clip'
+import type { CaptionsService } from '../captions'
 import type { SourceAnalysis } from '@shared/analysis'
 import { buildIndex, buildSourceIndex, findSpoken, formatTranscript, searchTranscript, SOURCE_LEGEND, type Analyses, type TIndex, type TWord, type TSentence } from './transcript'
 
@@ -46,7 +48,6 @@ const covered = (spans: [Flicks, Flicks][], start: Flicks, end: Flicks) => spans
 const pct = (part: number, whole: number) => whole > 0 ? Math.round(part / whole * 1000) / 10 : 0
 
 export class AgentTools {
-  readonly ids = new Ids()
   readonly jobs = new Map<string, ExportProgress>()
   readonly captionJobs = new Map<string, CaptionJob>()
   readonly analyses: Analyses = new Map()
@@ -59,7 +60,7 @@ export class AgentTools {
   private readonly requests = new Map<string, string>()
   /** Bumped on every document change (UI or agent); ifRevision guards a batch against edits made meanwhile. */
   revision = 0
-  constructor(readonly app: CascadeAPI) {}
+  constructor(readonly app: CascadeAPI, readonly ids = new Ids()) {}
   /** Flicks for a time argument: flicks, time text (00:01:23.500, 83.5s) or a transcript anchor. */
   private async time(value: number | string | undefined, fallback: number): Promise<number> {
     if (typeof value !== 'string') return value ?? fallback
@@ -154,40 +155,42 @@ export class AgentTools {
     return (c: Clip) => c.start < to && clipEnd(c) > from && (!media || c.mediaId === media) && (!query || c.name.toLowerCase().includes(query) || c.properties.some(p => p.type === 'text' && String(p.params.text?.value ?? '').toLowerCase().includes(query)))
   }
   /** One line per clip. Concise drops parameters at their defaults (and properties left entirely at defaults). */
-  private timeline(detailed = false, filter: Filter = {}) {
+  private timeline(detailed = false, filter: Filter = {}, tl = this.app.timeline()) {
     const app = this.app, ids = this.ids, tc = (t: Flicks) => clock(t)
-    const lines = [`${app.timeline().name} | duration ${tc(app.duration())} (${app.duration()}) | revision ${this.revision} | times HH:MM:SS.mmm [flicks); 1s=${FLICKS} flicks`, `user: ${this.editorState()}`]
+    const lines = [`${tl.name} | id ${ids.show(tl.id, 'l')} | ${tl.id === app.project().activeTimeline ? 'active' : 'inactive'} | duration ${tc(timelineDuration(tl))} (${timelineDuration(tl)}) | revision ${this.revision} | times HH:MM:SS.mmm [flicks); 1s=${FLICKS} flicks`, `user: ${this.editorState()}`]
     const matches = this.clipFilter(filter), from = filter.start ?? 0, to = filter.end ?? Infinity
     const filtered = Object.values(filter).some(v => v !== undefined)
     let shown = 0
-    for (const tr of app.timeline().tracks) {
+    for (const tr of tl.tracks) {
       if (filter.trackId && tr.id !== ids.resolve(filter.trackId)) continue
       const clips = tr.clips.filter(matches)
       if (filtered && !clips.length && !filter.trackId) continue
-      lines.push(`${ids.show(tr.id, 't')} ${tr.name} [${tr.kind}${tr.locked ? ',locked' : ''}${tr.muted ? ',muted' : ''}${tr.hidden ? ',hidden' : ''}]${filtered && clips.length < tr.clips.length ? ` (${clips.length} of ${tr.clips.length} clips match)` : ''}`)
-      for (const c of clips) lines.push(`  ${ids.show(c.id, 'c')} ${tc(c.start)}–${tc(clipEnd(c))} [${c.start}, ${clipEnd(c)}) ${c.type} ${JSON.stringify(c.name)}${this.clipSource(c)}${this.clipProperties(c, detailed)}`)
+      lines.push(`${ids.show(tr.id, 't')} ${tr.name} [${tr.kind}${tr.locked ? ',locked' : ''}${tr.muted ? ',muted' : ''}${tr.hidden ? ',hidden' : ''}${tr.solo ? ',solo' : ''}${tr.gain ? `,gain=${tr.gain}dB` : ''}${tr.pan ? `,pan=${tr.pan}` : ''}]${filtered && clips.length < tr.clips.length ? ` (${clips.length} of ${tr.clips.length} clips match)` : ''}`)
+      for (const c of clips) lines.push(`  ${ids.show(c.id, 'c')} ${tc(c.start)}–${tc(clipEnd(c))} [${c.start}, ${clipEnd(c)}) ${c.type} ${JSON.stringify(c.name)}${this.clipSource(c, tl)}${this.clipProperties(c, detailed)}`)
+      for (const tx of tr.transitions ?? []) lines.push(`  ${transitionText(ids, tx)}`)
+      for (const c of clips) for (const m of c.markers ?? []) lines.push(`  ${markerText(app, ids, tl, m, c)}`)
       shown += clips.length
     }
     if (filter.trackId && lines.length === 2) throw new Error(`Unknown track ${filter.trackId}`)
     if (filtered && !shown) lines.push('no clips match')
-    for (const m of app.timeline().markers) if (!filtered || (m.t >= from && m.t < to)) lines.push(`marker ${ids.show(m.id, 'k')} ${clock(m.t)} ${JSON.stringify(m.name)}`)
+    for (const m of tl.markers) if (!filtered || (m.t >= from && m.t < to)) lines.push(markerText(app, ids, tl, m))
     return lines.join('\n')
   }
   /** The same as timeline(), as compact objects. */
-  private timelineJson(detailed: boolean, filter: Filter) {
+  private timelineJson(detailed: boolean, filter: Filter, tl = this.app.timeline()) {
     const app = this.app, ids = this.ids, matches = this.clipFilter(filter)
     const filtered = Object.values(filter).some(v => v !== undefined)
-    const tracks = app.timeline().tracks.filter(tr => !filter.trackId || tr.id === ids.resolve(filter.trackId))
-      .map(tr => ({ id: ids.show(tr.id, 't'), name: tr.name, kind: tr.kind, locked: tr.locked, muted: tr.muted, hidden: tr.hidden, clips: tr.clips.filter(matches).map(c => this.clipJson(c, detailed)) }))
+    const tracks = tl.tracks.filter(tr => !filter.trackId || tr.id === ids.resolve(filter.trackId))
+      .map(tr => ({ id: ids.show(tr.id, 't'), name: tr.name, kind: tr.kind, locked: tr.locked, muted: tr.muted, hidden: tr.hidden, ...(tr.solo ? { solo: true } : {}), ...(tr.gain ? { gain: tr.gain } : {}), ...(tr.pan ? { pan: tr.pan } : {}), transitions: (tr.transitions ?? []).map(tx => transitionJson(ids, tx)), clips: tr.clips.filter(matches).map(c => this.clipJson(c, detailed, tl)) }))
       .filter(t => !filtered || filter.trackId || t.clips.length)
-    return { name: app.timeline().name, duration: clock(app.duration()), durationFlicks: app.duration(), revision: this.revision, user: this.editorState(), tracks, markers: app.timeline().markers.map(m => ({ id: ids.show(m.id, 'k'), time: clock(m.t), t: m.t, name: m.name })) }
+    return { id: ids.show(tl.id, 'l'), active: tl.id === app.project().activeTimeline, name: tl.name, duration: clock(timelineDuration(tl)), durationFlicks: timelineDuration(tl), revision: this.revision, user: this.editorState(), tracks, markers: tl.markers.filter(m => m.t >= (filter.start ?? 0) && m.t < (filter.end ?? Infinity)).map(m => markerJson(app, ids, tl, m)) }
   }
-  private clipJson(c: Clip, detailed: boolean) {
+  private clipJson(c: Clip, detailed: boolean, tl = this.app.timeline()) {
     const app = this.app, ids = this.ids
     const media = c.mediaId ? app.project().media[c.mediaId] : undefined
-    const map = media && app.registries.mediaTypes.get(c.type)?.timeBased ? app.edit.timeMap(c) : undefined
+    const map = media && app.registries.mediaTypes.get(c.type)?.timeBased ? clipTimeMap(c, tl, app.registries) : undefined
     const span = map && sourceSpan(c, map)
-    const linked = c.linkId ? app.timeline().tracks.flatMap(t => t.clips.filter(x => x.id !== c.id && x.linkId === c.linkId)).map(x => ids.show(x.id, 'c')) : []
+    const linked = c.linkId ? tl.tracks.flatMap(t => t.clips.filter(x => x.id !== c.id && x.linkId === c.linkId)).map(x => ids.show(x.id, 'c')) : []
     const properties = c.properties.flatMap(p => {
       const contrib = app.registries.properties.get(p.type), defaults = contrib ? defaultParams(contrib) : {}
       const params = Object.entries(p.params).filter(([k, v]) => detailed || v.keyframes?.length || JSON.stringify(v.value) !== JSON.stringify(defaults[k]?.value))
@@ -196,33 +199,37 @@ export class AgentTools {
     })
     return {
       id: ids.show(c.id, 'c'), type: c.type, name: c.name, start: clock(c.start), end: clock(clipEnd(c)), startFlicks: c.start, endFlicks: clipEnd(c),
-      ...(media?.path ? { mediaId: ids.show(media.id, 'm') } : {}),
+      ...(media ? { mediaId: ids.show(media.id, 'm') } : {}),
       ...(span ? { source: { in: clock(span.lo), out: clock(span.hi) } } : {}),
       ...(map && (map.constant !== 1 || map.reversed) ? { speed: map.constant ?? 'keyframed', ...(map.reversed ? { reversed: true } : {}) } : {}),
-      ...(linked.length ? { linked } : {}), properties
+      ...(media?.timelineId ? { timelineId: ids.show(media.timelineId, 'l') } : {}),
+      ...(linked.length ? { linked } : {}), transitions: tl.tracks.flatMap(tr => (tr.transitions ?? []).filter(tx => tx.from === c.id || tx.to === c.id).map(tx => transitionJson(ids, tx))), markers: (c.markers ?? []).map(m => markerJson(app, ids, tl, m, c)), properties
     }
   }
   /** One clip in full: every property value and keyframe (clip-local flicks). */
-  private clipDetail(value: string) {
+  private clipDetail(value: string, tl = this.app.timeline()) {
     const app = this.app, ids = this.ids, tc = (t: Flicks) => clock(t)
-    const found = findClip(app.timeline(), ids.resolve(value))
+    const found = findClip(tl, ids.resolve(value))
     if (!found) throw new Error(`Unknown clip ${value}; refresh timeline_get`)
     const { clip: c, track } = found
-    const lines = [`${ids.show(c.id, 'c')} on ${ids.show(track.id, 't')} ${track.name} | ${tc(c.start)}–${tc(clipEnd(c))} [${c.start}, ${clipEnd(c)}) ${c.type} ${JSON.stringify(c.name)}${this.clipSource(c)} | revision ${this.revision}`]
+    const lines = [`${ids.show(c.id, 'c')} on ${ids.show(track.id, 't')} ${track.name} | ${tc(c.start)}–${tc(clipEnd(c))} [${c.start}, ${clipEnd(c)}) ${c.type} ${JSON.stringify(c.name)}${this.clipSource(c, tl)} | revision ${this.revision}`]
     for (const p of c.properties) {
       lines.push(`${ids.show(p.id, 'p')}:${p.type}${p.enabled ? '' : ' (off)'}`)
       for (const [k, v] of Object.entries(p.params)) lines.push(`  ${k} = ${JSON.stringify(v.value)}${v.keyframes?.length ? ` keyframes ${v.keyframes.map(kf => `${kf.t}:${JSON.stringify(kf.value)}${kf.easing ? `(${kf.easing.id})` : ''}`).join(' ')}` : ''}`)
     }
+    for (const m of c.markers ?? []) lines.push(markerText(app, ids, tl, m, c))
+    for (const tx of track.transitions ?? []) if (tx.from === c.id || tx.to === c.id) lines.push(transitionText(ids, tx))
     return lines.join('\n')
   }
   /** Source, speed and link of a clip: ` m1 src 00:10:00.000–00:10:02.000 speed 2× reversed linked=c4`. */
-  private clipSource(c: Clip) {
+  private clipSource(c: Clip, tl = this.app.timeline()) {
     const app = this.app, ids = this.ids
     const media = c.mediaId ? app.project().media[c.mediaId] : undefined
     let out = ''
+    if (media?.timelineId) out += ` timeline=${ids.show(media.timelineId, 'l')}`
     if (media?.path) out += ` ${ids.show(media.id, 'm')}`
     if (media && app.registries.mediaTypes.get(c.type)?.timeBased) {
-      const map = app.edit.timeMap(c), { lo, hi } = sourceSpan(c, map)
+      const map = clipTimeMap(c, tl, app.registries), { lo, hi } = sourceSpan(c, map)
       out += ` src ${clock(lo)}–${clock(hi)}`
       const speed = map.constant === null ? `speed keyframed ${+map.min.toFixed(2)}–${+map.max.toFixed(2)}×` : map.constant !== 1 ? `speed ${+map.constant.toFixed(3)}×` : ''
       const remap = app.registries.properties.all().find(p => p.timeRemap)?.id
@@ -230,7 +237,7 @@ export class AgentTools {
       if (speed || map.reversed) out += ` ${[speed, map.reversed ? 'reversed' : ''].filter(Boolean).join(' ')}${own || !c.linkId ? '' : ' (from linked clip)'}`
     }
     if (c.linkId) {
-      const partners = app.timeline().tracks.flatMap(t => t.clips.filter(x => x.id !== c.id && x.linkId === c.linkId))
+      const partners = tl.tracks.flatMap(t => t.clips.filter(x => x.id !== c.id && x.linkId === c.linkId))
       if (partners.length) out += ` linked=${partners.map(x => ids.show(x.id, 'c')).join(',')}`
     }
     return out
@@ -311,7 +318,7 @@ export class AgentTools {
       const app = this.app, host = app.host!, ids = this.ids
       if (!['project_new', 'project_open', 'registry_list', 'font_preview', 'plugin_api_docs', 'plugin_list', 'plugin_write', 'plugin_remove'].includes(call.tool)) this.projectRequired()
       switch (call.tool) {
-        case 'project_get': return text(a.detail === 'detailed' ? app.project() : { name: app.project().name, path: this.session().path(), revision: this.revision, settings: app.project().settings, duration: clock(app.duration()), durationFlicks: app.duration(), editor: this.editorState(), media: app.project().mediaOrder.length, tracks: app.timeline().tracks.map(t => ({ id: ids.show(t.id, 't'), name: t.name, kind: t.kind, locked: t.locked, muted: t.muted, hidden: t.hidden, clips: t.clips.length })) })
+        case 'project_get': return text(a.detail === 'detailed' ? { ...app.project(), timelineSummaries: projectTimelines(app, ids) } : { timelines: projectTimelines(app, ids), name: app.project().name, path: this.session().path(), revision: this.revision, settings: app.project().settings, duration: clock(app.duration()), durationFlicks: app.duration(), editor: this.editorState(), media: app.project().mediaOrder.length, tracks: app.timeline().tracks.map(t => ({ id: ids.show(t.id, 't'), name: t.name, kind: t.kind, locked: t.locked, muted: t.muted, hidden: t.hidden, clips: t.clips.length })) })
         case 'project_new': await this.session().newProject(a.name, a.settings ?? {}); return text(`Created ${app.project().name}; it is written to ${this.session().path()} on the first edit (autosave) or project_save`)
         case 'project_open': {
           const path = await this.path(a.path)
@@ -324,6 +331,24 @@ export class AgentTools {
         case 'project_save': if (!this.session().path()) throw new Error('Project has no save path; use project_new or project_open'); if (!await this.session().save()) throw new Error('Save failed; inspect the output path permissions'); return text(`Saved ${this.session().path()}`)
         case 'project_settings_set': { const copy = staging(app); copy.edit.setProjectSettings(a.settings); commit(app, copy.project(), 'project settings'); return text(app.project().settings) }
         case 'media_list': return text(app.project().mediaOrder.map(id => { const m = app.project().media[id]; return a.detail === 'detailed' ? { ...m, shortId: ids.show(id, 'm') } : { id: ids.show(id, 'm'), type: m.type, name: m.name, duration: m.meta.duration === undefined ? undefined : clock(m.meta.duration), path: m.path } }))
+        case 'media_relink': {
+          const mediaId = ids.resolve(a.mediaId), path = await this.path(a.path)
+          if (!app.project().media[mediaId]) throw new Error(`Unknown media ${a.mediaId}`)
+          // Probe through the normal editing API on an isolated host-backed copy.
+          const before = app.project()
+          let probeError = ''
+          const copy = new CascadeApp('editor', { ...host, media: { ...host.media, probe: async p => {
+            const probe = await host.media.probe(p)
+            probeError = probe.error ?? ''
+            return probe
+          } } }, structuredClone(before))
+          Object.assign(copy.registries, app.registries)
+          if (!await copy.edit.relinkMedia(mediaId, path)) throw new Error(probeError || `Could not relink ${a.mediaId}`)
+          if (app.project() !== before) throw new Error('Project changed during relink. Retry the relink.')
+          commit(app, copy.project(), 'relink media')
+          const media = app.project().media[mediaId]
+          return text({ id: ids.show(mediaId, 'm'), path: media.path, ...media.meta, ...(media.meta.duration !== undefined ? { duration: clock(media.meta.duration), durationFlicks: media.meta.duration } : {}) })
+        }
         case 'media_probe': return text(await host.media.probe(await this.path(a.path)))
         case 'media_import': {
           // Probe asynchronously in isolation; refuse to overwrite UI changes made while importing.
@@ -345,14 +370,26 @@ export class AgentTools {
           commit(app, importer.project(), `import ${imported.length} media`)
           return text(imported.map(id => ({ id: ids.show(id, 'm'), name: app.project().media[id].name })))
         }
+        case 'timeline_switch': {
+          const id = ids.resolve(a.timelineId)
+          if (!app.project().timelines[id]) throw new Error(`Unknown timeline ${a.timelineId}; refresh project_get`)
+          app.edit.setActiveTimeline(id)
+          return text({ timelineId: ids.show(id, 'l'), name: app.timeline().name, editor: this.editorState() })
+        }
         case 'timeline_get': {
-          if (a.clipId) return a.format === 'json' ? text(this.clipJson(findClip(app.timeline(), ids.resolve(a.clipId))?.clip ?? (() => { throw new Error(`Unknown clip ${a.clipId}; refresh timeline_get`) })(), true)) : text(this.clipDetail(a.clipId))
-          const filter: Filter = { trackId: a.trackId, mediaId: a.mediaId, query: a.query, start: a.start === undefined ? undefined : await this.time(a.start, 0), end: a.end === undefined ? undefined : await this.time(a.end, 0) }
-          if (a.format === 'json') return text(this.timelineJson(a.detail === 'detailed', filter))
-          const index = await this.index()
+          const tl = a.timelineId ? app.project().timelines[ids.resolve(a.timelineId)] : app.timeline()
+          if (!tl) throw new Error(`Unknown timeline ${a.timelineId}; refresh project_get`)
+          if (a.clipId) return a.format === 'json' ? text(this.clipJson(findClip(tl, ids.resolve(a.clipId))?.clip ?? (() => { throw new Error(`Unknown clip ${a.clipId}; refresh timeline_get`) })(), true, tl)) : text(this.clipDetail(a.clipId, tl))
+          const project = { ...app.project(), activeTimeline: tl.id }
+          const time = async (value: number | string | undefined) => typeof value === 'string'
+            ? resolveAnchor(project, await this.loadAnalyses(), ids, value, c => clipTimeMap(c, tl, app.registries)) : value
+          const filter: Filter = { trackId: a.trackId, mediaId: a.mediaId, query: a.query, start: await time(a.start), end: await time(a.end) }
+          if (filter.trackId && !tl.tracks.some(tr => tr.id === ids.resolve(filter.trackId!))) throw new Error(`Unknown track ${filter.trackId}`)
+          if (a.format === 'json') return text(this.timelineJson(a.detail === 'detailed', filter, tl))
+          const index = buildIndex(project, await this.loadAnalyses(), c => clipTimeMap(c, tl, app.registries))
           const hint = index.words.length ? `transcript: ${index.words.length} words, ${index.events.length} sound events, ${index.shots.length} shot cuts on the timeline; read with transcript_get`
             : index.unanalyzed.length ? `transcript: none; media_analyze ${[...new Set(index.unanalyzed.map(u => ids.show(u.clip.mediaId!, 'm')))].join(', ')} to edit by words, intonation, sound events and shots` : ''
-          const body = this.timeline(a.detail === 'detailed', filter)
+          const body = this.timeline(a.detail === 'detailed', filter, tl)
           return text(hint ? `${body}\n${hint}` : body)
         }
         case 'playhead_get': return text(this.playhead())
@@ -386,10 +423,14 @@ export class AgentTools {
           const fonts = (await this.fonts()).filter(f => !a.fontQuery || f.toLowerCase().includes(a.fontQuery.toLowerCase()))
           const sections: Record<string, () => unknown> = {
             mediaTypes: () => r.mediaTypes.all().map(({ id, name, track, extensions, defaultProperties }) => ({ id, name, track, extensions, defaultProperties })),
-            properties: () => r.properties.all().map(({ id, name, description, params, appliesTo, stackable }) => ({ id, name, description, params, appliesTo: Array.isArray(appliesTo) ? appliesTo : 'predicate/default; validated when adding', stackable })),
+            properties: () => r.properties.all().map(({ id, name, description, params, appliesTo, stackable }) => ({ id, name, description, params: describeParams(params), appliesTo: Array.isArray(appliesTo) ? appliesTo : 'predicate/default; validated when adding', stackable })),
             easings: () => r.easings.all().map(({ id, name, params }) => ({ id, name, params })),
             generators: () => r.generators.all().map(({ id, name, mediaType }) => ({ id, name, mediaType })),
             exporters: () => r.exporters.all().map(({ id, name, extension, options }) => ({ id, name, extension, options })),
+            transitions: () => r.transitions.all().map(({ id, name, kinds, params }) => ({ id, name, kinds, params: describeParams(params) })),
+            markerKinds: () => r.markerKinds.all().map(({ id, name, color, icon }) => ({ id, name, color, icon })),
+            presets: () => r.presets.all().map(({ id, kind, name, group }) => ({ id, kind, name, group })),
+            timelineTools: () => r.timelineTools.all().map(({ id, name, key }) => ({ id, name, key })),
             fonts: () => fonts
           }
           return text(Object.fromEntries(((a.only ?? Object.keys(sections)) as string[]).map(k => [k, sections[k]()])))
