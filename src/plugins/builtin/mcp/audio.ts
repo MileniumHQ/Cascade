@@ -6,8 +6,8 @@ import { clock } from './clock'
 import { LoudnessMeter, formatDb, sparkline, type LoudnessReading } from './loudness'
 import type { SheetAudio } from './sheets'
 
-export { RATE, MAX_AUDIO_SECONDS, decode, clipSource } from '../audio-tools/measure'
-import { MAX_AUDIO_SECONDS, RATE, decode } from '../audio-tools/measure'
+export { RATE, MAX_AUDIO_SECONDS, decode, clipSource } from '@core/audio-source'
+import { MAX_AUDIO_SECONDS, RATE, decode } from '@core/audio-source'
 
 let renders = 0
 /** Render [start, end) of the timeline through the WAV exporter (the mix as exported) and decode it. */

@@ -1,6 +1,6 @@
 /** Decoding and measuring source audio. Used by the editor's audio tools and the agent (MCP) audio tools. */
-import type { CascadeAPI } from '@core/app'
-import { sourceSpan } from '@core/time-remap'
+import type { CascadeAPI } from './app'
+import { sourceSpan } from './time-remap'
 import type { Clip } from '@shared/project'
 import { FLICKS } from '@shared/time'
 
