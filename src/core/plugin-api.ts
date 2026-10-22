@@ -67,6 +67,7 @@ export interface PluginContext {
   readonly generators: Registrar<GeneratorContribution>
   readonly exportPresets: Registrar<ExportPresetContribution>
   readonly presets: Registrar<PresetContribution>
+  readonly timelineTools: Registrar<TimelineToolContribution>
   /** Register any disposable to be cleaned up when the plugin unloads (hot reload!). */
   track<T extends Disposable>(d: T): T
   log(...args: unknown[]): void
@@ -622,3 +623,23 @@ export interface ExportPresetContribution extends Contribution {
 export type { Clip, EasingRef, Id, MediaItem, MediaMeta, Project, PropertyInstance, TransitionInstance, Timeline, Track, Flicks, FrameRate }
 
 export { shaderColor } from '@shared/shader-color'
+/** Framework-neutral timeline pointer tool. Handlers return cleanup for cancellation/unmount. */
+export interface TimelineToolHit { clipId?: Id; trackId: Id; edge?: 'start' | 'end' }
+export interface TimelineToolContext {
+  app: CascadeAPI
+  hitTest(clientX: number, clientY: number): TimelineToolHit | null
+  timeAt(clientX: number): Flicks
+  clientXAt(time: Flicks): number
+  snap(time: Flicks, exclude: Set<Id>, disable: boolean): Flicks
+  selectClip(id: Id, event: PointerEvent): void
+  moveClip(event: PointerEvent, id: Id): Cleanup | void
+  trimClip(event: PointerEvent, id: Id, edge: 'start' | 'end'): Cleanup | void
+  feedback(text: string | null, event?: PointerEvent): void
+}
+export interface TimelineToolContribution extends Contribution {
+  name: string
+  icon: Icon
+  key?: string
+  cursor: string
+  pointerDown(event: PointerEvent, context: TimelineToolContext): Cleanup | void
+}

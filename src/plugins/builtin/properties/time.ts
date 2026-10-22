@@ -17,7 +17,7 @@ export const timePropertiesPlugin = definePlugin({
       keywords: ['time', 'slow motion', 'fast forward', 'ramp', 'retime', 'rate', 'reverse', 'backwards', 'rewind'],
       appliesTo: timeBased,
       params: [
-        { id: 'speed', label: 'Speed', type: 'number', unit: 'x', default: 1, min: 0.05, max: 16, softMin: 0.25, softMax: 4, step: 0.05 },
+        { id: 'speed', label: 'Speed', type: 'number', unit: 'x', default: 1, min: 0, max: 16, softMin: 0.25, softMax: 4, step: 0.05 },
         { id: 'reverse', label: 'Reverse', type: 'toggle', default: false, animatable: false }
       ],
       timeRemap: 'speed',

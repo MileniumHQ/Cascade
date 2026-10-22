@@ -4,8 +4,8 @@ import { easeProgress, type EvalRegistries } from './evaluate'
 import type { PropertyContribution } from './plugin-api'
 import type { Registry } from './registry'
 
-/** Speeds are clamped to this range so the mapping stays invertible. */
-export const MIN_SPEED = 0.01
+/** Zero speed holds a frame; inverse queries outside a hold return infinity. */
+export const MIN_SPEED = 0
 export const MAX_SPEED = 100
 
 /**
@@ -13,7 +13,7 @@ export const MAX_SPEED = 100
  * time-remap property); the source position is its integral.
  */
 export interface TimeMap {
-  /** Speed if it never changes, else null. Always positive; see `reversed`. */
+  /** Speed if it never changes, else null. Nonnegative; see `reversed`. */
   readonly constant: number | null
   /** The source plays backwards: `offset` decreases from 0 (sourceIn is the source time at clip start). */
   readonly reversed?: boolean
@@ -36,7 +36,7 @@ const clampSpeed = (v: number) => (Number.isFinite(v) ? Math.min(MAX_SPEED, Math
 
 export function constantMap(speed: number): TimeMap {
   const s = clampSpeed(speed)
-  return { constant: s, min: s, max: s, speedAt: () => s, offset: (t) => t * s, localAt: (o) => o / s }
+  return { constant: s, min: s, max: s, speedAt: () => s, offset: (t) => t * s, localAt: (o) => s ? o / s : o === 0 ? 0 : Math.sign(o) * Infinity }
 }
 
 /**
@@ -79,29 +79,31 @@ export function curveMap(base: number, kfs: Keyframe[], regs: EvalRegistries): T
     return lo
   }
   const speedAt = (t: Flicks) => (t <= kfs[0].t ? first : t >= kfs[kfs.length - 1].t ? last : speedIn(seg(t), t))
-  const integrated = (t: Flicks) => {
+  const rawOffset = (t: Flicks) => {
     if (t <= kfs[0].t) return first * t
     const n = kfs.length - 1
     if (t >= kfs[n].t) return cum[n] + last * (t - kfs[n].t)
     const i = seg(t)
     return cum[i] + partial(i, t, 16)
   }
-  // Retained keyframes can precede a trimmed clip. Source offset is always relative to local 0.
-  const origin = integrated(0)
-  const offset = (t: Flicks) => integrated(t) - origin
+  // Trims keep keyframes outside the clip (including negative times). Rebase the
+  // primitive at local zero so sourceIn always denotes the actual first source frame.
+  const origin = rawOffset(0)
+  const offset = (t: Flicks) => rawOffset(t) - origin
   const localAt = (o: Flicks) => {
-    o += origin
-    if (o <= cum[0]) return o / first
+    if (o === 0) return 0
+    const target = o + origin
+    if (target <= cum[0]) return first ? target / first : target === cum[0] ? Math.min(0, kfs[0].t) : -Infinity
     const n = kfs.length - 1
-    if (o >= cum[n]) return kfs[n].t + (o - cum[n]) / last
+    if (target > cum[n]) return last ? kfs[n].t + (target - cum[n]) / last : Infinity
     let i = 0
-    while (i < n - 1 && cum[i + 1] <= o) i++
-    // offset is strictly increasing (speed ≥ MIN_SPEED): bisect inside the segment.
+    while (i < n - 1 && cum[i + 1] < target) i++
+    // Generalized inverse: bisect nondecreasing segments, including zero-speed plateaus.
     let lo = kfs[i].t
     let hi = kfs[i + 1].t
     for (let k = 0; k < 40 && hi - lo > 1; k++) {
       const mid = (lo + hi) / 2
-      if (integrated(mid) < o) lo = mid
+      if (offset(mid) < o) lo = mid
       else hi = mid
     }
     return (lo + hi) / 2

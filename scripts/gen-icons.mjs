@@ -25,6 +25,8 @@ const MAP = {
   'arrow-down': 'arrow_downward',
   'arrow-down-wide-narrow': 'arrow_downward',
   'arrow-left-right': 'swap_horiz',
+  'ripple-trim': 'line_end_arrow',
+  'roll-trim': 'width_normal',
   'arrow-right': 'arrow_forward',
   'arrow-up': 'arrow_upward',
   'arrow-up-narrow-wide': 'arrow_upward',

@@ -5,6 +5,7 @@ import { paramsPlugin } from './params'
 import { easingsPlugin } from './easings'
 import { settingsPlugin } from './settings'
 import { commandsPlugin } from './commands'
+import { editingPlugin } from './editing'
 import { videoPlugin } from './media/video'
 import { imagePlugin } from './media/image'
 import { elementPlugin } from './media/element'
@@ -43,6 +44,7 @@ export const builtinPlugins: PluginDefinition[] = [
   easingsPlugin,
   settingsPlugin,
   commandsPlugin,
+  editingPlugin,
   videoPlugin,
   imagePlugin,
   elementPlugin,

@@ -36,6 +36,7 @@ export const audioPlugin = definePlugin({
               audioOut: out,
               update() {},
               async prepare(s) {
+                if (s.remap.max === 0) return
                 const chunk = audio.chunk
                 if (!chunk || !s.media || !audio.getBuffer) return
                 const key = `${chunk.start}`
@@ -47,6 +48,7 @@ export const audioPlugin = definePlugin({
                 const to = Math.min(chunk.start + chunk.duration, (s.activeRange?.end ?? s.clip.start + s.clip.duration) / FLICKS, clipStart + available.end / FLICKS)
                 if (to <= from) return
                 const local = from - clipStart
+                if (s.remap.offset(local * FLICKS) === s.remap.offset((to - clipStart) * FLICKS)) return
                 // Time-stretched by ffmpeg (pitch independent of speed): play as is.
                 const stretched = await audio.getClipBuffer?.(s.clip, local, to - from)
                 if (stretched) {
@@ -71,6 +73,10 @@ export const audioPlugin = definePlugin({
                     for (let t = 0.01; t < to - from; t += 0.01) rate.linearRampToValueAtTime(map.speedAt((local + t) * F), at + t)
                   }
                 }
+                // A zero-rate plateau is silence, rather than a held sample/DC signal.
+                out.gain.setValueAtTime(s.remap.speedAt(local * FLICKS) === 0 ? 0 : 1, from - chunk.start)
+                if (s.remap.min === 0 && s.remap.max > 0) for (let t = 0.01; t < to - from; t += 0.01)
+                  out.gain.setValueAtTime(s.remap.speedAt((local + t) * FLICKS) === 0 ? 0 : 1, from - chunk.start + t)
                 scheduled.connect(out)
                 scheduled.start(from - chunk.start)
               },
@@ -150,7 +156,7 @@ class ReversePlayer {
 
   update(s: ClipFrameState) {
     const map = s.remap
-    if (!s.playing || !s.media || !this.audio.getBuffer) return this.stop()
+    if (!s.playing || !s.media || !this.audio.getBuffer || s.rate === 0) return this.stop()
     const range = s.activeRange ?? { start: s.clip.start, end: s.clip.start + s.clip.duration }
     const hi = Math.min((s.media.meta.duration ?? Infinity) / FLICKS, (s.clip.sourceIn + map.offset(range.start - s.clip.start)) / FLICKS)
     const lo = Math.max(0, (s.clip.sourceIn + map.offset(range.end - s.clip.start)) / FLICKS)

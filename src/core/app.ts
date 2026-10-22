@@ -22,11 +22,13 @@ import type {
   PropertyContribution,
   SettingContribution,
   StatusItemContribution,
-  TransitionContribution
+  TransitionContribution,
+  TimelineToolContribution
 } from './plugin-api'
 import { Editing } from './editing'
 import { MediaStatusService } from './media-status'
 import { MeterService } from './meters'
+import { ClipboardService } from './clipboard'
 
 export interface Registries {
   mediaTypes: Registry<MediaTypeContribution>
@@ -45,6 +47,7 @@ export interface Registries {
   generators: Registry<GeneratorContribution>
   exportPresets: Registry<ExportPresetContribution>
   presets: Registry<PresetContribution>
+  timelineTools: Registry<TimelineToolContribution>
 }
 
 export const createRegistries = (): Registries => ({
@@ -63,7 +66,8 @@ export const createRegistries = (): Registries => ({
   exporters: new Registry('exporters'),
   generators: new Registry('generators'),
   exportPresets: new Registry('exportPresets'),
-  presets: new Registry('presets')
+  presets: new Registry('presets'),
+  timelineTools: new Registry('timelineTools')
 })
 
 // ───────────────────────────── services ─────────────────────────────
@@ -198,6 +202,7 @@ export class TimelineViewService {
   readonly pxPerSecond = new Value(60)
   readonly scrollX = new Value(0)
   readonly snapping = new Value(true)
+  readonly tool = new Value<string>('select')
   /** Width of the visible lane area in px (set by the timeline). */
   readonly viewportWidth = new Value(800)
   timeToPx(t: Flicks) {
@@ -277,6 +282,7 @@ export interface CascadeAPI {
   readonly layout: LayoutService
   readonly settings: SettingsService
   readonly events: EventBus
+  readonly clipboard: ClipboardService
   readonly edit: Editing
   /** Runtime state of file-backed media (offline files). */
   readonly media: MediaStatusService
@@ -302,6 +308,7 @@ export class CascadeApp implements CascadeAPI {
   readonly layout = new LayoutService(() => this.registries.panels.all())
   readonly settings: SettingsService
   readonly events = new EventBus()
+  readonly clipboard: ClipboardService
   readonly edit: Editing
   readonly media: MediaStatusService
   readonly meters = new MeterService()
@@ -327,6 +334,7 @@ export class CascadeApp implements CascadeAPI {
       if (e.source === 'load') this.media.offline.set(new Set())
       void this.media.check()
     })
+    this.clipboard = new ClipboardService(this)
     // keep selection valid after edits/undo
     this.doc.onChange.on(() => {
       const tl = this.timeline()
