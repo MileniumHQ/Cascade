@@ -445,3 +445,9 @@
   color: var(--accent);
   background: var(--accent-soft);
 }
+
+.tl.tool-ripple .tl-clip, .tl.tool-roll .tl-clip, .tl.tool-slip .tl-clip, .tl.tool-slide .tl-clip { cursor: var(--tool-cursor); }
+.tl.tool-ripple .tl-edge, .tl.tool-roll .tl-edge, .tl.tool-slip .tl-edge, .tl.tool-slide .tl-edge { cursor: var(--tool-cursor); }
+.tl-edit-tooltip { position: absolute; z-index: 30; pointer-events: none; padding: 5px 8px; border: 1px solid var(--line-2); border-radius: 5px; font-size: 11px; white-space: nowrap; }
+.tl-row.target-track .tl-badge { color: var(--accent); outline: 1px solid #ffffff55; }
+.tl:not(.tool-select) .tl-clip, .tl:not(.tool-select) .tl-edge, .tl:not(.tool-select) .tl-lane { cursor: var(--tool-cursor); }

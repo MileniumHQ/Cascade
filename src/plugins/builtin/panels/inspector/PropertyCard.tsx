@@ -53,6 +53,9 @@ export function PropertyCard(props: CardProps) {
 
   const menu = (anchor: Anchor) =>
     openMenu(anchor, [
+      { label: 'Copy property', icon: 'copy', run: () => app.run('edit.copyProperty', clipId, id) },
+      { label: 'Paste property', icon: 'clipboard-paste', run: () => app.run('edit.pasteProperty', clipId) },
+      { separator: true },
       { label: 'Reset to default', icon: 'rotate-ccw', run: () => app.edit.resetProperty(clipId, id) },
       { separator: true },
       { label: 'Move up', icon: 'arrow-up', disabled: props.index() === 0, run: () => app.edit.moveProperty(clipId, id, props.index() - 1) },

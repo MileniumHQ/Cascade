@@ -1,26 +1,27 @@
+import { For } from 'solid-js'
+import { registerTimelineTools } from './tools'
 import { definePlugin, type PanelContext } from '@core/plugin-api'
 import { Icon } from '@ui/icon'
-import { useValue } from '@ui/reactive'
+import { useRegistry, useValue } from '@ui/reactive'
 import { solidMount } from '../../solid'
-import { linkedSelection, Timeline, timelineTool } from './Timeline'
+import { linkedSelection, Timeline } from './Timeline'
 import './timeline.css'
 
 function Toolbar(props: { ctx: PanelContext }) {
   const app = props.ctx.app
-  const tool = useValue(timelineTool)
+  const tool = useValue(app.view.tool)
+  const tools = useRegistry(app.registries.timelineTools)
+  const settings = useValue(app.settings.values)
+  const ripple = () => (settings(), app.settings.get<boolean>('timeline.rippleMode'))
   const snapping = useValue(app.view.snapping)
   const linked = useValue(linkedSelection)
   return (
     <div class="tl-tools">
       <div class="tl-toolgroup">
-        <button class={tool() === 'select' ? 'on' : ''} data-tip="Select (A)" onClick={() => timelineTool.set('select')}>
-          <Icon name="mouse-pointer-2" size={14} />
-        </button>
-        <button class={tool() === 'blade' ? 'on' : ''} data-tip="Blade (B)" onClick={() => timelineTool.set('blade')}>
-          <Icon name="scissors" size={14} />
-        </button>
+        <For each={tools()}>{(t) => <button class={tool() === t.id ? 'on' : ''} data-tip={`${t.name}${t.key ? ` (${t.key})` : ''}`} onClick={() => app.run(`timeline.tool.${t.id}`)}><Icon name={t.icon} size={14} /></button>}</For>
       </div>
       <div class="tl-toolgroup">
+        <button class={ripple() ? 'on' : ''} data-tip="Ripple mode (Shift+R)" onClick={() => app.run('timeline.toggleRippleMode')}><Icon name="ripple-trim" size={14} /></button>
         <button class={snapping() ? 'on' : ''} data-tip="Snapping (N)" onClick={() => app.run('timeline.snapping')}>
           <Icon name="magnet" size={14} />
         </button>
@@ -57,11 +58,6 @@ export const timelinePlugin = definePlugin({
       mount: solidMount(Timeline),
       actions: solidMount(Toolbar)
     })
-    ctx.commands.register({ id: 'timeline.tool.select', title: 'Select tool', category: 'Timeline', run: () => timelineTool.set('select') })
-    ctx.commands.register({ id: 'timeline.tool.blade', title: 'Blade tool', category: 'Timeline', run: () => timelineTool.set('blade') })
-    ctx.keybindings.register({ id: 'timeline.tool.select:A', command: 'timeline.tool.select', key: 'A' })
-    ctx.keybindings.register({ id: 'timeline.tool.blade:B', command: 'timeline.tool.blade', key: 'B' })
-    ctx.keybindings.register({ id: 'timeline.tool.select:V', command: 'timeline.tool.select', key: 'V' })
-    ctx.keybindings.register({ id: 'timeline.tool.blade:C', command: 'timeline.tool.blade', key: 'C' })
+    registerTimelineTools(ctx)
   }
 })

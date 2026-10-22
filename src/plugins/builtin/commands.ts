@@ -68,7 +68,7 @@ export const commandsPlugin = definePlugin({
 
       // timeline editing
       { id: 'timeline.split', title: 'Split at playhead', icon: 'scissors', category: 'Timeline', run: (a) => void a.edit.splitAt(a.playback.time.get()) },
-      { id: 'timeline.delete', title: 'Delete', icon: 'trash-2', category: 'Timeline', run: (a) => a.edit.deleteClips(sel(a), false), enabled: (a) => sel(a).length > 0 },
+      { id: 'timeline.delete', title: 'Delete', icon: 'trash-2', category: 'Timeline', run: (a) => a.edit.deleteClips(sel(a)), enabled: (a) => sel(a).length > 0 },
       { id: 'timeline.rippleDelete', title: 'Ripple delete', icon: 'trash', category: 'Timeline', run: (a) => a.edit.deleteClips(sel(a), true), enabled: (a) => sel(a).length > 0 },
       { id: 'timeline.duplicate', title: 'Duplicate', icon: 'copy-plus', category: 'Timeline', run: (a) => a.edit.duplicateClips(sel(a)), enabled: (a) => sel(a).length > 0 },
       {

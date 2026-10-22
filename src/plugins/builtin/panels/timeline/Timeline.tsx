@@ -1,26 +1,24 @@
 import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from 'solid-js'
 import type { CascadeAPI } from '@core/app'
-import type { ClipBodyContext, PanelContext } from '@core/plugin-api'
+import type { ClipBodyContext, PanelContext, TimelineToolContext } from '@core/plugin-api'
 import { Emitter } from '@core/events'
-import { shallowArrayEqual, Value } from '@core/value'
+import { shallowArrayEqual } from '@core/value'
 import { clipKeyframeTimes } from '@core/evaluate'
 import { clipsInRange, expandLinked, snapPoints, type MoveRequest } from '@core/timeline-ops'
 import { clipEnd, findClip, type Clip, type Id, type Track } from '@shared/project'
 import { FLICKS, formatTimecode, snapToFrame, type Flicks } from '@shared/time'
 import { Icon } from '@ui/icon'
 import { openContextMenu, type MenuItem } from '@ui/kit'
-import { useProject, useValue } from '@ui/reactive'
+import { useProject, useRegistry, useValue } from '@ui/reactive'
 import { drawRuler } from './ruler'
+import { linkedSelection } from './state'
+export { linkedSelection } from './state'
 
 export const HEADER_W = 184
 const RULER_H = 30
 const SNAP_PX = 8
 const EDGE_PX = 6
 const DEFAULT_H = { visual: 64, audio: 52 }
-
-/** Panel-wide tool state (shared with the tab-strip toolbar). */
-export const timelineTool = new Value<'select' | 'blade'>('select')
-export const linkedSelection = new Value(true)
 
 interface Row {
   track: Track
@@ -44,7 +42,13 @@ export function Timeline(props: { ctx: PanelContext }) {
   const pps = useValue(app.view.pxPerSecond)
   const scrollX = useValue(app.view.scrollX)
   const selected = useValue(app.selection.clips)
-  const tool = useValue(timelineTool)
+  const targetTrack = useValue(app.selection.track)
+  const tool = useValue(app.view.tool)
+  const tools = useRegistry(app.registries.timelineTools)
+  const activeTool = () => tools().find((t) => t.id === tool())
+  const [toolTip, setToolTip] = createSignal<{ text: string; x: number; y: number } | null>(null)
+  let toolCleanup: (() => void) | undefined
+  onCleanup(() => toolCleanup?.())
   const snapping = useValue(app.view.snapping)
   const [width, setWidth] = createSignal(800)
   const [drag, setDrag] = createSignal<DragState | null>(null)
@@ -194,25 +198,26 @@ export function Timeline(props: { ctx: PanelContext }) {
   const onLaneDown = (e: PointerEvent) => {
     if (e.button === 1) return panStart(e)
     if (e.button !== 0) return
-    const clipEl = (e.target as HTMLElement).closest<HTMLElement>('.tl-clip')
     const row = rowAt(e.clientY)
-    if (clipEl) {
-      const id = clipEl.dataset.id!
-      const f = findClip(tl(), id)
-      if (!f || f.track.locked) return
-      if (tool() === 'blade') {
-        const t = snapTo(timeAt(e.clientX), new Set(), e.altKey).t
-        app.edit.splitAt(t, [id])
-        return
-      }
-      const edge = (e.target as HTMLElement).dataset.edge as 'start' | 'end' | undefined
-      selectClip(id, e)
-      if (edge) return trimStart(e, id, edge)
-      return moveStart(e, id, f.track)
+    if (row) app.selection.track.set(row.track.id)
+    const hitTest: TimelineToolContext['hitTest'] = (clientX, clientY) => {
+      const r = rowAt(clientY)
+      if (!r) return null
+      const element = document.elementFromPoint(clientX, clientY) as HTMLElement | null
+      const clipEl = element?.closest<HTMLElement>('.tl-clip')
+      return { trackId: r.track.id, clipId: clipEl?.dataset.id, edge: element?.dataset.edge as 'start' | 'end' | undefined }
     }
-    if (tool() === 'blade' && row) {
-      // blade on empty space: split everything unlocked under the pointer
-      app.edit.splitAt(snapTo(timeAt(e.clientX), new Set(), e.altKey).t)
+    const hit = hitTest(e.clientX, e.clientY)
+    if (hit?.clipId && findClip(tl(), hit.clipId)?.track.locked) return
+    if (hit?.clipId || tool() !== 'select') {
+      toolCleanup?.()
+      toolCleanup = activeTool()?.pointerDown(e, {
+        app, hitTest, timeAt, clientXAt: (t) => laneRect().left + HEADER_W + x(t),
+        snap: (t, exclude, disable) => snapTo(t, exclude, disable).t,
+        selectClip, moveClip: (ev, id) => { const f = findClip(tl(), id); if (f) return moveStart(ev, id, f.track) },
+        trimClip: trimStart,
+        feedback: (text, ev) => setToolTip(text ? { text, x: (ev?.clientX ?? e.clientX) - root.getBoundingClientRect().left + 12, y: (ev?.clientY ?? e.clientY) - root.getBoundingClientRect().top + 18 } : null)
+      }) || undefined
       return
     }
     marqueeStart(e)
@@ -281,23 +286,24 @@ export function Timeline(props: { ctx: PanelContext }) {
       setDrag({ ids, dt, shift, kind: grabbedTrack.kind, snapAt })
       setSnapLine(snapAt)
     }
-    const up = () => {
+    const cleanup = () => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', cleanup)
+      batch(() => { setDrag(null); setSnapLine(null) })
+    }
+    const up = () => {
       const d = drag()
-      batch(() => {
-        setDrag(null)
-        setSnapLine(null)
-      })
+      cleanup()
       if (!started || !d || (d.dt === 0 && d.shift === 0)) return
       const moves: MoveRequest[] = []
-      for (const c of clips) {
-        moves.push({ clipId: c.clip.id, start: Math.max(0, c.clip.start + d.dt), trackId: shiftedTrack(c.track, d) })
-      }
+      for (const c of clips) moves.push({ clipId: c.clip.id, start: Math.max(0, c.clip.start + d.dt), trackId: shiftedTrack(c.track, d) })
       app.edit.moveClips(moves)
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', cleanup)
+    return cleanup
   }
 
   /** Target track for a clip under a drag's vertical shift (only clips of the grabbed kind move between tracks). */
@@ -323,18 +329,32 @@ export function Timeline(props: { ctx: PanelContext }) {
       setSnapLine(s.at)
       app.edit.trimClip(id, edge, s.t, { gesture: phase, linked })
       phase = 'update'
+      const current = findClip(tl(), id)?.clip
+      const dt = current ? (edge === 'start' ? current.start : clipEnd(current)) - base : 0
+      setToolTip({ text: `${dt < 0 ? '−' : '+'}${formatTimecode(Math.abs(dt), app.fps())}`, x: ev.clientX - root.getBoundingClientRect().left + 12, y: ev.clientY - root.getBoundingClientRect().top + 18 })
     }
-    const up = (ev: PointerEvent) => {
+    let cleaned = false
+    const cleanup = () => {
+      if (cleaned) return
+      cleaned = true
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', cleanup)
       setSnapLine(null)
+      setToolTip(null)
+      if (phase === 'update') app.doc.endGesture()
+    }
+    const up = (ev: PointerEvent) => {
       if (phase === 'update') {
         const raw = base + timeAt(ev.clientX) - startT
         app.edit.trimClip(id, edge, snapTo(raw, new Set([id]), ev.altKey).t, { gesture: 'end', linked })
       }
+      cleanup()
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', cleanup)
+    return cleanup
   }
 
   function marqueeStart(e: PointerEvent) {
@@ -541,7 +561,8 @@ export function Timeline(props: { ctx: PanelContext }) {
   })
 
   return (
-    <div class={`tl tool-${tool()}`} ref={root} onWheel={onWheel}>
+    <div class={`tl tool-${tool()}`} style={{ '--tool-cursor': activeTool()?.cursor ?? 'default' }} ref={root} onWheel={onWheel}>
+      <Show when={toolTip()}>{(tip) => <div class="tl-edit-tooltip glass tnum" style={{ left: `${tip().x}px`, top: `${tip().y}px` }}>{tip().text}</div>}</Show>
       <div class="tl-top">
         <div class="tl-corner tnum">
           <TimecodeReadout app={app} />
@@ -569,6 +590,13 @@ export function Timeline(props: { ctx: PanelContext }) {
           onContextMenu={(e) => {
             const c = (e.target as HTMLElement).closest<HTMLElement>('.tl-clip')
             if (c) clipMenu(e, c.dataset.id!)
+            else {
+              const row = rowAt(e.clientY)
+              if (!row) return
+              const target = { trackId: row.track.id, t: snapToFrame(Math.max(0, timeAt(e.clientX)), app.fps()) }
+              app.selection.track.set(row.track.id)
+              openContextMenu(e, app.registries.menus.all().filter((m) => m.location === 'timeline/context' && (!m.when || m.when(app, target))).map((m) => ({ label: m.label, icon: m.icon, run: () => app.run(m.command, target) })))
+            }
           }}
         >
           {/* Rows and clips are keyed by id (documents are immutable, so objects change on every edit):
@@ -581,7 +609,7 @@ export function Timeline(props: { ctx: PanelContext }) {
               const clipById = createMemo(() => new Map(clips().map((c) => [c.id, c])))
               return (
                 <Show when={row()}>
-                  <div class={`tl-row kind-${row().track.kind} ${row().track.locked ? 'locked' : ''} ${row().track.hidden || row().track.muted ? 'off' : ''}`} style={{ top: `${row().y}px`, height: `${row().h}px` }}>
+                  <div class={`tl-row ${targetTrack() === row().track.id ? 'target-track' : ''} kind-${row().track.kind} ${row().track.locked ? 'locked' : ''} ${row().track.hidden || row().track.muted ? 'off' : ''}`} style={{ top: `${row().y}px`, height: `${row().h}px` }}>
                     <TrackHeader app={app} row={row()} onMenu={(e) => trackMenu(e, row().track)} onResize={(e) => resizeStart(e, row())} />
                     <div class="tl-lane">
                       <For each={clipIds()}>
@@ -664,7 +692,7 @@ function TrackHeader(props: { app: CascadeAPI; row: Row; onMenu: (e: MouseEvent)
   const [editing, setEditing] = createSignal(false)
   const t = () => props.row.track
   return (
-    <div class="tl-head" onContextMenu={props.onMenu} onPointerDown={(e) => e.stopPropagation()}>
+    <div class="tl-head" onContextMenu={props.onMenu} onPointerDown={(e) => { e.stopPropagation(); app.selection.track.set(t().id) }}>
       <span class={`tl-badge kind-${t().kind}`}>{t().name}</span>
       <Show
         when={editing()}
