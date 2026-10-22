@@ -162,7 +162,7 @@ export const previewPlugin = definePlugin({
   id: 'cascade.panel.preview',
   name: 'Preview',
   activate(ctx) {
-    ctx.panels.register({ id: 'preview', title: 'Preview', icon: 'monitor-play', region: 'top', order: 0, mount: solidMount(Preview) })
+    ctx.panels.register({ id: 'preview', title: 'Preview', icon: 'monitor-play', region: 'top', order: 0, group: 'viewer', mount: solidMount(Preview) })
     ctx.commands.register({ id: 'preview.fullscreen', title: 'Full Screen Preview', category: 'View', icon: 'maximize', run: toggleFullscreen })
     ctx.keybindings.register({ id: 'preview.fullscreen:F', command: 'preview.fullscreen', key: 'F' })
     ctx.menus.register({ id: 'menu:preview.fullscreen', location: 'app/view', group: 'preview', command: 'preview.fullscreen', label: 'Full Screen Preview', order: 10000 })
