@@ -64,6 +64,8 @@ export interface PluginContext {
   readonly settings: Registrar<SettingContribution>
   readonly exporters: Registrar<ExporterContribution>
   readonly generators: Registrar<GeneratorContribution>
+  readonly exportPresets: Registrar<ExportPresetContribution>
+  readonly presets: Registrar<PresetContribution>
   /** Register any disposable to be cleaned up when the plugin unloads (hot reload!). */
   track<T extends Disposable>(d: T): T
   log(...args: unknown[]): void
@@ -359,14 +361,37 @@ export interface GeneratorContribution extends Contribution {
   description: string
   icon: Icon
   mediaType: string
+  /** Groups generators in the Sources "Create" list. Ungrouped ones come first. */
+  category?: string
   /** `project` is the current document, e.g. to size things for the frame's aspect ratio. */
   create(project: Project): {
     name: string
     data?: Record<string, unknown>
     clipData?: Record<string, unknown>
     /** Properties (with initial values) added to clips made from this source, after the media type defaults. */
-    properties?: { type: string; values?: Record<string, unknown> }[]
+    properties?: GeneratedProperty[]
   }
+}
+
+/** A property a generated clip starts with. */
+export interface GeneratedProperty {
+  type: string
+  values?: Record<string, unknown>
+  /** Animation on the clip: keyframes per param id. `t` is clip-local flicks from the clip start (or its end with `fromEnd`). */
+  keyframes?: Record<string, { t: Flicks; value: unknown; easing?: string; fromEnd?: boolean }[]>
+}
+
+/**
+ * A named, serializable configuration of any plugin's feature, picked by `kind` (e.g. caption styles).
+ * The plugin that defines a kind decides what `value` means; other plugins add entries for it.
+ */
+export interface PresetContribution<T = unknown> extends Contribution {
+  kind: string
+  name: string
+  description?: string
+  icon?: Icon
+  group?: string
+  value: T
 }
 
 // ───────────────────────────── workbench ─────────────────────────────
@@ -492,6 +517,23 @@ export interface ExporterContribution extends Contribution {
   ffmpeg(options: Record<string, unknown>, info: {
     width: number; height: number; fps: FrameRate; hasAudio: boolean; hwEncoders: string[]
   }): FFmpegExportPlan
+}
+
+/** A ready-made set of Export panel settings. Hidden when its exporter isn't registered. */
+export interface ExportPresetContribution extends Contribution {
+  name: string
+  description?: string
+  icon?: Icon
+  /** Exporter id. */
+  exporter: string
+  /** Exporter option values (missing ones keep their defaults). */
+  options?: Record<string, unknown>
+  /** Output size; absent = the project's. */
+  size?: { width: number; height: number }
+  /** Output frame rate; absent = the project's. */
+  fps?: FrameRate
+  /** Which part of the timeline; absent = leave as is. */
+  range?: 'all' | 'inout'
 }
 
 // ───────────────────────────── helpers re-exported for plugin authors ─────────────────────────────
