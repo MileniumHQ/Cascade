@@ -43,14 +43,18 @@ export function audioPlan(app: CascadeAPI, range: { start: Flicks; end: Flicks }
       const to = Math.min(range.end, clipEnd(clip)) - clip.start
       if (to <= from) continue
       const map = app.edit.timeMap(clip)
+      if (map.max === 0) continue
       const { semitones, matchSpeed } = pitchOf(clip)
       const o0 = map.offset(from)
       // A reversed clip covers the same source range, read from its end down.
       const a = (clip.sourceIn + o0) / FLICKS, b = (clip.sourceIn + map.offset(to)) / FLICKS
       const sourceStart = Math.max(0, Math.min(a, b))
       const sourceEnd = Math.max(sourceStart, a, b)
+      if (sourceEnd <= sourceStart) continue
       const base = { mediaId: media.id, sourceStart, sourceEnd }
-      if (!map.reversed && semitones === 0 && (matchSpeed || map.constant === 1)) {
+      // Rubberband cannot represent zero tempo; curves containing holds use the worker's
+      // time-map resampler, which gates zero-speed plateaus to silence.
+      if (map.min === 0 || !map.reversed && semitones === 0 && (matchSpeed || map.constant === 1)) {
         plan[clip.id] = { mode: 'source', ...base }
         continue
       }

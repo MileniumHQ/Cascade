@@ -24,6 +24,7 @@ import { defaultParams, evaluateParam, keyframeAt, KF_EPSILON } from './evaluate
 import type { ImportCandidate, MediaTypeContribution, ParamDef, PropertyContribution } from './plugin-api'
 import * as ops from './timeline-ops'
 import { clipTimeMap, constantMap, type TimeMap } from './time-remap'
+import { deleteWithRipple, linkedToolEdit, sourceLimits, type TrimTool } from './advanced-editing'
 
 type DProject = Draft<Project>
 
@@ -254,20 +255,28 @@ export class Editing {
   }
 
   trimClip(clipId: Id, edge: 'start' | 'end', t: Flicks, opts?: GestureOpts & { linked?: boolean }) {
+    if (this.app.settings.get<boolean>('timeline.rippleMode')) return this.rippleTrim(clipId, edge, t, opts)
     const key = `trim:${clipId}:${edge}`
     this.doc.transact(
       'Trim clip',
       (d) => {
         const tl = this.tl(d)
         const ids = opts?.linked === false ? new Set([clipId]) : ops.expandLinked(tl as Timeline, [clipId])
-        for (const id of ids) {
-          const f = this.findDraftClip(d, id)
-          if (!f) continue
-          const media = f.clip.mediaId ? d.media[f.clip.mediaId] : undefined
-          const mt = this.app.registries.mediaTypes.get(f.clip.type)
-          const limits = mt?.timeBased && media?.meta.duration ? { sourceDuration: media.meta.duration } : {}
-          ops.trimClip(f.track as Track, id, edge, t, limits)
+        const group = [...ids].map((id) => this.findDraftClip(d, id)).filter((f): f is NonNullable<typeof f> => !!f)
+        if (group.some((f) => f.track.locked)) return
+        const self = group.find((f) => f.clip.id === clipId)
+        if (!self) return
+        const base = edge === 'start' ? self.clip.start : clipEnd(self.clip)
+        let delta = t - base
+        for (const f of group) {
+          const track = JSON.parse(JSON.stringify(f.track)) as Track
+          const c = track.clips.find((c) => c.id === f.clip.id)!
+          const old = edge === 'start' ? c.start : clipEnd(c)
+          ops.trimClip(track, c.id, edge, old + t - base, sourceLimits(this.app, c))
+          const allowed = (edge === 'start' ? c.start : clipEnd(c)) - old
+          delta = t < base ? Math.max(delta, allowed) : Math.min(delta, allowed)
         }
+        for (const f of group) ops.trimClip(f.track as Track, f.clip.id, edge, (edge === 'start' ? f.clip.start : clipEnd(f.clip)) + delta, sourceLimits(this.app, f.clip as Clip))
       },
       this.gesture(key, opts)
     )
@@ -305,11 +314,16 @@ export class Editing {
     return newIds
   }
 
-  deleteClips(ids: Id[], ripple = false) {
+  deleteClips(ids: Id[], ripple = this.app.settings.get<boolean>('timeline.rippleMode') ?? false) {
     if (!ids.length) return
     const tl0 = this.app.timeline()
     const all = ops.expandLinked(tl0, ids)
-    this.doc.transact(ripple ? 'Ripple delete' : 'Delete', (d) => ops.deleteClips(this.tl(d) as Timeline, all, ripple))
+    if ([...all].some((id) => findClip(tl0, id)?.track.locked)) return
+    this.doc.transact(ripple ? 'Ripple delete' : 'Delete', (d) => {
+      if (ripple) {
+        if (!deleteWithRipple(this.tl(d) as Timeline, all)) this.app.notify('warning', 'Ripple delete blocked by linked clips or locked tracks')
+      } else ops.deleteClips(this.tl(d) as Timeline, all)
+    })
   }
 
   duplicateClips(ids: Id[]) {
@@ -455,6 +469,110 @@ export class Editing {
         if (f) f.clip.linkId = link
       }
     })
+  }
+
+  /** Ripple an edge, keeping linked members and downstream partner tracks synchronized. */
+  rippleTrim(clipId: Id, edge: 'start' | 'end', t: Flicks, opts?: GestureOpts & { linked?: boolean }) {
+    this.doc.transact('Ripple trim', (d) => {
+      ops.rippleTrim(this.tl(d) as Timeline, clipId, edge, t, { linked: opts?.linked, limits: (c) => sourceLimits(this.app, c) })
+    }, this.gesture(`ripple:${clipId}:${edge}`, opts))
+    this.endGesture(opts)
+  }
+
+  private trimTool(tool: TrimTool, clipId: Id, delta: Flicks, opts?: GestureOpts & { linked?: boolean; edge?: 'start' | 'end' }) {
+    this.doc.transact(`${tool[0].toUpperCase()}${tool.slice(1)} clip`, (d) => {
+      linkedToolEdit(this.app, this.tl(d) as Timeline, tool, clipId, delta, opts?.edge, opts?.linked)
+    }, this.gesture(`${tool}:${clipId}`, opts))
+    this.endGesture(opts)
+  }
+  /** Move the adjacent cut by delta flicks. */
+  rollEdit(clipId: Id, edge: 'start' | 'end', delta: Flicks, opts?: GestureOpts & { linked?: boolean }) {
+    this.trimTool('roll', clipId, delta, { ...opts, edge })
+  }
+  slipClip(clipId: Id, delta: Flicks, opts?: GestureOpts & { linked?: boolean }) { this.trimTool('slip', clipId, delta, opts) }
+  slideClip(clipId: Id, delta: Flicks, opts?: GestureOpts & { linked?: boolean }) { this.trimTool('slide', clipId, delta, opts) }
+
+  closeGap(trackId: Id, t = this.app.playback.time.get()) {
+    this.doc.transact('Close gap', (d) => {
+      if (!ops.closeLinkedGap(this.tl(d) as Timeline, trackId, t)) this.app.notify('info', 'No gap can be closed here without changing linked or locked clips')
+    })
+  }
+
+  closeAllGaps(trackIds?: Id[]) {
+    const selectedTracks = new Set(this.app.selection.clips.get().map((id) => findClip(this.app.timeline(), id)?.track.id).filter(Boolean))
+    const ids = trackIds ? new Set(trackIds) : selectedTracks.size ? selectedTracks : new Set(this.app.timeline().tracks.filter((tr) => !tr.locked).map((tr) => tr.id))
+    let skipped = false
+    this.doc.transact('Close all gaps', (d) => {
+      const tl = this.tl(d) as Timeline
+      for (const tr of tl.tracks.filter((tr) => ids.has(tr.id) && !tr.locked)) {
+        // Each successful closure changes positions; inspect the current gap before each clip.
+        for (let i = 0; i < tr.clips.length; i++) {
+          const start = i ? clipEnd(tr.clips[i - 1]) : 0
+          if (tr.clips[i].start > start && !ops.closeLinkedGap(tl, tr.id, start)) skipped = true
+        }
+      }
+    })
+    if (skipped) this.app.notify('info', 'Some gaps were kept to preserve linked clips or locked tracks')
+  }
+
+  /** Copy generic property instances in one undo step; unknown types remain untouched. */
+  pasteProperties(ids: Id[], properties: PropertyInstance[], opts: { includeKeyframes?: boolean } = {}) {
+    this.doc.transact('Paste attributes', (d) => {
+      for (const id of ids) {
+        const f = this.findDraftClip(d, id)
+        if (!f || f.track.locked) continue
+        for (const source of properties) {
+          const contrib = this.app.registries.properties.get(source.type)
+          if (!contrib || !this.propertyApplies(contrib, f.clip as Clip)) continue
+          const p = JSON.parse(JSON.stringify(source)) as PropertyInstance
+          p.id = uid('pi_')
+          for (const pv of Object.values(p.params)) {
+            if (opts.includeKeyframes === false) delete pv.keyframes
+            else for (const k of pv.keyframes ?? []) k.id = uid('kf_')
+          }
+          if (!contrib.stackable) f.clip.properties = f.clip.properties.filter((old) => old.type !== p.type)
+          f.clip.properties.push(p)
+        }
+      }
+    })
+  }
+
+  /** Insert a zero-speed segment. Audio-kind partners receive an empty interval (silence). */
+  freezeFrame(clipId: Id, t = this.app.playback.time.get(), duration = this.seconds(this.app.settings.get<number>('timeline.freezeDuration') ?? 2)): Id | null {
+    const f = findClip(this.app.timeline(), clipId)
+    const existingRemap = f?.clip.properties.find((p) => p.enabled && this.app.registries.properties.get(p.type)?.timeRemap)
+    const type = existingRemap?.type ?? this.app.registries.properties.all().find((p) => p.timeRemap && f && this.propertyApplies(p, f.clip))?.id
+    if (!f || f.track.kind !== 'visual' || f.track.locked || !type || !Number.isSafeInteger(t) || t < f.clip.start || t >= clipEnd(f.clip) || !Number.isSafeInteger(duration) || duration < ops.MIN_CLIP) return null
+    const contrib = this.app.registries.properties.get(type)!
+    if (!this.propertyApplies(contrib, f.clip)) return null
+    const hold = ops.cloneClip(f.clip)
+    const local = t - f.clip.start
+    hold.start = t
+    hold.duration = duration
+    hold.sourceIn = f.clip.sourceIn + Math.round(this.timeMap(f.clip).offset(local))
+    hold.linkId = undefined
+    delete hold.speed
+    // Freeze all property animation at the sampled frame, including plugin-defined params.
+    for (const p of hold.properties) {
+      const definition = this.app.registries.properties.get(p.type)
+      if (definition) for (const def of definition.params) p.params[def.id] = { value: evaluateParam(this.app.registries, def, p.params[def.id], local) }
+    }
+    let remap = hold.properties.find((p) => p.type === type)
+    if (!remap) hold.properties.push(remap = this.newPropertyInstance(type)!)
+    remap.enabled = true
+    remap.params[contrib.timeRemap!] = { value: 0 }
+    const ids = ops.expandLinked(this.app.timeline(), [clipId])
+    const tracks = [...ids].map((id) => findClip(this.app.timeline(), id)!.track.id)
+    let inserted = false
+    this.doc.transact('Freeze frame', (d) => {
+      const tl = this.tl(d) as Timeline
+      if (!ops.insertTime(tl, tracks, t, duration)) return
+      ops.placeClip(tl.tracks.find((tr) => tr.id === f.track.id)!, hold)
+      inserted = true
+    })
+    if (!inserted) { this.app.notify('warning', 'Frame hold blocked by a locked track or a nearby clip edge'); return null }
+    this.app.selection.setClips([hold.id])
+    return hold.id
   }
 
   // ───────────────────────── tracks ─────────────────────────

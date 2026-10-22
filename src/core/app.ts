@@ -19,9 +19,11 @@ import type {
   PluginEnv,
   PropertyContribution,
   SettingContribution,
-  StatusItemContribution
+  StatusItemContribution,
+  TimelineToolContribution
 } from './plugin-api'
 import { Editing } from './editing'
+import { ClipboardService } from './clipboard'
 
 export interface Registries {
   mediaTypes: Registry<MediaTypeContribution>
@@ -37,6 +39,7 @@ export interface Registries {
   settings: Registry<SettingContribution>
   exporters: Registry<ExporterContribution>
   generators: Registry<GeneratorContribution>
+  timelineTools: Registry<TimelineToolContribution>
 }
 
 export const createRegistries = (): Registries => ({
@@ -52,7 +55,8 @@ export const createRegistries = (): Registries => ({
   statusItems: new Registry('statusItems'),
   settings: new Registry('settings'),
   exporters: new Registry('exporters'),
-  generators: new Registry('generators')
+  generators: new Registry('generators'),
+  timelineTools: new Registry('timelineTools')
 })
 
 // ───────────────────────────── services ─────────────────────────────
@@ -173,6 +177,7 @@ export class TimelineViewService {
   readonly pxPerSecond = new Value(60)
   readonly scrollX = new Value(0)
   readonly snapping = new Value(true)
+  readonly tool = new Value<string>('select')
   /** Width of the visible lane area in px (set by the timeline). */
   readonly viewportWidth = new Value(800)
   timeToPx(t: Flicks) {
@@ -247,6 +252,7 @@ export interface CascadeAPI {
   readonly layout: LayoutService
   readonly settings: SettingsService
   readonly events: EventBus
+  readonly clipboard: ClipboardService
   readonly edit: Editing
   readonly host: HostBridge | null
   /** Arbitrary named services contributed by plugins (e.g. "preview", "media"). */
@@ -268,6 +274,7 @@ export class CascadeApp implements CascadeAPI {
   readonly layout = new LayoutService()
   readonly settings: SettingsService
   readonly events = new EventBus()
+  readonly clipboard: ClipboardService
   readonly edit: Editing
   readonly services = new Map<string, unknown>()
   readonly onNotify = new Emitter<Notification>()
@@ -282,6 +289,7 @@ export class CascadeApp implements CascadeAPI {
     this.playback = new PlaybackService(this)
     this.settings = new SettingsService(this)
     this.edit = new Editing(this)
+    this.clipboard = new ClipboardService(this)
     // keep selection valid after edits/undo
     this.doc.onChange.on(() => {
       const tl = this.timeline()
