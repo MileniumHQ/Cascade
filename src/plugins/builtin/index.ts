@@ -26,6 +26,7 @@ import { captionsPlugin } from './captions'
 import { safetyPlugin } from './safety'
 import { mixerPlugin } from './panels/mixer'
 import { audioToolsPlugin } from './audio-tools'
+import { colorPlugin } from './color'
 
 /**
  * Everything Cascade can do comes from these plugins. They load first (built-in priority)
@@ -43,6 +44,7 @@ export const builtinPlugins: PluginDefinition[] = [
   audioPlugin,
   visualPropertiesPlugin,
   effectsPlugin,
+  colorPlugin,
   textPropertiesPlugin,
   audioPropertiesPlugin,
   timePropertiesPlugin,
@@ -62,4 +64,4 @@ export const builtinPlugins: PluginDefinition[] = [
 ]
 
 /** Plugins that are safe to load in headless export workers (no UI). */
-export const renderPlugins: PluginDefinition[] = [exportersPlugin, paramsPlugin, easingsPlugin, videoPlugin, imagePlugin, elementPlugin, audioPlugin, visualPropertiesPlugin, effectsPlugin, textPropertiesPlugin, audioPropertiesPlugin, timePropertiesPlugin]
+export const renderPlugins: PluginDefinition[] = [exportersPlugin, paramsPlugin, easingsPlugin, videoPlugin, imagePlugin, elementPlugin, audioPlugin, visualPropertiesPlugin, effectsPlugin, colorPlugin, textPropertiesPlugin, audioPropertiesPlugin, timePropertiesPlugin]

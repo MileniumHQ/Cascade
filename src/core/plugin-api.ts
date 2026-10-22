@@ -168,6 +168,39 @@ export interface AudioPropertyNode {
   dispose?(): void
 }
 
+/** An extra RGB/RGBA texture. Data is tightly packed, x varying fastest.
+ * Float data is sampled without clamping; 3D float textures use nearest filtering and plugins
+ * can interpolate explicitly. Keys identify immutable data within a stage's lifetime. */
+export interface ShaderTexture {
+  key: string
+  width: number
+  height: number
+  depth?: number
+  data: Uint8Array | Float32Array
+}
+
+export type ShaderUniform = number | boolean | number[]
+export interface ShaderContext {
+  /** Output pixel size and clip-local seconds (document time remains flicks). */
+  resolution: { width: number; height: number }
+  time: number
+  mode: 'preview' | 'render'
+  mediaUrl(path: string): string
+  /** Cache an asynchronous texture load by immutable key. Rejections skip the pass. */
+  loadTexture(key: string, load: () => Promise<ShaderTexture>): Promise<ShaderTexture>
+}
+
+export interface ShaderEffect {
+  /** GLSL ES 3.00 defining vec4 effect(vec2 uv). src(uv) and the result are premultiplied
+   * sRGB RGBA; uv origin is bottom-left. u_resolution (vec2) and u_time (float) are supplied.
+   * Helpers: straight(vec4), srgbToLinear(vec3), linearToSrgb(vec3). Declare custom uniforms. */
+  fragment: string
+  /** Scalars/bools → float; length 2/3/4 → vecN; other arrays → float[]. */
+  uniforms?(values: Record<string, unknown>, ctx: ShaderContext): Record<string, ShaderUniform>
+  /** Sampler names must match declarations. Missing/pending textures skip the whole pass. */
+  textures?(values: Record<string, unknown>, ctx: ShaderContext): Record<string, ShaderTexture | Promise<ShaderTexture> | null>
+}
+
 export interface PropertyContribution extends Contribution {
   name: string
   description: string
@@ -183,6 +216,8 @@ export interface PropertyContribution extends Contribution {
   cost?: 'cheap' | 'medium' | 'expensive'
   /** Visual output for this frame. */
   apply?(values: Record<string, unknown>, ctx: PropertyApplyContext): PropertyOutput | void
+  /** Optional pixel pass, composed in property-list order before CSS output. */
+  shader?: ShaderEffect
   /** Audio processing (Web Audio). */
   audio?: { create(ctx: BaseAudioContext, values: Record<string, unknown>): AudioPropertyNode }
   /**
@@ -275,6 +310,8 @@ export interface ClipFrameState {
 export interface ClipInstance {
   /** Visual content element (absent for audio-only types). */
   el?: HTMLElement
+  /** Pixel input for shader properties; null until a decoded source is ready. */
+  pixelSource?(): TexImageSource | null
   update(state: ClipFrameState): void
   /** Render mode: resolve once content for `state` is exactly on screen (e.g. the decoded frame). */
   prepare?(state: ClipFrameState): Promise<void>
@@ -328,6 +365,8 @@ export interface MediaTypeContribution extends Contribution {
   color: string
   /** Which track kind its clips live on. */
   track: 'visual' | 'audio'
+  /** Stage instances expose pixelSource(), enabling shader properties in the inspector. */
+  pixels?: boolean
   /** File extensions handled (lowercase, no dot). */
   extensions?: string[]
   /** Finer import matching; return a confidence 0..1. */
@@ -502,3 +541,5 @@ export interface ExporterContribution extends Contribution {
 // ───────────────────────────── helpers re-exported for plugin authors ─────────────────────────────
 
 export type { Clip, EasingRef, Id, MediaItem, MediaMeta, Project, PropertyInstance, Timeline, Track, Flicks, FrameRate }
+
+export { shaderColor } from '@shared/shader-color'

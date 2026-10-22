@@ -45,7 +45,7 @@ export function scoreProperty(p: PropertyContribution, query: string): number {
  * Menu order for the built-in categories, roughly the order an editor reaches for them. Categories
  * from user plugins sort after these, in registration order.
  */
-const CATEGORY_ORDER = ['Transform', 'Compositing', 'Time', 'Text', 'Color', 'Blur', 'Stylize', 'Shape', 'Audio']
+const CATEGORY_ORDER = ['Transform', 'Compositing', 'Time', 'Text', 'Color', 'Keying', 'Blur', 'Stylize', 'Shape', 'Audio']
 const categoryRank = (c: string) => {
   const i = CATEGORY_ORDER.indexOf(c)
   return i < 0 ? CATEGORY_ORDER.length : i
