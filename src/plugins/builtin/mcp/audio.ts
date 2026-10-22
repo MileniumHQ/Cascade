@@ -1,23 +1,13 @@
 /** Audio for the agent tools: the timeline mix as export renders it, a source range decoded, and their measurements. */
 import type { CascadeAPI } from '@core/app'
-import { sourceSpan } from '@core/time-remap'
-import type { Clip } from '@shared/project'
 import { FLICKS, type Flicks } from '@shared/time'
 import { prepareExportRequest } from '../export-request'
 import { clock } from './clock'
 import { LoudnessMeter, formatDb, sparkline, type LoudnessReading } from './loudness'
 import type { SheetAudio } from './sheets'
 
-export const RATE = 48000
-/** Longest range a mix render or decode covers (seconds). */
-export const MAX_AUDIO_SECONDS = 600
-
-/** Interleaved stereo float32 of [startSec, startSec + durSec) of a file. */
-export async function decode(app: CascadeAPI, path: string, startSec: number, durSec: number): Promise<Float32Array | null> {
-  const pcm = await app.host!.media.pcm(path, Math.max(0, startSec), durSec, RATE)
-  if (!pcm) return null
-  return new Float32Array(await (await fetch(pcm.url)).arrayBuffer())
-}
+export { RATE, MAX_AUDIO_SECONDS, decode, clipSource } from '../audio-tools/measure'
+import { MAX_AUDIO_SECONDS, RATE, decode } from '../audio-tools/measure'
 
 let renders = 0
 /** Render [start, end) of the timeline through the WAV exporter (the mix as exported) and decode it. */
@@ -31,16 +21,6 @@ export async function renderMix(app: CascadeAPI, start: Flicks, end: Flicks, wai
   const data = await decode(app, path, 0, (end - start) / FLICKS)
   if (!data) throw new Error('Could not decode the rendered mix')
   return { data, rate: RATE, start, path }
-}
-
-/** A clip's own source audio over the range it plays (not the mix), or null without a file source. */
-export async function clipSource(app: CascadeAPI, clip: Clip): Promise<SheetAudio | null> {
-  const media = clip.mediaId ? app.project().media[clip.mediaId] : undefined
-  if (!media?.path || media.meta.hasAudio === false) return null
-  const { lo, hi } = sourceSpan(clip, app.edit.timeMap(clip))
-  const dur = Math.min(MAX_AUDIO_SECONDS, (hi - lo) / FLICKS)
-  const data = await decode(app, media.path, lo / FLICKS, dur)
-  return data && { data, rate: RATE, start: lo }
 }
 
 export const show = (r: LoudnessReading, at: (s: number) => string) =>
