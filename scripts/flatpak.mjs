@@ -1,6 +1,7 @@
 // Build and install the Flatpak locally from dist/Cascade-linux-x64.tar.gz (`bun run dist:linux` first), using
 // the Flathub manifest in flatpak/ with its release archive swapped for the local one. Needs flatpak and the
-// org.flatpak.Builder app (installed per user here if missing). `--lint` also runs Flathub's linter.
+// org.flatpak.Builder app (installed per user here if missing). `--lint` also runs Flathub's linter; `--bundle`
+// also writes the single-file dist/Cascade-linux-x86_64.flatpak (runtimes resolve from Flathub on install).
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -11,6 +12,7 @@ const ID = 'com.mileniumhq.Cascade'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const archive = join(root, 'dist/Cascade-linux-x64.tar.gz')
 if (!existsSync(archive)) throw new Error('dist/Cascade-linux-x64.tar.gz missing; run `bun run dist:linux` first.')
+const bundle = process.argv.includes('--bundle')
 const run = (command, args) => {
   const result = spawnSync(command, args, { cwd: root, stdio: 'inherit' })
   if (result.status !== 0) throw new Error(`${command} ${args.join(' ')} failed (${result.status})`)
@@ -32,7 +34,11 @@ writeFileSync(join(work, `${ID}.yml`), local)
 // The sandboxed builder asks the host's flatpak for the SDK with its own XDG_DATA_HOME, which hides --user installs.
 const builder = (...args) => run('flatpak', ['run', `--env=FLATPAK_USER_DIR=${join(homedir(), '.local/share/flatpak')}`, '--command=flatpak-builder', 'org.flatpak.Builder', ...args])
 builder('--user', '--install', '--force-clean', '--ccache', `--state-dir=${join(work, '.state')}`,
-  ...(process.argv.includes('--lint') ? [`--repo=${join(work, 'repo')}`] : []), join(work, 'build'), join(work, `${ID}.yml`))
+  ...(process.argv.includes('--lint') || bundle ? [`--repo=${join(work, 'repo')}`] : []), join(work, 'build'), join(work, `${ID}.yml`))
+if (bundle) {
+  run('flatpak', ['build-bundle', '--runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo', join(work, 'repo'), join(root, 'dist/Cascade-linux-x86_64.flatpak'), ID])
+  console.log('Wrote dist/Cascade-linux-x86_64.flatpak')
+}
 // Reported, not fatal: --filesystem=home needs an exception that Flathub grants on review.
 if (process.argv.includes('--lint')) for (const what of [['manifest', join(root, 'flatpak', `${ID}.yml`)], ['repo', join(work, 'repo')]]) {
   spawnSync('flatpak', ['run', '--command=flatpak-builder-lint', 'org.flatpak.Builder', ...what], { stdio: 'inherit' })

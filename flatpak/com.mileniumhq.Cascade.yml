@@ -38,8 +38,8 @@ modules:
     sources:
       - type: archive
         dest: cascade
-        url: https://github.com/MileniumHQ/Cascade/releases/download/v0.1.2/Cascade-linux-x64.tar.gz
-        sha256: 'set when v0.1.2 is released'
+        url: https://github.com/MileniumHQ/Cascade/releases/download/v0.2.0/Cascade-linux-x64.tar.gz
+        sha256: ce508faa5f609c2de336f1b815d99e59bbd246bc81598e737ad2e4e1c34811d1
         x-checker-data:
           type: json
           url: https://api.github.com/repos/MileniumHQ/Cascade/releases/latest
